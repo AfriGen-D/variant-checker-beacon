@@ -1,0 +1,23 @@
+[
+  {
+    "id": "IND001",
+    "sex": "MALE",
+    "ethnicity": "African",
+    "geographic_origin": "South Africa",
+    "age": 35
+  },
+  {
+    "id": "IND002",
+    "sex": "FEMALE",
+    "ethnicity": "African",
+    "geographic_origin": "Nigeria",
+    "age": 28
+  },
+  {
+    "id": "IND003",
+    "sex": "MALE",
+    "ethnicity": "Mixed",
+    "geographic_origin": "Kenya",
+    "age": 42
+  }
+]

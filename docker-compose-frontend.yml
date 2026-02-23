@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  beacon-frontend:
+    build:
+      context: ./frontend
+      dockerfile: docker/Dockerfile
+      args:
+        NEXT_PUBLIC_BEACON_API_URL: http://localhost:8000
+    container_name: beacon-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - BACKEND_API_URL=http://localhost:8000
+    restart: unless-stopped
+    networks:
+      - beacon-network
+
+networks:
+  beacon-network:
+    driver: bridge

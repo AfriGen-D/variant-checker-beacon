@@ -1,0 +1,33 @@
+FROM python:3.9-slim
+
+LABEL maintainer="AfriGend Beacon v2"
+LABEL description="Beacon v2 data transformation tools (VCF, phenotype, validation, import/export)"
+
+# System deps for cyvcf2, pysam, pybedtools, and SSH tunnel support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ make \
+    zlib1g-dev libbz2-dev liblzma-dev libcurl4-openssl-dev libssl-dev \
+    libhts-dev tabix \
+    openssh-client netcat-openbsd \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/beacon-tools
+
+# Install Python deps (setuptools<70 required for django-mongoengine build)
+COPY afrigend-beacon2-tools/requirements.txt /opt/beacon-tools/requirements.txt
+RUN pip install --no-cache-dir "setuptools<70" wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy tool modules and config
+COPY afrigend-beacon2-tools/vcf_transform/       /opt/beacon-tools/vcf_transform/
+COPY afrigend-beacon2-tools/phenotype_transform/  /opt/beacon-tools/phenotype_transform/
+COPY afrigend-beacon2-tools/validation/           /opt/beacon-tools/validation/
+COPY afrigend-beacon2-tools/data_import/          /opt/beacon-tools/data_import/
+COPY afrigend-beacon2-tools/data_export/          /opt/beacon-tools/data_export/
+COPY afrigend-beacon2-tools/config/               /opt/beacon-tools/config/
+
+ENV PYTHONPATH="/opt/beacon-tools:${PYTHONPATH}"
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["/bin/bash"]

@@ -1,0 +1,4 @@
+patient_id,hpo_id,term_name,source,present,onset_age,severity_score,disease_code,diagnosis
+IND001,HP:0001250,Seizures,HPO,yes,5y,Moderate,MONDO:0005027,Epilepsy
+IND002,HP:0000252,Microcephaly,HPO,Yes,0y,Mild,,
+IND003,HP:0000729,Autistic behavior,HPO,YES,2y,Severe,MONDO:0005258,Autism

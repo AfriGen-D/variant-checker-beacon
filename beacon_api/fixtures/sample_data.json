@@ -1,0 +1,229 @@
+[
+  {
+    "model": "beacon_api.dataset",
+    "pk": "afrigend_wgs_001",
+    "fields": {
+      "name": "[Test] AfriGenD WGS Dataset",
+      "description": "Whole genome sequencing data from the African Genomic Diversity project, covering diverse populations across Sub-Saharan Africa.",
+      "assembly_id": "GRCh38",
+      "create_date": "2024-01-15T00:00:00Z",
+      "update_date": "2024-06-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.dataset",
+    "pk": "h3africa_chip_001",
+    "fields": {
+      "name": "[Test] H3Africa Genotyping Array",
+      "description": "Genotyping array data from the H3Africa Consortium, designed for African population genetics with custom content for African-relevant variants.",
+      "assembly_id": "GRCh38",
+      "create_date": "2023-06-01T00:00:00Z",
+      "update_date": "2024-03-15T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.dataset",
+    "pk": "agvp_exome_001",
+    "fields": {
+      "name": "[Test] African Genome Variation Project",
+      "description": "Exome sequencing data from the AGVP, characterizing genetic variation across multiple African ethnic groups.",
+      "assembly_id": "GRCh38",
+      "create_date": "2023-01-01T00:00:00Z",
+      "update_date": "2024-01-10T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.individual",
+    "pk": "ind_001",
+    "fields": {
+      "sex": "male",
+      "ethnicity": "West African",
+      "geographic_origin": "Nigeria",
+      "age": 45,
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.individual",
+    "pk": "ind_002",
+    "fields": {
+      "sex": "female",
+      "ethnicity": "East African",
+      "geographic_origin": "Kenya",
+      "age": 32,
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.variant",
+    "pk": "var_sickle_cell_1",
+    "fields": {
+      "assembly_id": "GRCh38",
+      "reference_name": "11",
+      "start": 5227002,
+      "end": 5227003,
+      "reference_bases": "A",
+      "alternate_bases": "T",
+      "variant_type": "SNP",
+      "dataset_ids": ["afrigend_wgs_001", "h3africa_chip_001"],
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.variant",
+    "pk": "var_rs671_1",
+    "fields": {
+      "assembly_id": "GRCh38",
+      "reference_name": "12",
+      "start": 112241766,
+      "end": 112241767,
+      "reference_bases": "G",
+      "alternate_bases": "A",
+      "variant_type": "SNP",
+      "dataset_ids": ["afrigend_wgs_001", "agvp_exome_001"],
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.variant",
+    "pk": "var_rs4988235_1",
+    "fields": {
+      "assembly_id": "GRCh38",
+      "reference_name": "2",
+      "start": 135851076,
+      "end": 135851077,
+      "reference_bases": "T",
+      "alternate_bases": "C",
+      "variant_type": "SNP",
+      "dataset_ids": ["h3africa_chip_001"],
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.variant",
+    "pk": "var_brca1_1",
+    "fields": {
+      "assembly_id": "GRCh38",
+      "reference_name": "17",
+      "start": 43044295,
+      "end": 43044296,
+      "reference_bases": "G",
+      "alternate_bases": "A",
+      "variant_type": "SNP",
+      "dataset_ids": ["afrigend_wgs_001", "agvp_exome_001"],
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.variant",
+    "pk": "var_mt73_1",
+    "fields": {
+      "assembly_id": "GRCh38",
+      "reference_name": "MT",
+      "start": 73,
+      "end": 74,
+      "reference_bases": "A",
+      "alternate_bases": "G",
+      "variant_type": "SNP",
+      "dataset_ids": ["h3africa_chip_001"],
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.variantannotation",
+    "pk": 1,
+    "fields": {
+      "variant": "var_rs671_1",
+      "gene_id": "ENSG00000111640",
+      "gene_symbol": "ALDH2",
+      "molecular_consequence": "missense_variant",
+      "clinical_significance": "pathogenic",
+      "additional_annotations": {
+        "omim": "100650",
+        "pubmed": "19626717",
+        "variant_effect": "Reduced enzyme activity"
+      }
+    }
+  },
+  {
+    "model": "beacon_api.variantannotation",
+    "pk": 2,
+    "fields": {
+      "variant": "var_rs4988235_1",
+      "gene_id": "ENSG00000236104",
+      "gene_symbol": "MCM6",
+      "molecular_consequence": "regulatory_region_variant",
+      "clinical_significance": "other",
+      "additional_annotations": {
+        "description": "Lactase persistence variant",
+        "population_frequency": {
+          "african": 0.01,
+          "european": 0.72
+        }
+      }
+    }
+  },
+  {
+    "model": "beacon_api.variantannotation",
+    "pk": 3,
+    "fields": {
+      "variant": "var_sickle_cell_1",
+      "gene_id": "ENSG00000244734",
+      "gene_symbol": "HBB",
+      "molecular_consequence": "missense_variant",
+      "clinical_significance": "pathogenic",
+      "additional_annotations": {
+        "omim": "603903",
+        "description": "Sickle cell anemia variant",
+        "population_frequency": {
+          "african": 0.08,
+          "european": 0.0001
+        }
+      }
+    }
+  },
+  {
+    "model": "beacon_api.variantannotation",
+    "pk": 4,
+    "fields": {
+      "variant": "var_brca1_1",
+      "gene_id": "ENSG00000012048",
+      "gene_symbol": "BRCA1",
+      "molecular_consequence": "missense_variant",
+      "clinical_significance": "pathogenic",
+      "additional_annotations": {
+        "omim": "113705",
+        "description": "BRCA1 breast cancer susceptibility variant",
+        "population_frequency": {
+          "african": 0.002,
+          "european": 0.001
+        }
+      }
+    }
+  },
+  {
+    "model": "beacon_api.variantannotation",
+    "pk": 5,
+    "fields": {
+      "variant": "var_mt73_1",
+      "gene_id": "MT-DLOOP",
+      "gene_symbol": "MT-DLOOP",
+      "molecular_consequence": "non_coding_transcript_variant",
+      "clinical_significance": "benign",
+      "additional_annotations": {
+        "description": "Common mitochondrial haplogroup marker",
+        "population_frequency": {
+          "african": 0.85,
+          "european": 0.60
+        }
+      }
+    }
+  }
+]

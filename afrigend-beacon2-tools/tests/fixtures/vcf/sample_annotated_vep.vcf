@@ -1,0 +1,8 @@
+##fileformat=VCFv4.2
+##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from VEP">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE1
+1	100001	rs100001	A	T	99	PASS	DP=50;CSQ=missense_variant|BRCA1|ENST00001	GT	0/1
+1	200002	rs200002	C	G	80	PASS	DP=40;CSQ=synonymous_variant|TP53|ENST00002	GT	1/1
+2	300003	rs300003	G	A	60	PASS	DP=30;CSQ=frameshift_variant|EGFR|ENST00003	GT	0/1

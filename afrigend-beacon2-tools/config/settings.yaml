@@ -1,0 +1,148 @@
+# AfriGend Beacon v2 Data Transformation Tools Configuration
+
+# MongoDB Connection Settings
+mongodb:
+  host: "localhost"
+  port: 27017
+  database: "beacon_db"
+  connection_timeout: 30
+  collections:
+    variants: "variants"
+    individuals: "individuals"
+    datasets: "datasets"
+    biosamples: "biosamples"
+    analyses: "analyses"
+    cohorts: "cohorts"
+    filtering_terms: "filtering_terms"
+
+# VCF Processing Settings
+vcf:
+  # Supported genome assemblies
+  supported_assemblies:
+    - "GRCh37"
+    - "GRCh38"
+    - "hg19"
+    - "hg38"
+  
+  # Default assembly if not specified
+  default_assembly: "GRCh38"
+  
+  # VCF fields to extract
+  required_fields:
+    - "CHROM"
+    - "POS"
+    - "REF"
+    - "ALT"
+    - "QUAL"
+    - "FILTER"
+  
+  # INFO fields to extract (optional)
+  info_fields:
+    - "AF"        # Allele Frequency
+    - "AC"        # Allele Count
+    - "AN"        # Allele Number
+    - "DP"        # Total Depth
+    - "GENE"      # Gene Symbol
+    - "CSQ"       # Consequence (VEP)
+    - "ANN"       # Annotation (SnpEff)
+  
+  # FORMAT fields to extract
+  format_fields:
+    - "GT"        # Genotype
+    - "DP"        # Depth
+    - "GQ"        # Genotype Quality
+    - "AD"        # Allelic Depths
+  
+  # Quality filters
+  quality_filters:
+    min_qual: 20
+    min_depth: 10
+    max_missing_rate: 0.1
+
+# Phenotype Processing Settings
+phenotypes:
+  # Supported ontologies
+  supported_ontologies:
+    - "HPO"       # Human Phenotype Ontology
+    - "MONDO"     # Monarch Disease Ontology
+    - "ORDO"      # Orphanet Rare Disease Ontology
+    - "NCIT"      # NCI Thesaurus
+    - "SNOMED"    # SNOMED CT
+  
+  # Default ontology mapping
+  default_ontology: "HPO"
+  
+  # Phenotype file formats
+  supported_formats:
+    - "csv"
+    - "tsv"
+    - "xlsx"
+    - "json"
+    - "phenopackets"
+
+# Data Validation Settings
+validation:
+  # Strict mode (fail on any validation error)
+  strict_mode: false
+  
+  # Required fields validation
+  required_fields_check: true
+  
+  # Data type validation
+  type_validation: true
+  
+  # Range validation for numeric fields
+  range_validation: true
+  
+  # Reference genome validation
+  genome_validation: true
+
+# Processing Settings
+processing:
+  # Batch size for bulk operations
+  batch_size: 1000
+  
+  # Number of parallel processes
+  max_workers: 4
+  
+  # Memory limit per process (MB)
+  memory_limit: 2048
+  
+  # Temporary directory for processing
+  temp_dir: "/tmp/beacon_transform"
+  
+  # Log level (DEBUG, INFO, WARNING, ERROR)
+  log_level: "INFO"
+  
+  # Progress reporting
+  show_progress: true
+
+# Output Settings
+output:
+  # Default output format
+  default_format: "json"
+  
+  # Supported output formats
+  supported_formats:
+    - "json"
+    - "bson"
+    - "csv"
+    - "tsv"
+  
+  # Pretty print JSON output
+  pretty_json: true
+  
+  # Include metadata in output
+  include_metadata: true
+
+# Data Sources
+data_sources:
+  # External ontology sources
+  ontologies:
+    hpo_url: "https://hpo.jax.org/api/hpo/term/"
+    mondo_url: "https://www.ebi.ac.uk/ols/api/ontologies/mondo/terms/"
+  
+  # Reference genome sources
+  reference_genomes:
+    grch37_url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/"
+    grch38_url: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.28_GRCh38.p13/" 

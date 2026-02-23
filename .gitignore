@@ -1,0 +1,116 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+media/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.boolean
+.env.production
+.env.staging
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.hypothesis/
+
+# Documentation builds
+docs/_build/
+site/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+.dockerignore
+
+# Security
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+
+# Backup files
+*.bak
+*.tmp
+*.backup
+
+# Claude
+CLAUDE.md
+.claude/
+
+# MongoDB dumps
+*.bson
+dump/
+
+# Redis dumps
+dump.rdb
+
+# SSL certificates (Let's Encrypt)
+certbot/
+
+# Editor
+.history/
+*.sublime-project
+*.sublime-workspace
+
+# Screenshots
+*.png
+*.jpeg
+
+# Playwright MCP
+.playwright-mcp/
+
+# Workspace
+*.code-workspace
+
+# OS
+Thumbs.db
+.AppleDouble
+.LSOverride
+._*

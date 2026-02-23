@@ -1,0 +1,5 @@
+{"id": "1:100000:A:T", "assembly_id": "GRCh38", "reference_name": "1", "start": 100000, "end": 100001, "reference_bases": "A", "alternate_bases": "T", "variant_type": "SNV", "annotations": []}
+{"id": "1:200000:ATG:A", "assembly_id": "GRCh38", "reference_name": "1", "start": 200000, "end": 200003, "reference_bases": "ATG", "alternate_bases": "A", "variant_type": "DEL", "annotations": []}
+{"id": "2:300000:A:ATCG", "assembly_id": "GRCh38", "reference_name": "2", "start": 300000, "end": 300001, "reference_bases": "A", "alternate_bases": "ATCG", "variant_type": "INS", "annotations": []}
+{"id": "X:500000:T:C", "assembly_id": "GRCh38", "reference_name": "X", "start": 500000, "end": 500001, "reference_bases": "T", "alternate_bases": "C", "variant_type": "SNV", "annotations": []}
+{"id": "MT:900000:C:A", "assembly_id": "GRCh38", "reference_name": "MT", "start": 900000, "end": 900001, "reference_bases": "C", "alternate_bases": "A", "variant_type": "SNV", "annotations": []}

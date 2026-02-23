@@ -1,0 +1,322 @@
+[
+  {
+    "collection": "datasets",
+    "document": {
+      "_id": "afrigend_wgs_001",
+      "name": "[Test] AfriGenD WGS Dataset",
+      "description": "Whole genome sequencing data from the African Genomic Diversity project, covering diverse populations across Sub-Saharan Africa.",
+      "assembly_id": "GRCh38",
+      "dataset_type": "genomics",
+      "dataset_size": {"variants": 3, "samples": 120},
+      "contact_info": {"email": "beacon@afrigend.org"},
+      "create_date": {"$date": "2024-01-15T00:00:00Z"},
+      "update_date": {"$date": "2024-06-01T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "datasets",
+    "document": {
+      "_id": "h3africa_chip_001",
+      "name": "[Test] H3Africa Genotyping Array",
+      "description": "Genotyping array data from the H3Africa Consortium, designed for African population genetics with custom content for African-relevant variants.",
+      "assembly_id": "GRCh38",
+      "dataset_type": "genomics",
+      "dataset_size": {"variants": 3, "samples": 5000},
+      "contact_info": {"email": "data@h3africa.org"},
+      "create_date": {"$date": "2023-06-01T00:00:00Z"},
+      "update_date": {"$date": "2024-03-15T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "datasets",
+    "document": {
+      "_id": "agvp_exome_001",
+      "name": "[Test] African Genome Variation Project",
+      "description": "Exome sequencing data from the AGVP, characterizing genetic variation across multiple African ethnic groups.",
+      "assembly_id": "GRCh38",
+      "dataset_type": "genomics",
+      "dataset_size": {"variants": 2, "samples": 320},
+      "contact_info": {"email": "agvp@sanger.ac.uk"},
+      "create_date": {"$date": "2023-01-01T00:00:00Z"},
+      "update_date": {"$date": "2024-01-10T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "individuals",
+    "document": {
+      "_id": "ind_001",
+      "sex": "male",
+      "ethnicity": "West African",
+      "geographic_origin": "Nigeria",
+      "age": 45,
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "individuals",
+    "document": {
+      "_id": "ind_002",
+      "sex": "female",
+      "ethnicity": "East African",
+      "geographic_origin": "Kenya",
+      "age": 32,
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "variants",
+    "document": {
+      "_id": "var_sickle_cell_1",
+      "assembly_id": "GRCh38",
+      "reference_name": "11",
+      "start": 5227002,
+      "end": 5227003,
+      "reference_bases": "A",
+      "alternate_bases": "T",
+      "variant_type": "SNP",
+      "dataset_ids": ["afrigend_wgs_001", "h3africa_chip_001"],
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"},
+      "annotations": [
+        {
+          "gene_id": "ENSG00000244734",
+          "gene_symbol": "HBB",
+          "molecular_consequence": "missense_variant",
+          "clinical_significance": "pathogenic",
+          "additional_annotations": {
+            "omim": "603903",
+            "description": "Sickle cell anemia variant",
+            "population_frequency": {
+              "african": 0.08,
+              "european": 0.0001
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "collection": "variants",
+    "document": {
+      "_id": "var_rs671_1",
+      "assembly_id": "GRCh38",
+      "reference_name": "12",
+      "start": 112241766,
+      "end": 112241767,
+      "reference_bases": "G",
+      "alternate_bases": "A",
+      "variant_type": "SNP",
+      "dataset_ids": ["afrigend_wgs_001", "agvp_exome_001"],
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"},
+      "annotations": [
+        {
+          "gene_id": "ENSG00000111640",
+          "gene_symbol": "ALDH2",
+          "molecular_consequence": "missense_variant",
+          "clinical_significance": "pathogenic",
+          "additional_annotations": {
+            "omim": "100650",
+            "pubmed": "19626717",
+            "variant_effect": "Reduced enzyme activity"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "collection": "variants",
+    "document": {
+      "_id": "var_brca1_1",
+      "assembly_id": "GRCh38",
+      "reference_name": "17",
+      "start": 43044295,
+      "end": 43044296,
+      "reference_bases": "G",
+      "alternate_bases": "A",
+      "variant_type": "SNP",
+      "dataset_ids": ["afrigend_wgs_001", "agvp_exome_001"],
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"},
+      "annotations": [
+        {
+          "gene_id": "ENSG00000012048",
+          "gene_symbol": "BRCA1",
+          "molecular_consequence": "missense_variant",
+          "clinical_significance": "pathogenic",
+          "additional_annotations": {
+            "omim": "113705",
+            "description": "BRCA1 breast cancer susceptibility variant",
+            "population_frequency": {
+              "african": 0.002,
+              "european": 0.001
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "collection": "variants",
+    "document": {
+      "_id": "var_rs4988235_1",
+      "assembly_id": "GRCh38",
+      "reference_name": "2",
+      "start": 135851076,
+      "end": 135851077,
+      "reference_bases": "T",
+      "alternate_bases": "C",
+      "variant_type": "SNP",
+      "dataset_ids": ["h3africa_chip_001"],
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"},
+      "annotations": [
+        {
+          "gene_id": "ENSG00000236104",
+          "gene_symbol": "MCM6",
+          "molecular_consequence": "regulatory_region_variant",
+          "clinical_significance": "other",
+          "additional_annotations": {
+            "description": "Lactase persistence variant",
+            "population_frequency": {
+              "african": 0.01,
+              "european": 0.72
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "collection": "variants",
+    "document": {
+      "_id": "var_mt73_1",
+      "assembly_id": "GRCh38",
+      "reference_name": "MT",
+      "start": 73,
+      "end": 74,
+      "reference_bases": "A",
+      "alternate_bases": "G",
+      "variant_type": "SNP",
+      "dataset_ids": ["h3africa_chip_001"],
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"},
+      "annotations": [
+        {
+          "gene_id": "MT-DLOOP",
+          "gene_symbol": "MT-DLOOP",
+          "molecular_consequence": "non_coding_transcript_variant",
+          "clinical_significance": "benign",
+          "additional_annotations": {
+            "description": "Common mitochondrial haplogroup marker",
+            "population_frequency": {
+              "african": 0.85,
+              "european": 0.60
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "collection": "biosamples",
+    "document": {
+      "_id": "bs_001",
+      "individual_id": "ind_001",
+      "description": "Blood sample from individual 001",
+      "sample_type": "blood",
+      "collection_date": {"$date": "2023-01-15T00:00:00Z"},
+      "tissue": "peripheral blood",
+      "sample_processing": "standard venipuncture",
+      "material_used": "EDTA tube",
+      "created": {"$date": "2023-01-15T00:00:00Z"},
+      "updated": {"$date": "2023-01-15T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "biosamples",
+    "document": {
+      "_id": "bs_002",
+      "individual_id": "ind_002",
+      "description": "Saliva sample from individual 002",
+      "sample_type": "saliva",
+      "collection_date": {"$date": "2023-01-20T00:00:00Z"},
+      "tissue": "oral mucosa",
+      "sample_processing": "standard collection",
+      "material_used": "Oragene DNA kit",
+      "created": {"$date": "2023-01-20T00:00:00Z"},
+      "updated": {"$date": "2023-01-20T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "analyses",
+    "document": {
+      "_id": "an_001",
+      "biosample_id": "bs_001",
+      "analysis_type": "WGS",
+      "analysis_date": {"$date": "2023-02-01T00:00:00Z"},
+      "software": "BWA-MEM",
+      "software_version": "0.7.17",
+      "pipeline_name": "GATK Best Practices",
+      "pipeline_version": "4.2.0",
+      "created": {"$date": "2023-02-01T00:00:00Z"},
+      "updated": {"$date": "2023-02-01T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "analyses",
+    "document": {
+      "_id": "an_002",
+      "biosample_id": "bs_002",
+      "analysis_type": "Exome",
+      "analysis_date": {"$date": "2023-02-05T00:00:00Z"},
+      "software": "BWA-MEM",
+      "software_version": "0.7.17",
+      "pipeline_name": "GATK Best Practices",
+      "pipeline_version": "4.2.0",
+      "created": {"$date": "2023-02-05T00:00:00Z"},
+      "updated": {"$date": "2023-02-05T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "cohorts",
+    "document": {
+      "_id": "coh_001",
+      "name": "African Genomic Diversity Cohort",
+      "description": "A cohort of African individuals for genomic diversity studies",
+      "cohort_type": "population",
+      "cohort_size": 2,
+      "individual_ids": ["ind_001", "ind_002"],
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "filtering_terms",
+    "document": {
+      "_id": "ft_001",
+      "label": "Sickle Cell Anemia",
+      "description": "A hereditary blood disorder characterized by abnormal hemoglobin",
+      "ontology": "MONDO",
+      "ontology_id": "MONDO:0011382",
+      "term_category": "disease",
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"}
+    }
+  },
+  {
+    "collection": "filtering_terms",
+    "document": {
+      "_id": "ft_002",
+      "label": "Hemoglobin",
+      "description": "A protein in red blood cells that carries oxygen",
+      "ontology": "GO",
+      "ontology_id": "GO:0005833",
+      "term_category": "molecule",
+      "created": {"$date": "2023-01-01T00:00:00Z"},
+      "updated": {"$date": "2023-01-01T00:00:00Z"}
+    }
+  }
+]

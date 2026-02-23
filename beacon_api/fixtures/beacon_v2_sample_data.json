@@ -1,0 +1,109 @@
+[
+  {
+    "model": "beacon_api.biosample",
+    "pk": "biosample_001",
+    "fields": {
+      "individual": "ind_001",
+      "biosample_status": "available",
+      "sample_type": "blood",
+      "collection_date": "2023-01-01T00:00:00Z",
+      "collection_location": "Nairobi, Kenya",
+      "measurements": {
+        "rbc_count": 4.8,
+        "wbc_count": 6.7
+      },
+      "procedure": {
+        "code": "P01",
+        "procedureText": "Venipuncture"
+      },
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.biosample",
+    "pk": "biosample_002",
+    "fields": {
+      "individual": "ind_002",
+      "biosample_status": "available",
+      "sample_type": "tissue",
+      "collection_date": "2023-01-15T00:00:00Z",
+      "collection_location": "Lagos, Nigeria",
+      "measurements": {
+        "tumor_purity": 0.75
+      },
+      "procedure": {
+        "code": "P02",
+        "procedureText": "Biopsy"
+      },
+      "created": "2023-01-15T00:00:00Z",
+      "updated": "2023-01-15T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.analysis",
+    "pk": "analysis_001",
+    "fields": {
+      "name": "Whole Genome Sequencing Analysis",
+      "description": "Analysis of WGS data for variant identification",
+      "analysis_type": "WGS",
+      "analysis_date": "2023-02-01T00:00:00Z",
+      "analysis_software": {
+        "name": "GATK",
+        "version": "4.2.0",
+        "parameters": {
+          "minBaseQuality": 20
+        }
+      },
+      "reference_genome": "GRCh38",
+      "created": "2023-02-01T00:00:00Z",
+      "updated": "2023-02-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.cohort",
+    "pk": "cohort_001",
+    "fields": {
+      "name": "African Genomics Cohort",
+      "description": "Cohort of individuals from various regions of Africa for genomic analysis",
+      "cohort_type": "population",
+      "cohort_size": 2,
+      "cohort_demographics": {
+        "ages": {
+          "min": 32,
+          "max": 45,
+          "average": 38.5
+        },
+        "geographical_regions": ["East Africa", "West Africa"]
+      },
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.filteringterm",
+    "pk": "NCIT:C16576",
+    "fields": {
+      "label": "Adenocarcinoma",
+      "type": "disease",
+      "description": "A malignant epithelial neoplasm in which the tumor cells tend to form glands or acini.",
+      "ontology": "NCIT",
+      "scope": ["individuals", "biosamples"],
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "beacon_api.filteringterm",
+    "pk": "HP:0001250",
+    "fields": {
+      "label": "Seizure",
+      "type": "phenotype",
+      "description": "A neurological disorder characterized by abnormal electrical activity in the brain, resulting in physical convulsions or altered mental state.",
+      "ontology": "HPO",
+      "scope": ["individuals"],
+      "created": "2023-01-01T00:00:00Z",
+      "updated": "2023-01-01T00:00:00Z"
+    }
+  }
+] 

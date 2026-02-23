@@ -1,0 +1,7 @@
+individual_id,phenotype_id,phenotype_label,ontology,observed,age_of_onset,severity,disease_id,disease_label
+IND001,HP:0001250,Seizures,HPO,true,5y,Moderate,MONDO:0005027,Epilepsy
+IND001,HP:0001249,Intellectual disability,HPO,true,3y,Severe,,
+IND002,HP:0000252,Microcephaly,HPO,true,0y,Mild,,
+IND002,HP:0001263,Global developmental delay,HPO,true,1y,Moderate,MONDO:0001071,Intellectual disability
+IND003,HP:0001250,Seizures,HPO,false,,,,
+IND003,HP:0000729,Autistic behavior,HPO,true,2y,Severe,MONDO:0005258,Autism

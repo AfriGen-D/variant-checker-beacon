@@ -1,0 +1,4 @@
+sample_id,sex,ethnicity,geographic_origin,age
+SAMPLE1,MALE,African,South Africa,35
+SAMPLE2,FEMALE,African,Nigeria,28
+SAMPLE3,MALE,Mixed,Kenya,42

@@ -1,0 +1,15 @@
+individual_id,phenotype_id,phenotype_label,ontology,observed
+IND001,HP:0001250,Seizures,HPO,true
+IND002,HP:0001250,Seizures,HPO,True
+IND003,HP:0001250,Seizures,HPO,TRUE
+IND004,HP:0001250,Seizures,HPO,1
+IND005,HP:0001250,Seizures,HPO,yes
+IND006,HP:0001250,Seizures,HPO,Yes
+IND007,HP:0001250,Seizures,HPO,present
+IND008,HP:0001250,Seizures,HPO,positive
+IND009,HP:0001250,Seizures,HPO,false
+IND010,HP:0001250,Seizures,HPO,False
+IND011,HP:0001250,Seizures,HPO,0
+IND012,HP:0001250,Seizures,HPO,no
+IND013,HP:0001250,Seizures,HPO,absent
+IND014,HP:0001250,Seizures,HPO,negative

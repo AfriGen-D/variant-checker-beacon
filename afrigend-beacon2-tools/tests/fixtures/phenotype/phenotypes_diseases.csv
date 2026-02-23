@@ -1,0 +1,5 @@
+individual_id,phenotype_id,phenotype_label,ontology,observed,disease_id,disease_label,age_of_onset,stage,family_history,notes
+IND001,HP:0001250,Seizures,HPO,true,MONDO:0005027,Epilepsy,5y,early,true,Family history of seizures
+IND001,,,,,MONDO:0002076,Pneumonia,10y,acute,false,Hospitalized
+IND002,HP:0000252,Microcephaly,HPO,true,MONDO:0001071,Intellectual disability,0y,progressive,false,
+IND003,HP:0000729,Autistic behavior,HPO,true,MONDO:0005258,Autism,2y,stable,true,Both siblings affected
