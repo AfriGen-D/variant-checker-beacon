@@ -14,7 +14,7 @@ If you discover a security vulnerability in this project, please report it respo
 
 ### How to Report
 
-1. Email the maintainers with a description of the vulnerability
+1. Email **support@bioinformaticsinstitute.africa** with a description of the vulnerability
 2. Include steps to reproduce the issue
 3. Provide any relevant logs or screenshots
 

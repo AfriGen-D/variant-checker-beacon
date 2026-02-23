@@ -255,12 +255,14 @@ See [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for detailed developmen
 
 ## Contact
 
-**Organization**: AfriGEND 
-**Project**: GA4GH Beacon v2 Implementation 
-**Production**: beacon2.h3abionet.org-ilifu 
+**Organization**: [AfriGEN-D](https://afrigen-d.org/)
+**Email**: support@bioinformaticsinstitute.africa
+**Project**: GA4GH Beacon v2 Implementation
+**Production**: beacon2.h3abionet.org-ilifu
 
 ## Acknowledgments
 
-- [GA4GH Beacon Project](https://beacon-project.io/) 
-- [H3Africa Bioinformatics Network](https://h3abionet.org/) 
-- ILIFU (Ilifu Data Intensive Research Cloud) 
+- [AfriGEN-D](https://afrigen-d.org/)
+- [GA4GH Beacon Project](https://beacon-project.io/)
+- [H3Africa Bioinformatics Network](https://h3abionet.org/)
+- [ILIFU Data Intensive Research Cloud](https://www.ilifu.ac.za/)
