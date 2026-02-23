@@ -179,30 +179,34 @@ afrigen-beacon-v2/
 
 ## Documentation
 
-- [CLAUDE.md](CLAUDE.md) - Development guide for Claude Code
-- [TESTING.md](TESTING.md) - Comprehensive testing guide
-- **API Documentation**: http://localhost:8000/api/redoc/
-- **Interactive API**: http://localhost:8000/api/docs/
-- **OpenAPI Schema**: http://localhost:8000/api/schema/
+All documentation lives in the [`docs/`](docs/) directory:
+
+| Document | Description |
+|----------|-------------|
+| [API Reference](docs/API_REFERENCE.md) | Complete API endpoint documentation |
+| [Boolean Mode](docs/BOOLEAN_MODE.md) | Public discovery mode guide |
+| [Database Schema](docs/DATABASE_SCHEMA.md) | MongoDB collections and indexes |
+| [GA4GH AAI Plan](docs/GA4GH_AAI_IMPLEMENTATION_PLAN.md) | Authentication roadmap |
+| [ILIFU Data Loading](docs/ILIFU_DATA_LOADING_GUIDE.md) | Production data loading guide |
+| [Project Overview](docs/PROJECT_OVERVIEW.md) | Architecture and design decisions |
+| [Security Implementation](docs/SECURITY_IMPLEMENTATION.md) | Security architecture details |
+| [Testing](docs/TESTING.md) | Test infrastructure, query examples, CI/CD |
+
+**Interactive API docs** (when running locally):
+- ReDoc: http://localhost:8000/api/redoc/
+- Swagger: http://localhost:8000/api/docs/
+- OpenAPI Schema: http://localhost:8000/api/schema/
 
 ## Testing
 
-See [TESTING.md](TESTING.md) for comprehensive testing documentation including query examples, test infrastructure setup, and CI/CD integration.
+See [docs/TESTING.md](docs/TESTING.md) for full testing documentation.
 
-**Quick Start**:
 ```bash
-# Install test dependencies
-pip install -r requirements-test.txt
-
 # Run all tests
 pytest
 
 # Run with coverage
 pytest --cov=beacon_api --cov-report=html
-
-# Load testing
-pip install locust
-locust -f tests/performance/locustfile.py --host=http://localhost:8000
 ```
 
 ## Configuration
@@ -231,7 +235,7 @@ GA4GH_AAI_ENABLED=True
 
 ## Development
 
-See [CLAUDE.md](CLAUDE.md) for detailed development instructions, including:
+See [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for detailed development instructions, including:
 - Architecture overview
 - Code patterns
 - Adding new endpoints

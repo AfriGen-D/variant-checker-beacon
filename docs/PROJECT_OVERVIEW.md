@@ -2781,7 +2781,7 @@ python data_export/export_to_vcf.py \
 
 ## Testing Strategy
 
-See [TESTING.md](../TESTING.md) for comprehensive testing documentation.
+See [TESTING.md](TESTING.md) for comprehensive testing documentation.
 
 ### Test Pyramid
 
@@ -3045,8 +3045,8 @@ See [GA4GH_AAI_IMPLEMENTATION_PLAN.md](GA4GH_AAI_IMPLEMENTATION_PLAN.md) for det
 - [Security Implementation](SECURITY_IMPLEMENTATION.md)
 - [GA4GH AAI Plan](GA4GH_AAI_IMPLEMENTATION_PLAN.md)
 - [Data Tools](../afrigend-beacon2-tools/README.md)
-- [Testing Guide](../TESTING.md)
-- [Boolean Mode Guide](../README_BOOLEAN.md)
+- [Testing Guide](TESTING.md)
+- [Boolean Mode Guide](BOOLEAN_MODE.md)
 - [Contributing Guide](../CONTRIBUTING.md)
 
 ---
