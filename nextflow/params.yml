@@ -1,0 +1,34 @@
+# AfriGend Beacon v2 — Default Parameter Reference
+# Override via: nextflow run main.nf -params-file my_params.yml
+
+# ── Input ────────────────────────────────────────────────────────────────────
+dataset_name: null          # Required: dataset identifier (e.g. "H3AR3b")
+vcf_file: null              # Required: path to input VCF (.vcf, .vcf.gz, .bcf)
+phenotype_file: null        # Optional: phenotype data (CSV/TSV/XLSX)
+metadata_file: null         # Optional: sample metadata for VCF transform
+assembly: "GRCh38"          # Genome assembly (GRCh37, GRCh38, hg19, hg38)
+tools_base: "/opt/beacon-tools"  # Path to tools (container default; override for native Python)
+tools_config: null          # Custom tools config YAML (uses container default if null)
+
+# ── Output ───────────────────────────────────────────────────────────────────
+outdir: "./results"         # Output directory for transformed data and reports
+
+# ── MongoDB Import ───────────────────────────────────────────────────────────
+skip_import: false          # Set true to skip MongoDB import (transform+validate only)
+mongo_uri: "mongodb://localhost:27017/"
+mongo_db: "beacon_db"
+import_batch_size: 1000     # Batch size for bulk MongoDB inserts
+
+# ── Redis Cache ──────────────────────────────────────────────────────────────
+beacon_host: null           # SSH alias for remote Redis flush (e.g. "H3ABN-Beacon")
+redis_host: null            # Direct Redis host (alternative to SSH)
+redis_port: 6379
+
+# ── Validation ───────────────────────────────────────────────────────────────
+strict_validation: true     # Fail pipeline on validation errors
+verbose: false              # Enable verbose logging in tool scripts
+
+# ── Resource Ceilings ────────────────────────────────────────────────────────
+max_cpus: 16
+max_memory: "128.GB"
+max_time: "7.d"

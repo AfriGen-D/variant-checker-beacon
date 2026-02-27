@@ -109,6 +109,9 @@ certbot/
 # Workspace
 *.code-workspace
 
+# iCloud
+.git.nosync/
+
 # OS
 Thumbs.db
 .AppleDouble

@@ -17,7 +17,7 @@ process PHENOTYPE_TRANSFORM {
     def verbose_arg     = params.verbose ? '--verbose' : ''
     def config_arg      = params.tools_config ? "--config ${params.tools_config}" : ''
     """
-    python /opt/beacon-tools/phenotype_transform/phenotype_to_beacon.py \\
+    python ${params.tools_base}/phenotype_transform/phenotype_to_beacon.py \\
         ${phenotype_file} \\
         --output . \\
         ${individuals_arg} \\

@@ -12,7 +12,7 @@ process VALIDATE_VARIANTS {
     def strict_arg  = params.strict_validation ? '--strict' : ''
     def verbose_arg = params.verbose ? '--verbose' : ''
     """
-    python /opt/beacon-tools/validation/validate_json.py \\
+    python ${params.tools_base}/validation/validate_json.py \\
         ${json_file} \\
         --schema-type variant \\
         ${strict_arg} \\
@@ -34,7 +34,7 @@ process VALIDATE_INDIVIDUALS {
     def strict_arg  = params.strict_validation ? '--strict' : ''
     def verbose_arg = params.verbose ? '--verbose' : ''
     """
-    python /opt/beacon-tools/validation/validate_json.py \\
+    python ${params.tools_base}/validation/validate_json.py \\
         ${json_file} \\
         --schema-type individual \\
         ${strict_arg} \\
@@ -56,7 +56,7 @@ process VALIDATE_PHENOTYPES {
     def strict_arg  = params.strict_validation ? '--strict' : ''
     def verbose_arg = params.verbose ? '--verbose' : ''
     """
-    python /opt/beacon-tools/validation/validate_json.py \\
+    python ${params.tools_base}/validation/validate_json.py \\
         ${json_file} \\
         --schema-type phenotype \\
         ${strict_arg} \\

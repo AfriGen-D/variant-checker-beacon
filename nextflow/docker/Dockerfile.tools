@@ -7,16 +7,22 @@ LABEL description="Beacon v2 data transformation tools (VCF, phenotype, validati
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ make \
     zlib1g-dev libbz2-dev liblzma-dev libcurl4-openssl-dev libssl-dev \
-    libhts-dev tabix \
+    tabix bedtools \
     openssh-client netcat-openbsd \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/beacon-tools
 
-# Install Python deps (setuptools<70 required for django-mongoengine build)
+# Install Python deps
+# 1. setuptools<70 required for django-mongoengine build
+# 2. C-extension genomics libs (cyvcf2, pysam) need --no-build-isolation
+#    because their setup.py imports pkg_resources at build time
 COPY afrigend-beacon2-tools/requirements.txt /opt/beacon-tools/requirements.txt
-RUN pip install --no-cache-dir "setuptools<70" wheel && \
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir "setuptools<70" wheel Cython numpy==1.24.4 && \
+    CFLAGS="-Wno-error=incompatible-pointer-types" \
+    pip install --no-cache-dir --no-build-isolation cyvcf2==0.30.22 pysam==0.22.0 && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy tool modules and config
@@ -27,7 +33,7 @@ COPY afrigend-beacon2-tools/data_import/          /opt/beacon-tools/data_import/
 COPY afrigend-beacon2-tools/data_export/          /opt/beacon-tools/data_export/
 COPY afrigend-beacon2-tools/config/               /opt/beacon-tools/config/
 
-ENV PYTHONPATH="/opt/beacon-tools:${PYTHONPATH}"
+ENV PYTHONPATH="/opt/beacon-tools"
 ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["/bin/bash"]

@@ -18,7 +18,7 @@ process VCF_TRANSFORM {
     def verbose_arg  = params.verbose ? '--verbose' : ''
     def config_arg   = params.tools_config ? "--config ${params.tools_config}" : ''
     """
-    python /opt/beacon-tools/vcf_transform/vcf_to_beacon.py \\
+    python ${params.tools_base}/vcf_transform/vcf_to_beacon.py \\
         ${vcf_file} \\
         --output . \\
         --assembly ${params.assembly} \\

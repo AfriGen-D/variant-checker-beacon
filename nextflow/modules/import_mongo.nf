@@ -9,7 +9,7 @@ process IMPORT_TO_MONGO {
     def verbose_arg = params.verbose ? '--verbose' : ''
     def batch_arg   = params.import_batch_size ? "--batch-size ${params.import_batch_size}" : ''
     """
-    python /opt/beacon-tools/data_import/import_to_mongo.py \\
+    python ${params.tools_base}/data_import/import_to_mongo.py \\
         ${json_file} \\
         --db ${params.mongo_db} \\
         --collection ${collection} \\

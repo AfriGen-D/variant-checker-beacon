@@ -1,0 +1,22 @@
+##fileformat=VCFv4.2
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">
+##INFO=<ID=GENE,Number=1,Type=String,Description="Gene Symbol">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic Depths">
+##contig=<ID=1,length=249250621>
+##contig=<ID=2,length=243199373>
+##contig=<ID=3,length=198022430>
+##contig=<ID=X,length=155270560>
+##contig=<ID=MT,length=16569>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE1	SAMPLE2	SAMPLE3
+1	100001	rs100001	A	T	99	PASS	DP=50;AF=0.5;GENE=BRCA1	GT:DP:GQ:AD	0/1:50:99:25,25	0/0:40:99:40,0	1/1:45:99:0,45
+1	200002	rs200002	ATG	A	50	PASS	DP=30;GENE=TP53	GT:DP:GQ:AD	1/1:30:80:0,30	0/1:25:70:15,10	0/0:35:90:35,0
+2	300003	rs300003	A	ATCG	50	PASS	DP=40;AF=0.3	GT:DP:GQ:AD	0/1:40:90:20,20	0/1:35:85:18,17	0/0:30:95:30,0
+2	400004	rs400004	AT	GC	20	PASS	DP=10;GENE=EGFR	GT:DP:GQ:AD	0/1:10:40:5,5	0/0:12:50:12,0	0/1:8:35:4,4
+3	500005	rs500005	C	T	5	LowQual	DP=5	GT:DP:GQ:AD	0/1:5:10:3,2	0/0:6:15:6,0	0/0:4:8:4,0
+3	600006	.	G	A	99	PASS	DP=100;AF=0.1;GENE=KRAS	GT:DP:GQ:AD	0/0:100:99:90,10	0/1:80:95:40,40	0/0:90:99:85,5
+X	700007	rs700007	T	C	50	PASS	DP=30	GT:DP:GQ:AD	1/1:30:70:0,30	0/1:25:60:12,13	0/0:28:75:28,0
+MT	900009	.	C	A	99	PASS	DP=200;AF=0.95	GT:DP:GQ:AD	1/1:200:99:10,190	1/1:180:99:5,175	0/1:150:99:75,75
