@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # MongoDB - No authentication for boolean-only mode
   mongodb:
@@ -34,7 +32,7 @@ services:
   # Beacon API - Boolean Mode
   beacon-api:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.boolean
     container_name: beacon-api-boolean
     ports:
@@ -44,9 +42,9 @@ services:
       - MONGODB_HOST=mongodb
       - REDIS_HOST=redis
     env_file:
-      - .env.boolean
+      - ../.env.boolean
     volumes:
-      - ./logs:/app/logs
+      - ../logs:/app/logs
     depends_on:
       mongodb:
         condition: service_healthy
@@ -63,18 +61,21 @@ services:
       retries: 3
 
   # Frontend runs locally (npm run dev) for fast hot-reload.
-  # Start it with: cd frontend && npm run dev -- -p 3001
+  # Start it with: cd frontend && npx next dev -p 3001
 
-  # NGINX - Reverse proxy (no SSL for local dev)
-  # Proxies /api to beacon-api, everything else to local frontend on host:3001
-  nginx:
-    image: nginx:alpine
-    container_name: beacon-dev-nginx
+  # Traefik - Reverse proxy
+  # Routes: /api -> beacon-api:8000, /* -> host:3001 (frontend)
+  # Dashboard: http://localhost:8081
+  traefik:
+    image: traefik:v3.4
+    container_name: beacon-dev-traefik
     ports:
-      - "8080:80"
+      - "8080:80"    # HTTP entrypoint
+      - "8081:8080"  # Traefik dashboard
     volumes:
-      - ./nginx/nginx-dev.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/logs:/var/log/nginx
+      - ../traefik/traefik-dev.yml:/etc/traefik/traefik.yml:ro
+      - ../traefik/dynamic:/etc/traefik/dynamic:ro
+      - ../traefik/logs:/var/log/traefik
     depends_on:
       beacon-api:
         condition: service_healthy
@@ -83,7 +84,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      test: ["CMD", "traefik", "healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3

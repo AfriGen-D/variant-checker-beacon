@@ -8,8 +8,16 @@ import type { DatasetAlleleResponse, Dataset, VariantQuery } from '@/lib/api/typ
 import { exportCsv, exportJson } from '@/lib/utils/exportResults';
 import { ExternalLink } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_BEACON_API_URL || '/api';
-const API_DISPLAY_URL = process.env.NEXT_PUBLIC_BEACON_API_URL || 'http://localhost:8000/api';
+function getApiDisplayBase(): string {
+  const envUrl = process.env.NEXT_PUBLIC_BEACON_API_URL;
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '').replace(/\/api$/, '') + '/api';
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api`;
+  }
+  return '/api';
+}
 
 function buildAgvdUrl(query: VariantQuery): string {
   const chr = query.referenceName.startsWith('chr') ? query.referenceName : `chr${query.referenceName}`;
@@ -37,7 +45,7 @@ function buildApiUrl(query: VariantQuery): string {
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') params.append(key, String(value));
   });
-  return `${API_DISPLAY_URL}/g_variants?${params.toString()}`;
+  return `${getApiDisplayBase()}/g_variants?${params.toString()}`;
 }
 
 function ApiQueryBlock({ query }: { query: VariantQuery }) {
@@ -270,7 +278,7 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
             ))}
           </div>
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} totalItems={total} />
-          {rawResponse && <JsonResponseBlock data={rawResponse} />}
+          {rawResponse != null && <JsonResponseBlock data={rawResponse} />}
         </CardContent>
       </Card>
     );

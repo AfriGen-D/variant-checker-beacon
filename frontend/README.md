@@ -39,7 +39,7 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 ```bash
 # From project root
-docker-compose -f docker-compose-frontend.yml up -d
+docker compose -f compose/docker-compose-frontend.yml up -d
 
 # Or build manually
 cd frontend

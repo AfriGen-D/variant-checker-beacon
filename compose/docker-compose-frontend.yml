@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   beacon-frontend:
     build:
-      context: ./frontend
+      context: ../frontend
       dockerfile: docker/Dockerfile
       args:
         NEXT_PUBLIC_BEACON_API_URL: http://localhost:8000

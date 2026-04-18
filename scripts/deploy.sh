@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: ./scripts/deploy.sh [--pull-only]
 #   --pull-only: Pull images only (for CI/CD mode, skip git pull + build)
 
-COMPOSE_FILE="docker-compose.prod.yml"
+COMPOSE_FILE="compose/docker-compose.prod.yml"
 HEALTH_URL="http://localhost:8000/api/health"
 HEALTH_TIMEOUT=60
 DISK_WARN_THRESHOLD=85

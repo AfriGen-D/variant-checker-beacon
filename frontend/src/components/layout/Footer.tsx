@@ -4,7 +4,7 @@ export function Footer() {
   return (
     <footer className="border-t bg-muted/40 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           <div>
             <h3 className="text-sm font-semibold mb-3">GA4GH Beacon v2</h3>
             <p className="text-sm text-muted-foreground">
@@ -68,6 +68,42 @@ export function Footer() {
               </li>
             </ul>
           </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-3">Legal</h3>
+            <ul className="space-y-2">
+              <li>
+                <a
+                  href="https://fedimpute.afrigen-d.org/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Terms of Service
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://fedimpute.afrigen-d.org/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Privacy Policy
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://fedimpute.afrigen-d.org/cookies"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Cookie Policy
+                </a>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
       <div className="w-full bg-muted/40 py-4 px-4">
@@ -81,8 +117,8 @@ export function Footer() {
             University of Cape Town
           </a>{' '}
           Human Research Ethics Committee, Approval No: HREC R043/2018. For support, contact{' '}
-          <a href="mailto:support@afrigen-d.org" className="hover:text-primary transition-colors underline">
-            support@afrigen-d.org
+          <a href="mailto:support@bioinformaticsinstitute.africa" className="hover:text-primary transition-colors underline">
+            support@bioinformaticsinstitute.africa
           </a>.
         </p>
       </div>

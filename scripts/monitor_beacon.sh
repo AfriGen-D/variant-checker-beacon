@@ -12,7 +12,7 @@ HEALTH_URL="${BEACON_HEALTH_URL:-http://localhost:8000/api/health}"
 NGINX_HEALTH="${BEACON_NGINX_HEALTH:-http://localhost/health}"
 DISK_WARN_THRESHOLD=85
 LOG_FILE="/tmp/beacon_monitor.log"
-COMPOSE_FILE="docker-compose.prod.yml"
+COMPOSE_FILE="compose/docker-compose.prod.yml"
 
 cd "$(dirname "$0")/.."
 

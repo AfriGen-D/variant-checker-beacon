@@ -41,17 +41,17 @@ services:
   beacon-api:
     image: ${API_IMAGE:-beacon-api:latest}
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.boolean
     container_name: beacon-api
     env_file:
-      - .env.production
+      - ../.env.production
     environment:
       - DJANGO_SETTINGS_MODULE=beacon_project.settings_boolean
       - MONGODB_HOST=mongodb
       - REDIS_HOST=redis
     volumes:
-      - ./logs:/app/logs
+      - ../logs:/app/logs
     depends_on:
       mongodb:
         condition: service_healthy
@@ -76,7 +76,7 @@ services:
   beacon-frontend:
     image: ${FRONTEND_IMAGE:-beacon-frontend:latest}
     build:
-      context: ./frontend
+      context: ../frontend
       dockerfile: Dockerfile
     container_name: beacon-frontend
     environment:
@@ -99,21 +99,18 @@ services:
       start_period: 15s
       retries: 3
 
-  # Nginx - SSL termination + reverse proxy
-  nginx:
-    image: nginx:alpine
-    container_name: beacon-nginx
+  # Traefik - Reverse proxy with auto-TLS (Let's Encrypt)
+  traefik:
+    image: traefik:v3.4
+    container_name: beacon-traefik
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx-prod.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/logs:/var/log/nginx
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/www/certbot:/var/www/certbot:ro
-    depends_on:
-      beacon-api:
-        condition: service_healthy
+      - ../traefik/traefik-prod.yml:/etc/traefik/traefik.yml:ro
+      - ../traefik/dynamic-prod:/etc/traefik/dynamic:ro
+      - ../traefik/acme:/etc/traefik/acme
+      - ../traefik/logs:/var/log/traefik
     networks:
       - beacon-network
     restart: unless-stopped
@@ -123,7 +120,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      test: ["CMD", "traefik", "healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3
