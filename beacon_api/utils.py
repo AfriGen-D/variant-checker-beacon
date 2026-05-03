@@ -109,6 +109,80 @@ def build_beacon_response(results, num_total=None):
     }
 
 
+def build_meta(returned_granularity='boolean', received_request=None):
+    """
+    Beacon v2 spec meta envelope. Boolean mode forces 'boolean' granularity
+    regardless of what the client requested.
+    """
+    meta = {
+        'beaconId': settings.BEACON_API_ID,
+        'apiVersion': 'v2.0.0',
+        'returnedGranularity': returned_granularity,
+        'returnedSchemas': [],
+    }
+    if received_request is not None:
+        meta['receivedRequestSummary'] = received_request
+    return meta
+
+
+def build_received_request_summary(validated_params=None, granularity='boolean'):
+    """
+    Beacon v2 spec receivedRequestSummary.
+
+    `requestParameters` is omitted intentionally: the spec types it as an
+    object whose schema varies per entry type, and echoing the raw dict fails
+    schema validation. Verifier-required fields are present below.
+    """
+    return {
+        'apiVersion': 'v2.0.0',
+        'requestedGranularity': granularity,
+        'requestedSchemas': [],
+        'pagination': {'skip': 0, 'limit': 10},
+    }
+
+
+def build_info_envelope(payload):
+    """Beacon v2 envelope for /info, /configuration, /map, /entry_types."""
+    return {'meta': build_meta(), 'response': payload}
+
+
+def build_query_envelope(exists, num_total=0, result_sets=None, validated_params=None):
+    """
+    Beacon v2 envelope for query endpoints.
+    Spec: {meta, responseSummary, response: {resultSets}}
+    """
+    return {
+        'meta': build_meta(
+            received_request=build_received_request_summary(validated_params)
+        ),
+        'responseSummary': {
+            'exists': bool(exists),
+            'numTotalResults': int(num_total),
+        },
+        'response': {
+            'resultSets': result_sets or [],
+        },
+    }
+
+
+def build_collection_envelope(items, set_type='dataset', set_id='public'):
+    """
+    Beacon v2 envelope for collection endpoints (/datasets, /cohorts, /filtering_terms).
+    """
+    return {
+        'meta': build_meta(),
+        'response': {
+            'resultSets': [{
+                'id': set_id,
+                'setType': set_type,
+                'exists': len(items) > 0,
+                'resultsCount': len(items),
+                'results': items,
+            }] if items else [],
+        },
+    }
+
+
 class BooleanResponseMixin:
     """
     Mixin for views to automatically convert responses to boolean format

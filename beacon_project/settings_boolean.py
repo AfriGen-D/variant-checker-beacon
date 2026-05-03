@@ -22,6 +22,14 @@ ALLOWED_HOSTS = config('DJANGO_ALLOWED_HOSTS', default='localhost,127.0.0.1', ca
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = 'DENY'
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+
+# HSTS — only has effect when served over TLS (Cloudflare Tunnel terminates TLS)
+SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=31536000, cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # ============================================================================
 # APPLICATION DEFINITION - MINIMAL
@@ -51,6 +59,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'beacon_api.middleware.RateLimitMiddleware',  # Custom rate limiting
+    'beacon_api.middleware.QueryLogMiddleware',   # Audit log -> MongoDB query_logs
 ]
 
 ROOT_URLCONF = 'beacon_project.urls_boolean'
@@ -149,11 +158,15 @@ REST_FRAMEWORK = {
 
 BEACON_RESPONSE_MODE = config('BEACON_RESPONSE_MODE', default='BOOLEAN')
 BEACON_HIDE_DETAILED_DATA = config('BEACON_HIDE_DETAILED_DATA', default=True, cast=bool)
-BEACON_API_VERSION = 'v2.0.0'
-BEACON_API_ID = 'org.afrigend.beacon'
-BEACON_API_NAME = 'AfriGEND Beacon'
-BEACON_ORGANIZATION_ID = 'org.afrigend'
-BEACON_ORGANIZATION_NAME = 'AfriGEND'
+BEACON_API_VERSION = config('BEACON_API_VERSION', default='v2.0.0')
+BEACON_API_ID = config('BEACON_API_ID', default='org.afrigen-d.beacon')
+BEACON_API_NAME = config('BEACON_API_NAME', default='AfriGen-D Beacon')
+BEACON_ORGANIZATION_ID = config('BEACON_ORGANIZATION_ID', default='org.afrigen-d')
+BEACON_ORGANIZATION_NAME = config('BEACON_ORGANIZATION_NAME', default='AfriGen-D')
+BEACON_WELCOME_URL = config('BEACON_WELCOME_URL', default='https://afrigen-d.org')
+BEACON_SERVICE_URL = config('BEACON_SERVICE_URL', default='https://beacon.afrigen-d.org/api/')
+BEACON_ORGANIZATION_URL = config('BEACON_ORGANIZATION_URL', default='https://afrigen-d.org')
+BEACON_CONTACT_URL = config('BEACON_CONTACT_URL', default='mailto:support@bioinformaticsinstitute.africa')
 
 # Rate limits for specific endpoints
 BEACON_RATE_LIMITS = {
@@ -172,8 +185,8 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '2.0.0-boolean',
     'SERVE_INCLUDE_SCHEMA': False,
     'CONTACT': {
-        'name': 'AfriGEND Beacon',
-        'url': 'https://afrigend.org',
+        'name': 'AfriGen-D Beacon',
+        'url': 'https://afrigen-d.org',
     },
 }
 

@@ -25,7 +25,7 @@ class Command(BaseCommand):
             assembly_id='GRCh38',
             dataset_type='genomics',
             dataset_size={'variants': 100, 'samples': 50},
-            contact_info={'email': 'beacon@afrigend.org'}
+            contact_info={'email': 'beacon@afrigen-d.org'}
         )
         dataset.save()
         self.stdout.write(f'Created dataset: {dataset.id}')
