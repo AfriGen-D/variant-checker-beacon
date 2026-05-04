@@ -289,15 +289,18 @@ class VCFTransformer:
                 'phased': bool(gt[2])
             }
             
-            # Extract FORMAT fields
-            if hasattr(variant, 'format'):
-                format_data = variant.format()
-                if 'DP' in format_data:
-                    genotype_info['depth'] = format_data['DP'][sample_idx]
-                if 'GQ' in format_data:
-                    genotype_info['quality'] = format_data['GQ'][sample_idx]
-                if 'AD' in format_data:
-                    genotype_info['allelic_depths'] = format_data['AD'][sample_idx]
+            # Extract FORMAT fields (cyvcf2: variant.format(tag) returns ndarray per sample)
+            for tag, key in (('DP', 'depth'), ('GQ', 'quality'), ('AD', 'allelic_depths')):
+                try:
+                    arr = variant.format(tag)
+                except KeyError:
+                    continue
+                if arr is None:
+                    continue
+                try:
+                    genotype_info[key] = arr[sample_idx].tolist() if hasattr(arr[sample_idx], 'tolist') else arr[sample_idx]
+                except (IndexError, AttributeError):
+                    pass
                     
             return genotype_info
             

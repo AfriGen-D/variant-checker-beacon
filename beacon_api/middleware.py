@@ -112,3 +112,19 @@ class BooleanResponseMiddleware:
             pass
             
         return response
+
+class QueryLogMiddleware:
+    """Audit log middleware — pass-through stub.
+
+    Settings reference this class but no implementation existed in the repo until now.
+    This stub allows Django to start cleanly. The full implementation (logging API
+    queries to MongoDB query_logs collection) is a follow-up.
+
+    See https://github.com/mamanambiya/afrigen-beacon-v2/issues/3
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
