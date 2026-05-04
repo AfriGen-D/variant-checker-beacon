@@ -79,22 +79,37 @@ chromosome/position) + Redis 6 (response cache, rate-limit counters).
 - Docker & Docker Compose
 - OR Python 3.12+ with MongoDB and Redis
 
-### Deploy with Docker (Recommended)
+### Deploy with Docker (recommended)
+
+The default deploy is **full stack** — API + frontend + MongoDB + Redis behind
+nginx with TLS termination.
 
 ```bash
 # Clone repository
-git clone <repository-url>
+git clone git@github.com:mamanambiya/afrigen-beacon-v2.git
 cd afrigen-beacon-v2
 
-# Deploy Boolean mode (public discovery)
-docker-compose -f docker-compose-boolean.yml up -d
+# Copy and edit env file (set DJANGO_SECRET_KEY, etc.)
+cp .env.example .env.boolean
 
-# Access API
-curl http://localhost:8000/api/
+# Build and start the full stack (API + frontend + nginx)
+docker compose -f compose/docker-compose-boolean-ssl.yml up -d --build
 
-# View documentation
-open http://localhost:8000/api/redoc/
+# Access the UI
+open http://localhost/
+
+# Access the API directly
+curl http://localhost/api/
 ```
+
+#### Deployment shapes
+
+| Shape | Compose file | When to use |
+|---|---|---|
+| **Full stack** (default) | `compose/docker-compose-boolean-ssl.yml` | Public discovery with web UI |
+| **Dev (no SSL)** | `compose/docker-compose.dev.yml` | Local development with Traefik dashboard |
+| **Frontend only** | `compose/docker-compose-frontend.yml` | Run UI against a remote API |
+| **API-only** | bring your own override | Federation node, programmatic-only access (e.g. via Cloudflared tunnel — see the ARDI deployment for a worked example: drop `beacon-frontend` and `nginx`, add `cloudflared`) |
 
 ### Deploy Locally
 
