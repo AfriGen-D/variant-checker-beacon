@@ -2,7 +2,7 @@ services:
   beacon-frontend:
     build:
       context: ../frontend
-      dockerfile: docker/Dockerfile
+      dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_BEACON_API_URL: http://localhost:8000
     container_name: beacon-frontend

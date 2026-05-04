@@ -1,0 +1,112 @@
+services:
+  # MongoDB — internal-only, boolean mode (no auth at app level)
+  mongodb:
+    image: mongo:5.0
+    container_name: beacon-mongodb
+    command: mongod --auth --bind_ip_all
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - beacon-network
+    healthcheck:
+      test: mongosh --eval 'db.runCommand("ping").ok' localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis cache + rate limiter
+  redis:
+    image: redis:6-alpine
+    container_name: beacon-redis
+    networks:
+      - beacon-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Beacon API — Django + Gunicorn (Boolean mode)
+  beacon-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.boolean
+    container_name: beacon-api-boolean
+    environment:
+      - DJANGO_SETTINGS_MODULE=beacon_project.settings_boolean
+      - MONGODB_HOST=mongodb
+      - REDIS_HOST=redis
+    env_file:
+      - ../.env.boolean
+    volumes:
+      - ../logs:/app/logs
+      - ../staticfiles:/app/staticfiles
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - beacon-network
+    command: gunicorn beacon_project.wsgi_boolean:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile -
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend — Next.js 14 standalone build
+  beacon-frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BEACON_API_URL: ""
+    container_name: beacon-frontend
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - BACKEND_API_URL=http://beacon-api-boolean:8000
+    depends_on:
+      beacon-api:
+        condition: service_healthy
+    networks:
+      - beacon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # nginx — TLS termination, /api routed to beacon-api, / to beacon-frontend
+  nginx:
+    build:
+      context: ../nginx
+      dockerfile: Dockerfile
+    container_name: beacon-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx/logs:/var/log/nginx
+    depends_on:
+      beacon-api:
+        condition: service_healthy
+      beacon-frontend:
+        condition: service_healthy
+    networks:
+      - beacon-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  beacon-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
