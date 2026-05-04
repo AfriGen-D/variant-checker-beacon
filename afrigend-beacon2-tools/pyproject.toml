@@ -1,7 +1,7 @@
 [project]
 name = "afrigend-beacon2-tools"
 version = "0.1.0"
-description = "Data transformation tools for AfriGend Beacon v2"
+description = "Data transformation tools for AfriGen-D Beacon v2"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
@@ -12,6 +12,19 @@ test = [
     "mongomock>=4.1",
     "responses>=0.24",
 ]
+
+# setuptools >=60 refuses flat-layout auto-discovery when the package has
+# multiple sibling top-level dirs. Be explicit about which dirs ship.
+[tool.setuptools.packages.find]
+include = [
+    "vcf_transform*",
+    "phenotype_transform*",
+    "validation*",
+    "data_import*",
+    "data_export*",
+    "config*",
+]
+exclude = ["tests*", "docs*", "examples*", ".venv*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
