@@ -23,12 +23,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-      - name: Install test dependencies
+      - name: Install runtime + test dependencies
         working-directory: afrigend-beacon2-tools
-        run: pip install -e ".[test]"
+        # requirements.txt has the runtime libs (pymongo/pandas/jsonschema/etc.)
+        # that the test files import at module-collection time. The editable
+        # install layers in the package + the pytest extras on top.
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[test]"
       - name: Run Python tests
         working-directory: afrigend-beacon2-tools
-        run: python -m pytest tests/
+        # Skip tests marked requires_cyvcf2 — that lib needs htslib system
+        # headers we don't install on the runner.
+        run: python -m pytest tests/ -m "not requires_cyvcf2"
 
       # Frontend lint + type-check (Node 20 for parity with frontend/Dockerfile).
       # The Type-check step is the safeguard against the
