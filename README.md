@@ -170,7 +170,7 @@ Public genomic discovery returning only YES/NO responses. No authentication requ
 **Use Case**: Public data discovery, privacy-preserving queries
 
 ```bash
-docker-compose -f docker-compose-boolean.yml up -d
+docker compose -f compose/docker-compose-boolean-ssl.yml up -d
 ```
 
 ### Secure Mode (Authenticated)
@@ -180,7 +180,7 @@ Full access to detailed genomic data with JWT authentication and role-based acce
 **Use Case**: Research collaborations, authorized data access
 
 ```bash
-docker-compose up -d
+docker compose -f compose/docker-compose.prod.yml up -d
 ```
 
 ## Data Management
@@ -234,9 +234,14 @@ afrigen-beacon-v2/
 │   ├── data_import/        # Bulk import
 │   ├── data_export/        # Export utilities
 │   └── validation/         # JSON validation
+├── compose/                # Docker Compose files
+│   ├── docker-compose-boolean-ssl.yml  # Production: API + UI + nginx + SSL
+│   ├── docker-compose.dev.yml          # Local dev with Traefik
+│   ├── docker-compose.prod.yml         # Secure mode (authenticated)
+│   └── docker-compose-frontend.yml     # Frontend only
+├── frontend/               # Next.js 14 web UI
+├── nginx/                  # Production reverse proxy config
 ├── scripts/                # Deployment scripts
-├── docker-compose-boolean.yml
-├── docker-compose.yml
 └── README.md
 ```
 
