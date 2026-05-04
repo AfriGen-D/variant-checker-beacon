@@ -1,17 +1,65 @@
-# GA4GH Beacon v2 API Implementation
+# AfriGen-D Beacon v2 — API + UI
 
-**Production-ready genomic data discovery service implementing the GA4GH Beacon v2 specification**
+**Production genomic data discovery service implementing the GA4GH Beacon v2 specification.**
 
 [![GA4GH Beacon v2](https://img.shields.io/badge/GA4GH-Beacon%20v2-blue)](https://beacon-project.io/)
 [![Django](https://img.shields.io/badge/Django-4.0.10-green)](https://www.djangoproject.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-5.0-green)](https://www.mongodb.com/)
-[![Docker](https://img.shields.io/badge/Docker-Enabled-blue)](https://www.docker.com/)
+[![Conformance](https://img.shields.io/badge/EGA%20verifier-17%2F17-brightgreen)](docs/SPEC_CONFORMANCE.md)
 
-## Overview
+## What's in this repo
 
-This repository contains a production implementation of the [GA4GH Beacon v2 specification](https://beacon-project.io/) for genomic data discovery. The implementation is **100% compliant** with the official specification and supports both public discovery (Boolean mode) and authenticated access (Secure mode).
+This is a **monorepo** containing both the API (server) and the UI (web client), plus
+data-loading tools and infra config. They live in sibling directories and are deployed
+as separate containers behind one reverse proxy.
 
-**Production Deployment**: Hosted on ILIFU infrastructure
+| Path | Role | Stack | Production URL |
+|------|------|-------|----------------|
+| **`beacon_api/`** + **`beacon_project/`** | **Backend API** — Beacon v2 endpoints (`/api/g_variants`, `/api/datasets`, …) | Django 4.0 + DRF + MongoEngine | `https://api-beacon.afrigen-d.dev/api/` |
+| **`frontend/`** | **Web UI** — query form, results table, datasets browser | Next.js 14 (App Router) + TypeScript + Tailwind | `https://beacon.afrigen-d.org/` |
+| **`afrigend-beacon2-tools/`** | Data-loading toolkit — VCF→Beacon transformer, phenotype loader, MongoDB import/export | Python | (offline) |
+| **`compose/`** | Docker Compose stacks for dev / prod / frontend-only | YAML | — |
+| **`nginx/`** | Production reverse proxy config (the proxy actually serving prod today) | nginx | — |
+| **`scripts/`** | Deploy / monitor / data-load operational scripts | Bash + Python | — |
+| **`nextflow/`** | Optional pipeline for bulk data ingestion at scale | Nextflow | — |
+| **`docs/`** | API reference, conformance results, security docs | Markdown | — |
+
+**Data layer** (containerised, internal only): MongoDB 5.0 (genomic data, indexed by
+chromosome/position) + Redis 6 (response cache, rate-limit counters).
+
+> The API and UI are deployed at **different subdomains** today — `api-beacon.afrigen-d.dev`
+> serves the API, `beacon.afrigen-d.org` serves the UI. The UI calls the API at runtime
+> via the relative `/api/...` path, which the reverse proxy routes to the API container.
+
+## Runtime architecture
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  nginx (production reverse proxy, TLS termination)         │
+│  - /        → frontend container :3000                     │
+│  - /api/*   → beacon_api container :8000                   │
+└────┬───────────────────────────────────┬───────────────────┘
+     │                                   │
+     ▼                                   ▼
+┌──────────────────┐              ┌──────────────────────────┐
+│ frontend         │              │ beacon_api (Django/DRF)  │
+│ Next.js 14       │  ── /api ──> │ - views_boolean.py       │
+│ - Query form     │              │ - urls_boolean.py        │
+│ - Results UI     │              │ - utils.py (envelopes)   │
+│ Container :3000  │              │ Container :8000          │
+└──────────────────┘              └──────┬───────────────────┘
+                                         │
+                              ┌──────────┴──────────┐
+                              ▼                     ▼
+                          ┌─────────┐         ┌─────────┐
+                          │ MongoDB │         │  Redis  │
+                          │  :27017 │         │  :6379  │
+                          └─────────┘         └─────────┘
+```
+
+**Production status:** ILIFU infrastructure, host `afrigend-beacon-network` (192.168.101.163).
+**Spec conformance:** ✅ 17/17 EGA `beacon-verifier` checks pass — see [`docs/SPEC_CONFORMANCE.md`](docs/SPEC_CONFORMANCE.md).
 
 ## Features
 
