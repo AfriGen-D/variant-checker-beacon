@@ -94,6 +94,12 @@ dump.rdb
 # SSL certificates (Let's Encrypt)
 certbot/
 
+# Traefik (dev/migration only — production runs nginx; configs not tracked)
+traefik/
+
+# Local data runs (genomic artifacts — too large for git, hundreds of MB per run)
+data/runs/
+
 # Editor
 .history/
 *.sublime-project
