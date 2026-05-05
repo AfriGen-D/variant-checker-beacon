@@ -89,7 +89,7 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
             <Input
               label="Start"
               type="number"
-              placeholder="e.g., 100000"
+              placeholder="1-based, e.g. 11796321"
               error={errors.start?.message}
               required
               {...register('start')}
@@ -97,7 +97,7 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
             <Input
               label="End"
               type="number"
-              placeholder="Optional"
+              placeholder="Optional, 1-based"
               error={errors.end?.message}
               {...register('end')}
             />

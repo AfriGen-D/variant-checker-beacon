@@ -45,14 +45,16 @@ export const MIN_GENOMIC_POSITION = 0;
 // Query parameter defaults
 export const DEFAULT_ASSEMBLY = 'GRCh38';
 
-// Example queries for quick discovery (verified against H3A V6 African panel, GRCh38)
+// Example queries for quick discovery. Positions are 1-based (the convention
+// used by dbSNP, Ensembl, ClinVar, AGVD); the API client converts to 0-based
+// half-open before calling the Beacon endpoint.
 export const EXAMPLE_QUERIES = [
   // YES — variants confirmed in the database
-  { label: 'HBB G>A', description: 'HBB gene variant on Chr 11', expected: 'yes' as const, query: { assemblyId: 'GRCh38', referenceName: '11', start: 5225058, end: undefined, referenceBases: 'G', alternateBases: 'A' } },
-  { label: 'BRCA1 A>G', description: 'BRCA1 gene variant on Chr 17', expected: 'yes' as const, query: { assemblyId: 'GRCh38', referenceName: '17', start: 43044126, end: undefined, referenceBases: 'A', alternateBases: 'G' } },
-  { label: 'CYP2D6 C>T', description: 'Drug metabolism variant on Chr 22', expected: 'yes' as const, query: { assemblyId: 'GRCh38', referenceName: '22', start: 42126021, end: undefined, referenceBases: 'C', alternateBases: 'T' } },
-  { label: 'CYP2B6 G>T', description: 'Efavirenz metabolism variant on Chr 19', expected: 'yes' as const, query: { assemblyId: 'GRCh38', referenceName: '19', start: 41497059, end: undefined, referenceBases: 'G', alternateBases: 'T' } },
+  { label: 'HBB G>A', description: 'HBB gene variant on Chr 11', expected: 'yes' as const, query: { assemblyId: 'GRCh38', referenceName: '11', start: 5225059, end: undefined, referenceBases: 'G', alternateBases: 'A' } },
+  { label: 'BRCA1 A>G', description: 'BRCA1 gene variant on Chr 17', expected: 'yes' as const, query: { assemblyId: 'GRCh38', referenceName: '17', start: 43044127, end: undefined, referenceBases: 'A', alternateBases: 'G' } },
+  { label: 'CYP2D6 C>T', description: 'Drug metabolism variant on Chr 22', expected: 'yes' as const, query: { assemblyId: 'GRCh38', referenceName: '22', start: 42126022, end: undefined, referenceBases: 'C', alternateBases: 'T' } },
+  { label: 'CYP2B6 G>T', description: 'Efavirenz metabolism variant on Chr 19', expected: 'yes' as const, query: { assemblyId: 'GRCh38', referenceName: '19', start: 41497060, end: undefined, referenceBases: 'G', alternateBases: 'T' } },
   // NO — positions/alleles not in our dataset
-  { label: 'APOE T>C', description: 'Alzheimer risk variant on Chr 19', expected: 'no' as const, query: { assemblyId: 'GRCh38', referenceName: '19', start: 44908684, end: undefined, referenceBases: 'T', alternateBases: 'C' } },
-  { label: 'CFTR A>G', description: 'Cystic fibrosis variant on Chr 7', expected: 'no' as const, query: { assemblyId: 'GRCh38', referenceName: '7', start: 117559590, end: undefined, referenceBases: 'A', alternateBases: 'G' } },
+  { label: 'APOE T>C', description: 'Alzheimer risk variant on Chr 19', expected: 'no' as const, query: { assemblyId: 'GRCh38', referenceName: '19', start: 44908685, end: undefined, referenceBases: 'T', alternateBases: 'C' } },
+  { label: 'CFTR A>G', description: 'Cystic fibrosis variant on Chr 7', expected: 'no' as const, query: { assemblyId: 'GRCh38', referenceName: '7', start: 117559591, end: undefined, referenceBases: 'A', alternateBases: 'G' } },
 ] as const;
