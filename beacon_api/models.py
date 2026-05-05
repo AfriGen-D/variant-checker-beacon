@@ -198,3 +198,20 @@ class FilteringTerm(me.Document):
     
     def __str__(self):
         return f"{self.label} ({self.ontology}:{self.ontology_id})" 
+
+class QueryLog(me.Document):
+    """Audit log of API queries served by this beacon. Best-effort write from
+    QueryLogMiddleware — failures here must not break the beacon response."""
+    query_type = me.StringField(required=True, max_length=50)
+    query_params = me.DictField()
+    response_status = me.IntField(required=True)
+    response_time_ms = me.IntField(required=True)
+    hits_count = me.IntField(default=0)
+    client_ip = me.StringField(max_length=64)
+    created = me.DateTimeField(default=datetime.utcnow)
+
+    meta = {
+        'collection': 'query_logs',
+        'indexes': ['created', 'query_type', '-created'],
+        'auto_create_index': True,
+    }
