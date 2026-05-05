@@ -375,17 +375,22 @@ class VCFTransformer:
         variants = []
         individuals = []
         variant_individual_map = {}
-        
+        # parse_vcf yields once per (variant × sample); dedupe so variants_batch.jsonl
+        # contains each unique variant exactly once. Without this, a 165K-variant /
+        # 177-sample dataset writes 28.8M rows (174x bloat).
+        seen_variant_ids = set()
+
         # Process VCF file
         batch_size = self.config['processing']['batch_size']
         show_progress = self.config['processing']['show_progress']
-        
+
         with tqdm(desc="Processing variants", disable=not show_progress) as pbar:
             for variant_record, sample_name, genotype_info in self.parse_vcf(vcf_path, assembly_id):
-                # Add variant to collection
-                variant_dict = asdict(variant_record)
-                variants.append(variant_dict)
-                
+                # Add variant to collection (dedupe across samples)
+                if variant_record.id not in seen_variant_ids:
+                    variants.append(asdict(variant_record))
+                    seen_variant_ids.add(variant_record.id)
+
                 # Track variant-individual relationships
                 if variant_record.id not in variant_individual_map:
                     variant_individual_map[variant_record.id] = {}
