@@ -10,6 +10,20 @@ from decouple import config, Csv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Error tracking — GlitchTip (Sentry-protocol). No-op when SENTRY_DSN is unset.
+SENTRY_DSN = config('SENTRY_DSN', default='')
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=config('SENTRY_ENVIRONMENT', default='dev'),
+        integrations=[DjangoIntegration()],
+        traces_sample_rate=0.0,
+        send_default_pii=False,
+    )
+
 # ============================================================================
 # SECURITY CONFIGURATION - MINIMAL FOR PUBLIC API
 # ============================================================================

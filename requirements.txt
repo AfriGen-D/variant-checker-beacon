@@ -10,4 +10,7 @@ whitenoise==6.6.0
 django-cors-headers==4.3.1
 drf-spectacular==0.26.5
 redis==5.0.1
-django-redis==5.4.0 
+django-redis==5.4.0
+
+# Error tracking (GlitchTip / Sentry-protocol; disabled when SENTRY_DSN unset)
+sentry-sdk[django]==2.59.0
