@@ -433,9 +433,14 @@ def beacon_map(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([])
 def health_check(request):
     """
-    Health check endpoint for monitoring
+    Health check endpoint for monitoring.
+
+    Exempt from throttling: container/orchestration health probes poll this
+    frequently (every 30s) from a fixed source IP and would otherwise trip the
+    anonymous rate limit, marking a healthy container unhealthy.
     """
     try:
         # Check MongoDB connection
