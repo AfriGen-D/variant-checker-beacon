@@ -27,6 +27,7 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
     reset,
   } = useForm<VariantQueryFormData>({
@@ -40,6 +41,20 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
       alternateBases: '',
     },
   });
+
+  // Live preview of the variant being assembled, so coordinate/allele mistakes
+  // are visible before the query is sent (input is 1-based).
+  const w = watch();
+  const queryPreview = (() => {
+    if (!w.referenceName || w.start === undefined || w.start === null || (w.start as unknown as string) === '') {
+      return null;
+    }
+    const chr = String(w.referenceName).startsWith('chr') ? String(w.referenceName) : `chr${w.referenceName}`;
+    const pos = Number(w.start).toLocaleString();
+    const range = w.end ? `${pos}–${Number(w.end).toLocaleString()}` : pos;
+    const allele = w.referenceBases && w.alternateBases ? ` ${w.referenceBases}>${w.alternateBases}` : '';
+    return `${chr}:${range}${allele}`;
+  })();
 
   return (
     <Card>
@@ -154,6 +169,14 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
 
           {onFiltersChange && (
             <FilterSelector selected={filters ?? []} onChange={onFiltersChange} />
+          )}
+
+          {queryPreview && (
+            <div className="rounded-md bg-muted/50 border px-3 py-2 text-sm" aria-live="polite">
+              <span className="text-muted-foreground">Querying: </span>
+              <span className="font-mono font-medium">{queryPreview}</span>
+              <span className="text-muted-foreground text-xs ml-2">(coordinates are 1-based)</span>
+            </div>
           )}
 
           <div className="flex gap-3">
