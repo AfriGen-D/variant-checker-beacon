@@ -75,28 +75,37 @@ def variant_query_boolean(request):
         if validated_params.get('assemblyId'):
             mongo_query['assembly_id'] = validated_params['assemblyId']
 
+        # A positional query without a chromosome cannot use the
+        # {reference_name, start} index and would scan the entire collection
+        # (tens of millions of documents). Require referenceName whenever a
+        # position is supplied — this matches the UI, which marks Chromosome
+        # required.
+        if ('start__lte' in mongo_query or 'end__gte' in mongo_query) and 'reference_name__in' not in mongo_query:
+            return Response({
+                'error': 'Invalid query parameters',
+                'message': 'referenceName is required when querying by position',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         # Query variants and collect dataset membership
         exists = False
         dataset_allele_responses = []
 
         if mongo_query:
             logger.info(f"MongoDB query: {mongo_query}")
-            matched_variants = list(Variant.objects.filter(**mongo_query).only('dataset_ids'))
-            exists = len(matched_variants) > 0
+            base_qs = Variant.objects.filter(**mongo_query)
+            # Existence only needs one document — never materialize the full
+            # match set, which can be millions of variants for a broad query.
+            exists = base_qs.first() is not None
 
             if exists:
-                # Collect dataset_ids from matched variants
-                matched_dataset_ids = set()
-                for v in matched_variants:
-                    matched_dataset_ids.update(v.dataset_ids or [])
-
-                # Get all datasets to build per-dataset responses
-                all_datasets = Dataset.objects.all()
-                for ds in all_datasets:
+                # Per-dataset attribution via a bounded existence check per
+                # dataset rather than unioning dataset_ids across every match.
+                for ds in Dataset.objects.all():
+                    in_ds = base_qs.filter(dataset_ids=ds.id).first() is not None
                     dataset_allele_responses.append({
                         'datasetId': ds.id,
                         'datasetName': ds.name,
-                        'exists': ds.id in matched_dataset_ids,
+                        'exists': in_ds,
                     })
 
         logger.info(f"Variant query: exists={exists}, params={validated_params.get('referenceName', 'unknown')}")

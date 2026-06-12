@@ -31,7 +31,13 @@ function HomePageInner() {
   const autoSubmitted = useRef(false);
 
   useEffect(() => {
-    beaconApi.getDatasets().then(res => setDatasets(res.datasets ?? [])).catch(() => {});
+    beaconApi
+      .getDatasets()
+      .then(res => setDatasets(res.datasets ?? []))
+      .catch(err => {
+        console.error('Failed to load datasets:', err);
+        toast.error('Could not load available datasets');
+      });
   }, []);
 
   const { data, isLoading, error } = useVariantQuery(

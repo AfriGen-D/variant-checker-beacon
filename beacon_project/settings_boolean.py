@@ -119,6 +119,10 @@ CACHES = {
         'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/0',
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            # Bound cache I/O so a slow/hung Redis can't block request workers
+            # indefinitely (boolean mode previously set no timeouts).
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
         },
         'KEY_PREFIX': 'beacon_boolean',
         'TIMEOUT': CACHE_TIMEOUT,
