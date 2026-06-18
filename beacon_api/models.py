@@ -22,6 +22,10 @@ class Variant(me.Document):
     variant_type = me.StringField()
     dataset_ids = me.ListField(me.StringField())
 
+    # Aggregate population allele frequency. For the aggregate reference panel
+    # this is public summary data, served at GA4GH 'aggregated' granularity.
+    allele_frequency = me.FloatField()
+
     # Embedded annotations
     annotations = me.EmbeddedDocumentListField(VariantAnnotation)
     

@@ -36,6 +36,7 @@ class VariantRecord:
     alternate_bases: str
     variant_type: str
     annotations: List[Dict] = None
+    allele_frequency: float = None
     created: str = None
     updated: str = None
 
@@ -189,7 +190,10 @@ class VCFTransformer:
         
         # Extract annotations
         annotations = self._extract_annotations(variant)
-        
+
+        # Aggregate allele frequency, given a queryable home (not just the blob)
+        allele_frequency = self._extract_allele_frequency(variant)
+
         return VariantRecord(
             id=variant_id,
             assembly_id=assembly_id,
@@ -199,8 +203,28 @@ class VCFTransformer:
             reference_bases=variant.REF,
             alternate_bases=','.join(variant.ALT) if isinstance(variant.ALT, list) else str(variant.ALT),
             variant_type=variant_type,
-            annotations=annotations
+            annotations=annotations,
+            allele_frequency=allele_frequency,
         )
+
+    @staticmethod
+    def _extract_allele_frequency(variant) -> float:
+        """Return the AF from the VCF INFO field as a float, or None.
+
+        cyvcf2's INFO exposes `.get(key)`; for a multi-allelic site AF may be a
+        tuple/list, in which case we take the first ALT allele's frequency.
+        """
+        if not hasattr(variant, 'INFO'):
+            return None
+        af = variant.INFO.get('AF')
+        if af is None:
+            return None
+        if isinstance(af, (list, tuple)):
+            af = af[0] if af else None
+        try:
+            return float(af) if af is not None else None
+        except (TypeError, ValueError):
+            return None
 
     def _determine_variant_type(self, ref: str, alt: List[str]) -> str:
         """Determine variant type based on REF and ALT alleles."""
@@ -235,11 +259,14 @@ class VCFTransformer:
         if 'ANN' in info:
             annotations.extend(self._parse_snpeff_annotations(info['ANN']))
             
-        # Extract basic annotations
+        # Extract basic annotations. Use INFO.get(): cyvcf2's INFO object is not
+        # a dict and does not support `in`/subscript reliably, so the previous
+        # `field in info` / `info[field]` form silently extracted nothing.
         basic_annotation = {}
         for field in ['GENE', 'AF', 'AC', 'AN']:
-            if field in info:
-                basic_annotation[field.lower()] = info[field]
+            val = info.get(field)
+            if val is not None:
+                basic_annotation[field.lower()] = val
                 
         if basic_annotation:
             annotations.append({

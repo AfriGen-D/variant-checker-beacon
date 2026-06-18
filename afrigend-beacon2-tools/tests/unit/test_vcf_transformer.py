@@ -130,6 +130,24 @@ class TestCreateVariantRecord:
         rec = self.t._create_variant_record(v, "GRCh38")
         assert rec.variant_type == "INS"
 
+    def test_allele_frequency_extracted(self):
+        """AF in INFO is captured into the queryable allele_frequency field."""
+        v = _make_variant(info={"AF": 0.5})
+        rec = self.t._create_variant_record(v, "GRCh38")
+        assert rec.allele_frequency == 0.5
+
+    def test_allele_frequency_tuple_takes_first(self):
+        """Multi-allelic AF (tuple) → first ALT allele's frequency."""
+        v = _make_variant(info={"AF": (0.33, 0.01)})
+        rec = self.t._create_variant_record(v, "GRCh38")
+        assert rec.allele_frequency == 0.33
+
+    def test_allele_frequency_absent_is_none(self):
+        """No AF in INFO → allele_frequency stays None (no fabricated value)."""
+        v = _make_variant(info={"DP": 50})
+        rec = self.t._create_variant_record(v, "GRCh38")
+        assert rec.allele_frequency is None
+
 
 # ===================================================================
 # TestPassesQualityFilters
