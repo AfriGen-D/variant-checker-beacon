@@ -24,7 +24,7 @@ export function exportCsv(
   query: VariantQuery,
   responses: DatasetAlleleResponse[]
 ) {
-  const header = 'assembly,chromosome,start,ref,alt,dataset_name,dataset_id,exists';
+  const header = 'assembly,chromosome,start,ref,alt,dataset_name,dataset_id,exists,allele_frequency';
   const rows = responses.map(r =>
     [
       query.assemblyId,
@@ -35,6 +35,7 @@ export function exportCsv(
       `"${(r.datasetName ?? '').replace(/"/g, '""')}"`,
       r.datasetId,
       r.exists,
+      r.alleleFrequency ?? '',
     ].join(',')
   );
   const csv = [header, ...rows].join('\n');

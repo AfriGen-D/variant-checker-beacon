@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Separator } from '@/components/ui/Separator';
 import { FilterSelector } from '@/components/query/FilterSelector';
+import { UniversalSearch } from '@/components/query/UniversalSearch';
+import { RecentSearches } from '@/components/query/RecentSearches';
+import type { ParsedVariant } from '@/lib/utils/parseVariant';
 import type { Dataset } from '@/lib/api/types';
 
 interface VariantQueryFormProps {
@@ -30,6 +33,8 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
     watch,
     formState: { errors },
     reset,
+    getValues,
+    setFocus,
   } = useForm<VariantQueryFormData>({
     resolver: zodResolver(variantQuerySchema),
     defaultValues: initialValues ?? {
@@ -56,15 +61,56 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
     return `${chr}:${range}${allele}`;
   })();
 
+  // Load values into the form and immediately run the query — shared by the
+  // example chips, recent-search chips and a fully-specified universal search.
+  const applyAndSubmit = (data: VariantQueryFormData) => {
+    reset(data);
+    handleSubmit(onSubmit)();
+  };
+
+  // A pasted/typed variant fills the structured fields. If it's complete we run
+  // it; if alleles are missing we just populate and focus the next gap so the
+  // user can finish by hand. Current assembly is preserved (rarely in a paste).
+  const handleParsed = (parsed: ParsedVariant) => {
+    const current = getValues();
+    const merged: VariantQueryFormData = {
+      assemblyId: current.assemblyId || parsed.data.assemblyId || 'GRCh38',
+      referenceName: parsed.data.referenceName ?? '',
+      start: parsed.data.start as number,
+      end: parsed.data.end,
+      referenceBases: parsed.data.referenceBases ?? '',
+      alternateBases: parsed.data.alternateBases ?? '',
+    };
+    if (parsed.complete) {
+      applyAndSubmit(merged);
+    } else {
+      reset(merged);
+      if (!merged.referenceBases) setFocus('referenceBases');
+      else if (!merged.alternateBases) setFocus('alternateBases');
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Query Genomic Variants</CardTitle>
+        <CardTitle>Check a variant</CardTitle>
+        <p className="text-sm text-muted-foreground mt-1">
+          Paste a variant in almost any notation, or fill in the fields below.
+        </p>
       </CardHeader>
       <CardContent>
+        {/* Universal "paste anything" search */}
+        <div className="mb-4">
+          <UniversalSearch onParsed={handleParsed} />
+        </div>
+
+        <div className="mb-6">
+          <RecentSearches onSelect={applyAndSubmit} />
+        </div>
+
         {/* Example query chips */}
         <div className="mb-6">
-          <p className="text-sm text-muted-foreground mb-2">Try an example:</p>
+          <p className="text-sm text-muted-foreground mb-2">Or try an example:</p>
           <div className="flex flex-wrap gap-2">
             {EXAMPLE_QUERIES.map((ex) => (
               <button
@@ -72,16 +118,19 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
                 type="button"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-colors"
                 title={ex.description}
-                onClick={() => {
-                  reset(ex.query);
-                  handleSubmit(onSubmit)();
-                }}
+                onClick={() => applyAndSubmit(ex.query as unknown as VariantQueryFormData)}
               >
                 {ex.label}
                 <span className="text-primary/60 text-xs">({ex.description})</span>
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="flex items-center gap-3 mb-4">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Or enter coordinates</span>
+          <div className="h-px flex-1 bg-border" />
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -181,7 +230,7 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
 
           <div className="flex gap-3">
             <Button type="submit" className="flex-1" disabled={isLoading}>
-              {isLoading ? 'Querying...' : 'Query Beacon'}
+              {isLoading ? 'Checking...' : 'Check variant'}
             </Button>
             <Button type="button" variant="outline" onClick={() => reset()}>
               Reset
@@ -191,8 +240,9 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
 
         <Separator className="mt-6" />
         <p className="text-sm text-muted-foreground mt-4">
-          <strong>Boolean Mode:</strong> This query will return YES or NO indicating whether the
-          variant exists in the database.
+          This is a privacy-preserving lookup: it reports <strong>whether</strong> a variant is
+          present in each dataset — not who carries it. Use the database links on the results to
+          jump to allele frequencies and clinical detail.
         </p>
       </CardContent>
     </Card>

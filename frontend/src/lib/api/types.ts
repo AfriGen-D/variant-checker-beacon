@@ -20,12 +20,35 @@ export interface BeaconResponseContent<T = unknown> {
   results?: T[];
   info?: BeaconInfo;
   datasetAlleleResponses?: DatasetAlleleResponse[];
+  beaconHandovers?: Handover[];
 }
 
 export interface DatasetAlleleResponse {
   datasetId: string;
   datasetName: string;
   exists: boolean;
+  resultsHandover?: Handover[];
+  // Allele frequency lifted from the resultSet's frequencyInPopulations
+  // (present at 'aggregated' granularity when the beacon has it).
+  alleleFrequency?: number;
+}
+
+// GA4GH Beacon v2 frequencyInPopulations (aggregated granularity)
+export interface PopulationFrequency {
+  population: string;
+  alleleFrequency: number;
+}
+
+export interface FrequencyInPopulation {
+  source: string;
+  sourceReference: string;
+  frequencies: PopulationFrequency[];
+}
+
+export interface Handover {
+  handoverType: { id: string; label: string };
+  url: string;
+  note?: string;
 }
 
 export interface BeaconInfo {
@@ -64,6 +87,7 @@ export interface VariantQuery {
   variantType?: string; // e.g., "SNP", "DEL", "INS"
   variantMinLength?: number;
   variantMaxLength?: number;
+  requestedGranularity?: 'boolean' | 'count' | 'aggregated' | 'record';
 }
 
 // Genomic Variant Model
@@ -149,8 +173,6 @@ export interface Dataset {
 }
 
 export interface DatasetsListResponse {
-  apiVersion: string;
-  beaconId: string;
   datasets: Dataset[];
 }
 

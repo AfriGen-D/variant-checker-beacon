@@ -93,7 +93,13 @@ function HomePageInner() {
 
   return (
     <Container className="py-8">
-      <h1 className="text-4xl font-bold mb-8">Genomic Variant Query</h1>
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold tracking-tight">Variant checker</h1>
+        <p className="text-lg text-muted-foreground mt-2 max-w-2xl">
+          Look up any genomic variant across African reference panels, then jump straight to
+          allele frequencies, annotations and clinical detail in the major public databases.
+        </p>
+      </div>
 
       <div className="space-y-6">
         <VariantQueryForm
@@ -136,6 +142,7 @@ function HomePageInner() {
           query={submittedQuery}
           selectedDatasetIds={selectedDatasetIds}
           rawResponse={data}
+          beaconHandovers={data?.response?.beaconHandovers}
         />
       </div>
     </Container>
