@@ -1,15 +1,18 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { InfoHint } from '@/components/ui/InfoHint';
 
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
   options: { value: string; label: string }[];
   placeholder?: string;
+  /** Optional plain-language help shown via an ⓘ next to the label. */
+  tooltip?: string;
 }
 
 const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, options, placeholder, className, id, ...props }, ref) => {
+  ({ label, error, options, placeholder, tooltip, className, id, ...props }, ref) => {
     const generatedId = React.useId();
     const selectId = id ?? generatedId;
     const errorId = error ? `${selectId}-error` : undefined;
@@ -23,6 +26,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
                 *
               </span>
             )}
+            {tooltip && <InfoHint text={tooltip} label={`About ${label}`} className="ml-1" />}
           </label>
         )}
         <select

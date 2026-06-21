@@ -6,12 +6,13 @@ import dynamic from 'next/dynamic';
 import { useVariantQuery } from '@/lib/hooks/useBeaconQuery';
 import { useQueryStore } from '@/lib/store/queryStore';
 import { Container } from '@/components/layout/Container';
-import { VariantQueryForm } from '@/components/query/VariantQueryForm';
+import { QueryConsole } from '@/components/query/QueryConsole';
 import { DatasetResults } from '@/components/results/DatasetResults';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { VariantQuery, Dataset } from '@/lib/api/types';
 import type { VariantQueryFormData } from '@/lib/utils/validators';
+import type { QueryMode } from '@/lib/utils/constants';
 import { queryFromSearchParams, searchParamsFromQuery } from '@/lib/utils/queryParams';
 import toast from 'react-hot-toast';
 import { getErrorMessage, isRateLimitError } from '@/lib/api/client';
@@ -20,14 +21,15 @@ import { beaconApi } from '@/lib/api/beacon';
 function HomePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  // Parse initial query (+ mode) from URL params
+  const initialParsed = useRef(queryFromSearchParams(searchParams));
+  const [mode, setMode] = useState<QueryMode>(initialParsed.current?.mode ?? 'variant');
   const [submittedQuery, setSubmittedQuery] = useState<VariantQuery | null>(null);
   const [filters, setFilters] = useState<string[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDatasetIds, setSelectedDatasetIds] = useState<string[]>([]);
   const { addQuery } = useQueryStore();
 
-  // Parse initial query from URL params
-  const initialQuery = useRef(queryFromSearchParams(searchParams));
   const autoSubmitted = useRef(false);
 
   useEffect(() => {
@@ -45,26 +47,33 @@ function HomePageInner() {
     !!submittedQuery
   );
 
-  const handleSubmit = (formData: VariantQueryFormData) => {
-    const query: VariantQuery = {
-      assemblyId: formData.assemblyId,
-      referenceName: formData.referenceName,
-      start: formData.start,
-      end: formData.end,
-      referenceBases: formData.referenceBases,
-      alternateBases: formData.alternateBases,
-    };
+  const handleSubmit = (query: VariantQuery, submittedMode: QueryMode) => {
+    setMode(submittedMode);
     setSubmittedQuery(query);
     // Update URL without scroll or history entry
-    router.replace(`/?${searchParamsFromQuery(formData)}`, { scroll: false });
+    router.replace(`/?${searchParamsFromQuery(query, submittedMode)}`, { scroll: false });
     toast.success('Query submitted');
   };
 
   // Auto-submit on mount if URL has valid params
   useEffect(() => {
-    if (initialQuery.current && !autoSubmitted.current) {
+    const parsed = initialParsed.current;
+    if (parsed && !autoSubmitted.current) {
       autoSubmitted.current = true;
-      handleSubmit(initialQuery.current);
+      const data = parsed.variant ?? parsed.region;
+      if (data) {
+        handleSubmit(
+          {
+            assemblyId: data.assemblyId,
+            referenceName: data.referenceName,
+            start: data.start,
+            end: data.end,
+            referenceBases: (data as VariantQueryFormData).referenceBases,
+            alternateBases: (data as VariantQueryFormData).alternateBases,
+          },
+          parsed.mode
+        );
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -102,15 +111,18 @@ function HomePageInner() {
       </div>
 
       <div className="space-y-6">
-        <VariantQueryForm
+        <QueryConsole
+          mode={mode}
+          onModeChange={setMode}
           onSubmit={handleSubmit}
           isLoading={isLoading}
           filters={filters}
           onFiltersChange={setFilters}
-          initialValues={initialQuery.current}
           datasets={datasets}
           selectedDatasetIds={selectedDatasetIds}
           onSelectedDatasetsChange={setSelectedDatasetIds}
+          initialVariant={initialParsed.current?.variant ?? null}
+          initialRegion={initialParsed.current?.region ?? null}
         />
 
         {isLoading && (

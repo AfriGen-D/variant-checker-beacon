@@ -7,6 +7,25 @@ const validChromosomes = CHROMOSOMES.map((c) => c.value);
 // Valid base values
 const validBases = BASES.join('');
 
+// Backend caps a region scan at 10M bases (validators.py: MAX_RANGE).
+export const MAX_REGION_SPAN = 10_000_000;
+
+// Shared field builders so variant and region modes validate coordinates the
+// same way (the only difference between modes is which fields are required).
+const assemblyField = z.string().min(1, 'Assembly is required');
+const chromosomeField = z.string().refine((val) => validChromosomes.includes(val as any), {
+  message: 'Invalid chromosome. Must be 1-22, X, Y, or MT',
+});
+const positionField = (label: string) =>
+  z.coerce
+    .number({
+      required_error: `${label} is required`,
+      invalid_type_error: `${label} must be a number`,
+    })
+    .int(`${label} must be an integer`)
+    .min(MIN_GENOMIC_POSITION, `${label} must be >= ${MIN_GENOMIC_POSITION}`)
+    .max(MAX_GENOMIC_POSITION, `${label} must be <= ${MAX_GENOMIC_POSITION.toLocaleString()}`);
+
 /**
  * Zod schema for variant query form
  */
@@ -61,3 +80,26 @@ export const variantQuerySchema = z.object({
 );
 
 export type VariantQueryFormData = z.infer<typeof variantQuerySchema>;
+
+/**
+ * Zod schema for the Region (range) query form. Both start and end are
+ * required and there are no allele fields — the backend returns every variant
+ * overlapping [start, end] (capped at 10M bases).
+ */
+export const regionQuerySchema = z
+  .object({
+    assemblyId: assemblyField,
+    referenceName: chromosomeField,
+    start: positionField('Start position'),
+    end: positionField('End position'),
+  })
+  .refine((data) => data.end >= data.start, {
+    message: 'End position must be greater than or equal to start position',
+    path: ['end'],
+  })
+  .refine((data) => data.end - data.start <= MAX_REGION_SPAN, {
+    message: `Region must be ${MAX_REGION_SPAN.toLocaleString()} bases or fewer`,
+    path: ['end'],
+  });
+
+export type RegionQueryFormData = z.infer<typeof regionQuerySchema>;
