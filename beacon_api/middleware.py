@@ -14,7 +14,14 @@ class RateLimitMiddleware:
     """
     Simple rate limiting middleware for public API protection
     """
-    
+
+    # Spec/discovery endpoints — metadata only, no genomic data. Matched on any
+    # path segment so both /api/datasets and /api/datasets/<id> qualify.
+    DISCOVERY_ENDPOINTS = frozenset({
+        'info', 'service-info', 'configuration', 'entry_types', 'map',
+        'datasets', 'cohorts', 'filtering_terms',
+    })
+
     def __init__(self, get_response):
         self.get_response = get_response
         self.rate_limits = getattr(settings, 'BEACON_RATE_LIMITS', {})
@@ -58,6 +65,12 @@ class RateLimitMiddleware:
             return 'variants'
         elif '/individuals' in path:
             return 'individuals'
+        elif set(path.strip('/').split('/')) & self.DISCOVERY_ENDPOINTS:
+            # Cheap, cacheable metadata. Beacon Network aggregators and GA4GH
+            # registries poll these continuously, so they need a far larger
+            # budget than data queries or federation partners get throttled
+            # out and report this beacon as down.
+            return 'discovery'
         else:
             return 'default'
     
@@ -76,19 +89,27 @@ class RateLimitMiddleware:
                 'day': 86400,
             }.get(period, 3600)
             
-            # Create cache key
-            cache_key = f'rate_limit:{ip}:{endpoint}'
-            
+            # Bucket the key by wall-clock window. Deriving the window from the
+            # clock — rather than relying on the key's TTL to end it — is what
+            # makes the counter actually roll over: a new window is a new key.
+            # Keying without the window is a latch, because cache.set() pushed
+            # the expiry forward on every accepted request, so a client polling
+            # more often than once per period never got a fresh window and
+            # stayed blocked once it hit the limit.
+            window = int(time.time()) // period_seconds
+            cache_key = f'rate_limit:{ip}:{endpoint}:{window}'
+
             # Get current count
             current = cache.get(cache_key, 0)
-            
+
             if current >= count:
                 return False
-            
-            # Increment counter
-            cache.set(cache_key, current + 1, period_seconds)
+
+            # Increment counter. The TTL is only a cleanup mechanism now — it
+            # outlives the window so a key can never survive into the next one.
+            cache.set(cache_key, current + 1, period_seconds + 60)
             return True
-            
+
         except Exception as e:
             logger.error(f"Error parsing rate limit: {e}")
             return True  # Allow on error
