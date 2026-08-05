@@ -1,8 +1,18 @@
 import axios, { AxiosError, AxiosInstance } from 'axios';
 import type { BeaconError } from './types';
 
-// Get API base URL from environment
-const API_BASE_URL = process.env.NEXT_PUBLIC_BEACON_API_URL || 'http://localhost:8000';
+// Get API base URL from environment.
+//
+// Defaults to '' — a RELATIVE /api — because every real deployment serves the
+// UI and the API behind one proxy (nginx routes /api/* to the API container).
+// Defaulting to an absolute localhost URL is a production landmine: the value
+// is inlined into the browser bundle at build time, and `'' || 'http://…'`
+// falls through, so even explicitly passing an empty build-arg produced a
+// bundle that called localhost:8000 from users' browsers.
+//
+// Running the frontend standalone (no proxy) must set the variable explicitly;
+// compose/docker-compose-frontend.yml already does.
+const API_BASE_URL = process.env.NEXT_PUBLIC_BEACON_API_URL ?? '';
 
 // Create Axios instance
 export const beaconClient: AxiosInstance = axios.create({
