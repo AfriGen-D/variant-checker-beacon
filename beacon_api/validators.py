@@ -138,40 +138,46 @@ class QueryParameterSanitizer:
     
     @classmethod
     def sanitize(cls, value):
-        """Sanitize input value"""
+        """Sanitize input value, walking nested containers.
+
+        Containers are recursed into rather than stringified. ``str()`` on a
+        dict or list renders Python's repr, whose quotes and braces then match
+        INJECTION_PATTERNS -- so a spec-shaped POST body would be rejected as
+        an injection attempt over punctuation this method itself produced. GET
+        never hit it because ``request.GET.dict()`` yields flat strings, while
+        POST passes ``request.data`` through with ``requestParameters`` still
+        an object.
+
+        Recursing also tightens the check rather than loosening it: every key
+        and every leaf is now matched individually, so a Mongo operator key
+        such as ``$where`` is still caught by the ``\\$[\\w]+`` pattern instead
+        of being one substring inside a much larger flattened blob.
+        """
         if value is None:
             return None
-            
+
+        if isinstance(value, dict):
+            return {cls.sanitize(key): cls.sanitize(item) for key, item in value.items()}
+
+        if isinstance(value, (list, tuple)):
+            return [cls.sanitize(item) for item in value]
+
         value = str(value)
-        
+
         # Check for injection patterns
         for pattern in cls.INJECTION_PATTERNS:
             if re.search(pattern, value, re.IGNORECASE):
                 raise ValidationError("Invalid characters detected in query")
-        
+
         # Remove any non-printable characters
         value = ''.join(char for char in value if char.isprintable())
-        
+
         return value.strip()
-    
+
     @classmethod
     def sanitize_query_params(cls, params):
         """Sanitize all query parameters"""
-        sanitized = {}
-        
-        for key, value in params.items():
-            # Sanitize key
-            key = cls.sanitize(key)
-            
-            # Sanitize value (handle lists)
-            if isinstance(value, list):
-                value = [cls.sanitize(v) for v in value]
-            else:
-                value = cls.sanitize(value)
-                
-            sanitized[key] = value
-            
-        return sanitized
+        return {cls.sanitize(key): cls.sanitize(value) for key, value in params.items()}
 
 
 class BeaconQuerySerializer(serializers.Serializer):
