@@ -35,6 +35,10 @@ class VariantRecord:
     reference_bases: str
     alternate_bases: str
     variant_type: str
+    # Datasets this variant belongs to. The API filters on `dataset_ids` to
+    # attribute a hit (and its allele frequency) to a dataset, so a record
+    # without it is invisible per-dataset.
+    dataset_ids: List[str] = None
     annotations: List[Dict] = None
     allele_frequency: float = None
     created: str = None
@@ -47,6 +51,8 @@ class VariantRecord:
             self.updated = datetime.now().isoformat()
         if self.annotations is None:
             self.annotations = []
+        if self.dataset_ids is None:
+            self.dataset_ids = []
 
 
 @dataclass
@@ -76,9 +82,15 @@ class IndividualRecord:
 class VCFTransformer:
     """Main class for transforming VCF files to Beacon v2format."""
 
-    def __init__(self, config_path: str = None):
-        """Initialize the VCF transformer with configuration."""
+    def __init__(self, config_path: str = None, dataset_id: str = None):
+        """Initialize the VCF transformer with configuration.
+
+        `dataset_id` is the Beacon dataset every variant from this VCF belongs
+        to. It falls back to `dataset.id` in the config file so a pipeline that
+        only passes --config can still attribute its variants.
+        """
         self.config = self._load_config(config_path)
+        self.dataset_id = dataset_id or (self.config.get('dataset') or {}).get('id')
         self._setup_logging()
         self.stats = {
             'variants_processed': 0,
@@ -147,11 +159,12 @@ class VCFTransformer:
                     self.stats['variants_filtered'] += 1
                     continue
 
-                # Create variant record with population-level stats
-                variant_record = self._create_variant_record(variant, assembly_id)
-                yield variant_record
-
-                self.stats['variants_processed'] += 1
+                # One record per ALT allele. A multi-allelic site written as a
+                # single "T,G" document can never match an exact-allele query
+                # and would carry ALT-1's frequency on the joined string.
+                for alt_index in range(max(1, len(self._alt_alleles(variant)))):
+                    yield self._create_variant_record(variant, assembly_id, alt_index)
+                    self.stats['variants_processed'] += 1
 
         except Exception as e:
             self.logger.error(f"Error parsing VCF file: {e}")
@@ -175,19 +188,47 @@ class VCFTransformer:
                 
         return True
 
-    def _create_variant_record(self, variant, assembly_id: str) -> VariantRecord:
-        """Create a VariantRecord from a cyvcf2 variant."""
-        # Generate variant ID
-        variant_id = f"{variant.CHROM}:{variant.POS}:{variant.REF}:{','.join(variant.ALT)}"
-        
-        # Determine variant type
-        variant_type = self._determine_variant_type(variant.REF, variant.ALT)
-        
-        # Extract annotations
-        annotations = self._extract_annotations(variant)
+    @staticmethod
+    def _alt_alleles(variant) -> List[str]:
+        """Return the site's ALT alleles as a list of strings."""
+        alt = getattr(variant, 'ALT', None)
+        if alt is None:
+            return []
+        if isinstance(alt, (list, tuple)):
+            return [str(a) for a in alt if a is not None]
+        return [str(alt)]
+
+    @staticmethod
+    def _per_allele_value(value, alt_index: int):
+        """Narrow a per-ALT INFO value (AF, AC, ...) to a single ALT allele.
+
+        A sequence carries one entry per ALT; anything shorter than alt_index+1
+        is treated as absent rather than mispaired with the wrong allele. A
+        scalar describes only the first ALT.
+        """
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)):
+            return value[alt_index] if alt_index < len(value) else None
+        return value if alt_index == 0 else None
+
+    def _create_variant_record(self, variant, assembly_id: str,
+                               alt_index: int = 0) -> VariantRecord:
+        """Create a VariantRecord for one ALT allele of a cyvcf2 variant."""
+        alts = self._alt_alleles(variant)
+        alt_allele = alts[alt_index] if alt_index < len(alts) else ''
+
+        # Natural key — unique per emitted allele, not per site
+        variant_id = f"{variant.CHROM}:{variant.POS}:{variant.REF}:{alt_allele}"
+
+        # Determine variant type for this allele specifically
+        variant_type = self._determine_variant_type(variant.REF, [alt_allele])
+
+        # Extract annotations, with AF/AC narrowed to this allele
+        annotations = self._extract_annotations(variant, alt_index)
 
         # Aggregate allele frequency, given a queryable home (not just the blob)
-        allele_frequency = self._extract_allele_frequency(variant)
+        allele_frequency = self._extract_allele_frequency(variant, alt_index)
 
         return VariantRecord(
             id=variant_id,
@@ -196,26 +237,23 @@ class VCFTransformer:
             start=variant.POS - 1,  # Convert to 0-based coordinates
             end=variant.POS - 1 + len(variant.REF),
             reference_bases=variant.REF,
-            alternate_bases=','.join(variant.ALT) if isinstance(variant.ALT, list) else str(variant.ALT),
+            alternate_bases=alt_allele,
             variant_type=variant_type,
+            dataset_ids=[self.dataset_id] if self.dataset_id else [],
             annotations=annotations,
             allele_frequency=allele_frequency,
         )
 
-    @staticmethod
-    def _extract_allele_frequency(variant) -> float:
-        """Return the AF from the VCF INFO field as a float, or None.
+    @classmethod
+    def _extract_allele_frequency(cls, variant, alt_index: int = 0) -> float:
+        """Return this ALT allele's AF from the VCF INFO field as a float, or None.
 
-        cyvcf2's INFO exposes `.get(key)`; for a multi-allelic site AF may be a
-        tuple/list, in which case we take the first ALT allele's frequency.
+        cyvcf2's INFO exposes `.get(key)`; for a multi-allelic site AF is a
+        tuple/list with one entry per ALT, so it is indexed by alt_index.
         """
         if not hasattr(variant, 'INFO'):
             return None
-        af = variant.INFO.get('AF')
-        if af is None:
-            return None
-        if isinstance(af, (list, tuple)):
-            af = af[0] if af else None
+        af = cls._per_allele_value(variant.INFO.get('AF'), alt_index)
         try:
             return float(af) if af is not None else None
         except (TypeError, ValueError):
@@ -223,9 +261,9 @@ class VCFTransformer:
 
     def _determine_variant_type(self, ref: str, alt: List[str]) -> str:
         """Determine variant type based on REF and ALT alleles."""
-        if not alt or alt[0] is None:
+        if not alt or not alt[0]:
             return "unknown"
-            
+
         alt_allele = alt[0]
         
         if len(ref) == len(alt_allele) == 1:
@@ -237,8 +275,8 @@ class VCFTransformer:
         else:
             return "COMPLEX"  # Complex variant
 
-    def _extract_annotations(self, variant) -> List[Dict]:
-        """Extract variant annotations from INFO field."""
+    def _extract_annotations(self, variant, alt_index: int = 0) -> List[Dict]:
+        """Extract variant annotations from INFO field for one ALT allele."""
         annotations = []
         
         if not hasattr(variant, 'INFO'):
@@ -257,9 +295,13 @@ class VCFTransformer:
         # Extract basic annotations. Use INFO.get(): cyvcf2's INFO object is not
         # a dict and does not support `in`/subscript reliably, so the previous
         # `field in info` / `info[field]` form silently extracted nothing.
+        # AF and AC are per-ALT, so they are narrowed to the allele this record
+        # describes; GENE and AN are site-level and kept whole.
         basic_annotation = {}
         for field in ['GENE', 'AF', 'AC', 'AN']:
             val = info.get(field)
+            if field in ('AF', 'AC'):
+                val = self._per_allele_value(val, alt_index)
             if val is not None:
                 basic_annotation[field.lower()] = val
                 
@@ -433,6 +475,7 @@ class VCFTransformer:
             'input_file': str(vcf_path),
             'output_directory': str(output_path),
             'assembly_id': assembly_id or self.config['vcf']['default_assembly'],
+            'dataset_id': self.dataset_id,
             'statistics': self.stats,
             'files_created': [
                 'variants_batch.jsonl',
@@ -485,6 +528,12 @@ def main():
         '-m', '--metadata',
         help='Path to individual metadata file (CSV/TSV/XLSX)'
     )
+
+    parser.add_argument(
+        '-d', '--dataset-id',
+        help='Beacon dataset ID these variants belong to '
+             '(defaults to dataset.id in the config file)'
+    )
     
     parser.add_argument(
         '-c', '--config',
@@ -504,7 +553,7 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
     
     # Initialize transformer
-    transformer = VCFTransformer(args.config)
+    transformer = VCFTransformer(args.config, dataset_id=args.dataset_id)
     
     try:
         # Transform VCF

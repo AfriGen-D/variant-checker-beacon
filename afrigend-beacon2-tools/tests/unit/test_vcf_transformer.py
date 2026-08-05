@@ -136,17 +136,132 @@ class TestCreateVariantRecord:
         rec = self.t._create_variant_record(v, "GRCh38")
         assert rec.allele_frequency == 0.5
 
-    def test_allele_frequency_tuple_takes_first(self):
-        """Multi-allelic AF (tuple) → first ALT allele's frequency."""
-        v = _make_variant(info={"AF": (0.33, 0.01)})
-        rec = self.t._create_variant_record(v, "GRCh38")
-        assert rec.allele_frequency == 0.33
+    def test_allele_frequency_tuple_indexed_by_alt(self):
+        """Multi-allelic AF (tuple) → the frequency of the ALT being emitted."""
+        v = _make_variant(alt=["T", "G"], info={"AF": (0.33, 0.01)})
+        assert self.t._create_variant_record(v, "GRCh38", 0).allele_frequency == 0.33
+        assert self.t._create_variant_record(v, "GRCh38", 1).allele_frequency == 0.01
 
     def test_allele_frequency_absent_is_none(self):
         """No AF in INFO → allele_frequency stays None (no fabricated value)."""
         v = _make_variant(info={"DP": 50})
         rec = self.t._create_variant_record(v, "GRCh38")
         assert rec.allele_frequency is None
+
+
+# ===================================================================
+# TestMultiAllelicSplit
+# ===================================================================
+
+class TestMultiAllelicSplit:
+    """A multi-allelic site must become one queryable record per ALT allele."""
+
+    def setup_method(self):
+        self.t = _make_transformer()
+
+    def _records(self, variant):
+        mock_vcf = MagicMock()
+        mock_vcf.samples = ["S1"]
+        mock_vcf.__iter__ = MagicMock(return_value=iter([variant]))
+        with patch("vcf_transform.vcf_to_beacon.cyvcf2.VCF", return_value=mock_vcf):
+            return list(self.t.parse_vcf("fake.vcf", "GRCh38"))
+
+    def test_one_record_per_alt(self):
+        v = _make_variant(chrom="1", pos=100, ref="A", alt=["T", "G"], info={"DP": 20})
+        recs = self._records(v)
+        assert [r.alternate_bases for r in recs] == ["T", "G"]
+
+    def test_no_joined_allele_string(self):
+        """The unqueryable "T,G" form must not be emitted at all."""
+        v = _make_variant(alt=["T", "G"], info={"DP": 20})
+        assert all("," not in r.alternate_bases for r in self._records(v))
+
+    def test_ids_unique_per_allele(self):
+        v = _make_variant(chrom="2", pos=500, ref="C", alt=["G", "T"], info={"DP": 20})
+        ids = [r.id for r in self._records(v)]
+        assert ids == ["2:500:C:G", "2:500:C:T"]
+        assert len(set(ids)) == 2
+
+    def test_af_paired_with_its_own_allele(self):
+        v = _make_variant(alt=["T", "G"], info={"AF": (0.2, 0.8), "DP": 20})
+        recs = self._records(v)
+        assert [r.allele_frequency for r in recs] == [0.2, 0.8]
+
+    def test_variant_type_per_allele(self):
+        """ALT-2 is an insertion even though ALT-1 is an SNV."""
+        v = _make_variant(ref="A", alt=["T", "ATCG"], info={"DP": 20})
+        assert [r.variant_type for r in self._records(v)] == ["SNV", "INS"]
+
+    def test_ac_narrowed_to_the_allele(self):
+        v = _make_variant(alt=["T", "G"], info={"AC": (7, 3), "AN": 100, "DP": 20})
+        info_anns = [
+            [a for a in r.annotations if a["source"] == "INFO"][0]["annotations"]
+            for r in self._records(v)
+        ]
+        assert [a["ac"] for a in info_anns] == [7, 3]
+        assert [a["an"] for a in info_anns] == [100, 100]  # AN is site-level
+
+    def test_missing_af_for_second_alt_is_none(self):
+        v = _make_variant(alt=["T", "G"], info={"AF": (0.2,), "DP": 20})
+        assert [r.allele_frequency for r in self._records(v)] == [0.2, None]
+
+    def test_single_alt_still_yields_one_record(self):
+        v = _make_variant(alt=["T"], info={"DP": 20})
+        assert len(self._records(v)) == 1
+
+    def test_no_alt_yields_one_unknown_record(self):
+        v = _make_variant(info={"DP": 20})
+        v.ALT = []  # a site with no ALT allele (e.g. a "." record)
+        recs = self._records(v)
+        assert len(recs) == 1
+        assert recs[0].variant_type == "unknown"
+
+    def test_stats_count_emitted_records(self):
+        v = _make_variant(alt=["T", "G", "C"], info={"DP": 20})
+        self._records(v)
+        assert self.t.stats["variants_processed"] == 3
+
+
+# ===================================================================
+# TestDatasetAttribution
+# ===================================================================
+
+class TestDatasetAttribution:
+    """Variants must carry dataset_ids — the API filters on it per dataset."""
+
+    def test_dataset_id_from_constructor(self):
+        t = _make_transformer()
+        t.dataset_id = "H3A-V6-AFR"
+        rec = t._create_variant_record(_make_variant(), "GRCh38")
+        assert rec.dataset_ids == ["H3A-V6-AFR"]
+
+    def test_dataset_id_argument_wins(self):
+        cfg = {
+            "vcf": {"default_assembly": "GRCh38", "quality_filters": {}},
+            "processing": {"batch_size": 100, "show_progress": False, "log_level": "WARNING"},
+            "dataset": {"id": "from-config"},
+        }
+        with patch.object(VCFTransformer, "_load_config", return_value=cfg):
+            assert VCFTransformer(dataset_id="from-cli").dataset_id == "from-cli"
+            assert VCFTransformer().dataset_id == "from-config"
+
+    def test_no_dataset_id_gives_empty_list(self):
+        rec = _make_transformer()._create_variant_record(_make_variant(), "GRCh38")
+        assert rec.dataset_ids == []
+
+    def test_dataset_ids_survive_serialization(self, tmp_path):
+        """The field must reach the JSONL under the exact name the API queries."""
+        t = _make_transformer()
+        t.dataset_id = "H3A-V6-AFR"
+        out = tmp_path / "out"
+        v = _make_variant(pos=100, alt=["T"], info={"DP": 20})
+        mock_vcf = MagicMock()
+        mock_vcf.samples = ["S1"]
+        mock_vcf.__iter__ = MagicMock(return_value=iter([v]))
+        with patch("vcf_transform.vcf_to_beacon.cyvcf2.VCF", return_value=mock_vcf):
+            t.transform_vcf_to_beacon("fake.vcf", str(out))
+        rec = json.loads((out / "variants_batch.jsonl").read_text().strip().splitlines()[0])
+        assert rec["dataset_ids"] == ["H3A-V6-AFR"]
 
 
 # ===================================================================
@@ -264,16 +379,25 @@ class TestExtractAlleleFrequency:
         v = MagicMock(spec=[])
         assert self.t._extract_allele_frequency(v) is None
 
-    def test_multiallelic_af_takes_first_alt(self):
+    def test_multiallelic_af_is_per_allele(self):
         """
-        A multi-allelic site carries one AF per ALT. Only ALT[0]'s frequency is
-        kept, while alternate_bases is written as the joined "T,G" string — so
-        the retained AF describes an allele that cannot itself be queried.
-        This pins current behaviour; splitting multi-allelics at ingest is the
-        real fix.
+        A multi-allelic site carries one AF per ALT, and each ALT is emitted as
+        its own record — so the AF is indexed by the allele being described.
         """
         v = _make_variant(info={"AF": (0.1, 0.9)})
-        assert self.t._extract_allele_frequency(v) == pytest.approx(0.1)
+        assert self.t._extract_allele_frequency(v, 0) == pytest.approx(0.1)
+        assert self.t._extract_allele_frequency(v, 1) == pytest.approx(0.9)
+
+    def test_af_shorter_than_alt_list_returns_none(self):
+        """Fewer AF entries than ALTs must yield None, never a mispaired AF."""
+        v = _make_variant(alt=["T", "G"], info={"AF": (0.1,)})
+        assert self.t._extract_allele_frequency(v, 1) is None
+
+    def test_scalar_af_is_not_reused_for_second_alt(self):
+        """A scalar AF describes ALT[0] only."""
+        v = _make_variant(alt=["T", "G"], info={"AF": 0.4})
+        assert self.t._extract_allele_frequency(v, 0) == pytest.approx(0.4)
+        assert self.t._extract_allele_frequency(v, 1) is None
 
     def test_empty_af_sequence_returns_none(self):
         v = _make_variant(info={"AF": []})

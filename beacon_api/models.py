@@ -264,17 +264,58 @@ class FilteringTerm(me.Document):
 
 class QueryLog(me.Document):
     """Audit log of API queries served by this beacon. Best-effort write from
-    QueryLogMiddleware — failures here must not break the beacon response."""
+    QueryLogMiddleware — failures here must not break the beacon response.
+
+    Personal-data notes
+    -------------------
+    A row pairs a requester with the exact genomic locus they asked about, so
+    it can support a health inference about an identifiable person. Two
+    controls apply:
+
+    * ``client_ip`` never holds a full address. QueryLogMiddleware writes the
+      anonymised network prefix produced by
+      ``beacon_api.privacy.anonymize_client_ip`` (IPv4 /24, IPv6 /48). The
+      field name and type are unchanged so the Grafana textfile collector that
+      reads this collection keeps working.
+    * ``expires_at`` drives a MongoDB TTL index, so rows delete themselves.
+      Retention comes from ``BEACON_QUERYLOG_RETENTION_DAYS``.
+
+    Why the TTL hangs off a dedicated ``expires_at`` field rather than
+    ``expireAfterSeconds`` on ``created``: deployed instances already carry a
+    plain ``created_1`` index, and MongoDB refuses to create a second index
+    with the same key pattern and different options (IndexOptionsConflict) —
+    the TTL would silently never be built. A new field has no such conflict and
+    needs no index to be dropped. ``expireAfterSeconds: 0`` means "delete once
+    the stored date is reached", so the retention window is computed per row at
+    write time; changing the setting affects new rows, not ones already written.
+
+    Rows written before this field existed have no ``expires_at`` and are
+    therefore never expired by the TTL. Clear them once, on each deployment:
+        db.query_logs.deleteMany({expires_at: {$exists: false}})
+    """
     query_type = me.StringField(required=True, max_length=50)
     query_params = me.DictField()
     response_status = me.IntField(required=True)
     response_time_ms = me.IntField(required=True)
     hits_count = me.IntField(default=0)
+    # Anonymised network prefix (e.g. "196.21.218.0/24"), never a full address.
     client_ip = me.StringField(max_length=64)
     created = me.DateTimeField(default=datetime.utcnow)
+    expires_at = me.DateTimeField()
 
     meta = {
         'collection': 'query_logs',
-        'indexes': ['created', 'query_type', '-created'],
+        'indexes': [
+            'created',
+            'query_type',
+            '-created',
+            {'fields': ['expires_at'],
+             'name': 'query_log_ttl',
+             'expireAfterSeconds': 0},
+        ],
+        # Left on (unlike the read-only data models) so the TTL index is built
+        # on first write and retention starts applying without an operator
+        # step. Safe precisely because the TTL hangs off a new field: there is
+        # no pre-existing index on `expires_at` for it to conflict with.
         'auto_create_index': True,
     }

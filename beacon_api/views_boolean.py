@@ -13,6 +13,12 @@ from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
 from .query_semantics import build_position_filter, POSITION_FILTER_KEYS
+from .query_sanitizers import (
+    UnsafeQueryValue, reject_operator_keys, scalar_query_value,
+)
+from .privacy import (
+    DEFAULT_AF_DECIMALS, DEFAULT_AF_MIN_PUBLISHED, publish_allele_frequency,
+)
 from .utils import (
     create_boolean_response, build_beacon_response,
     build_info_envelope, build_query_envelope, build_collection_envelope,
@@ -139,9 +145,22 @@ def variant_query_boolean(request):
                         'datasetName': ds.name,
                         'exists': ds_variant is not None,
                     }
-                    if want_frequency and ds_variant is not None and ds_variant.allele_frequency is not None:
-                        dar['alleleFrequency'] = ds_variant.allele_frequency
-                        returned_granularity = 'aggregated'
+                    if want_frequency and ds_variant is not None:
+                        # Never publish the raw stored float: an AF of exactly
+                        # k/2N inverts to an exact carrier count, which is the
+                        # beacon re-identification primitive. Round onto a grid
+                        # coarser than 1/2N and suppress the small cells
+                        # entirely. See beacon_api/privacy.py.
+                        af = publish_allele_frequency(
+                            ds_variant.allele_frequency,
+                            decimals=getattr(settings, 'BEACON_AF_DECIMALS',
+                                             DEFAULT_AF_DECIMALS),
+                            min_frequency=getattr(settings, 'BEACON_AF_MIN_PUBLISHED',
+                                                  DEFAULT_AF_MIN_PUBLISHED),
+                        )
+                        if af is not None:
+                            dar['alleleFrequency'] = af
+                            returned_granularity = 'aggregated'
                     dataset_allele_responses.append(dar)
 
         logger.info(f"Variant query: exists={exists}, params={validated_params.get('referenceName', 'unknown')}")
@@ -199,26 +218,44 @@ def individual_query_boolean(request):
         else:
             query_params = request.data
 
-        # Basic validation
+        # A POST body is arbitrary JSON, so a "value" may be a dict. Every
+        # value below therefore has to be proven scalar BEFORE it is allowed
+        # anywhere near the query: `{"diseaseCode": {"$regex": "^A"}}` would
+        # otherwise reach Mongo verbatim as a live operator, turning this
+        # endpoint's boolean answer into an oracle for binary-searching an
+        # individual's disease code one character at a time, and
+        # `{"sex": {...}}` would 500 on `.upper()`.
+        try:
+            reject_operator_keys(query_params)
+            sex = scalar_query_value(query_params.get('sex'), 'sex')
+            disease_code = scalar_query_value(
+                query_params.get('diseaseCode'), 'diseaseCode'
+            )
+        except UnsafeQueryValue as e:
+            logger.warning(f"Rejected unsafe individual query: {e}")
+            return _error_response(status.HTTP_400_BAD_REQUEST, str(e))
+
+        # Keys are literals chosen here and values are now guaranteed scalar
+        # strings, so nothing user-supplied can occupy an operator position.
         mongo_query = {}
 
-        # Sex query
-        if 'sex' in query_params:
-            sex = query_params['sex'].upper()
-            if sex in ['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']:
+        if sex:
+            sex = sex.upper()
+            if sex in ('MALE', 'FEMALE', 'OTHER', 'UNKNOWN'):
                 mongo_query['sex'] = sex
 
-        # Disease query
-        if 'diseaseCode' in query_params:
-            mongo_query['diseases.diseaseCode'] = query_params['diseaseCode']
+        if disease_code:
+            mongo_query['diseases.diseaseCode'] = disease_code
 
-        # Check if individual exists
-        exists = False
+        # Existence only needs one document. `.limit(1).count()` did NOT bound
+        # the work — MongoEngine's count() ignores the limit unless asked to
+        # honour it — so an attacker-shaped query could make the server count
+        # the whole collection on an unauthenticated endpoint.
         if mongo_query:
-            exists = Individual.objects(__raw__=mongo_query).limit(1).count() > 0
+            exists = Individual.objects(__raw__=mongo_query).first() is not None
         else:
             # No query parameters - check if any individuals exist
-            exists = Individual.objects.limit(1).count() > 0
+            exists = Individual.objects.first() is not None
 
         logger.info(f"Individual query: exists={exists}")
 

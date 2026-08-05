@@ -3,6 +3,13 @@ from rest_framework.response import Response
 from rest_framework import status
 from datetime import datetime
 from .models import Variant, Dataset, Individual, Biosample, Analysis, Cohort, FilteringTerm
+# Every value below that comes from a JSON body is arbitrary JSON, and
+# MongoEngine hands a dict straight through to PyMongo as an operator document
+# ({"sex": {"$ne": null}}). These guards prove each value is a single scalar
+# before it reaches a filter. See beacon_api/query_sanitizers.py.
+from .query_sanitizers import (
+    UnsafeQueryValue, safe_regex_term, scalar_query_mapping, scalar_query_value,
+)
 from django.http import Http404
 import json
 import logging
@@ -258,7 +265,7 @@ def variant_list(request):
             
             # Handle Beacon v2 query structure
             if 'query' in query_data:
-                query = query_data['query']
+                query = scalar_query_mapping(query_data['query'])
                 # Apply genomic query parameters
                 if 'assemblyId' in query:
                     variants = variants.filter(assembly_id=query['assemblyId'])
@@ -276,10 +283,10 @@ def variant_list(request):
             # Handle Beacon v2 filters
             if 'filters' in query_data:
                 for filter_item in query_data['filters']:
-                    filter_id = filter_item.get('id')
-                    filter_value = filter_item.get('value')
+                    filter_id = safe_regex_term(filter_item.get('id'), 'filter id')
+                    filter_value = safe_regex_term(filter_item.get('value'), 'filter value')
                     filter_operator = filter_item.get('operator', '=')
-                    
+
                     # Apply filters based on ontology terms or specific fields
                     if filter_id and filter_value:
                         # Custom filter logic based on your data model
@@ -380,7 +387,7 @@ def individuals_list(request):
             
             # Handle Beacon v2 query structure
             if 'query' in query_data:
-                query = query_data['query']
+                query = scalar_query_mapping(query_data['query'])
                 if 'id' in query:
                     individuals = individuals.filter(id=query['id'])
                 if 'sex' in query:
@@ -389,9 +396,9 @@ def individuals_list(request):
             # Handle Beacon v2 filters (ontology terms, phenotypes, etc.)
             if 'filters' in query_data:
                 for filter_item in query_data['filters']:
-                    filter_id = filter_item.get('id')
-                    filter_value = filter_item.get('value')
-                    
+                    filter_id = safe_regex_term(filter_item.get('id'), 'filter id')
+                    filter_value = safe_regex_term(filter_item.get('value'), 'filter value')
+
                     # Apply filters based on ontology terms
                     if filter_id and filter_value:
                         # Example: phenotype filters
@@ -463,7 +470,7 @@ def biosamples_list(request):
                 
             # Handle Beacon v2 query structure
             if 'query' in query_data:
-                query = query_data['query']
+                query = scalar_query_mapping(query_data['query'])
                 if 'id' in query:
                     biosamples = biosamples.filter(id=query['id'])
                 if 'individualId' in query:
@@ -474,9 +481,9 @@ def biosamples_list(request):
             # Handle Beacon v2 filters (ontology terms, tissue types, etc.)
             if 'filters' in query_data:
                 for filter_item in query_data['filters']:
-                    filter_id = filter_item.get('id')
-                    filter_value = filter_item.get('value')
-                    
+                    filter_id = safe_regex_term(filter_item.get('id'), 'filter id')
+                    filter_value = safe_regex_term(filter_item.get('value'), 'filter value')
+
                     # Apply filters based on ontology terms
                     if filter_id and filter_value:
                         # Example: tissue type filters
@@ -548,7 +555,7 @@ def analyses_list(request):
             
             # Handle Beacon v2 query structure
             if 'query' in query_data:
-                query = query_data['query']
+                query = scalar_query_mapping(query_data['query'])
                 if 'id' in query:
                     analyses = analyses.filter(id=query['id'])
                 if 'biosampleId' in query:
@@ -559,9 +566,9 @@ def analyses_list(request):
             # Handle Beacon v2 filters (ontology terms, analysis types, etc.)
             if 'filters' in query_data:
                 for filter_item in query_data['filters']:
-                    filter_id = filter_item.get('id')
-                    filter_value = filter_item.get('value')
-                    
+                    filter_id = safe_regex_term(filter_item.get('id'), 'filter id')
+                    filter_value = safe_regex_term(filter_item.get('value'), 'filter value')
+
                     # Apply filters based on ontology terms
                     if filter_id and filter_value:
                         # Example: analysis type filters
@@ -633,7 +640,7 @@ def cohorts_list(request):
                 
             # Handle Beacon v2 query structure
             if 'query' in query_data:
-                query = query_data['query']
+                query = scalar_query_mapping(query_data['query'])
                 if 'id' in query:
                     cohorts = cohorts.filter(id=query['id'])
                 if 'name' in query:
@@ -644,9 +651,9 @@ def cohorts_list(request):
             # Handle Beacon v2 filters (ontology terms, cohort types, etc.)
             if 'filters' in query_data:
                 for filter_item in query_data['filters']:
-                    filter_id = filter_item.get('id')
-                    filter_value = filter_item.get('value')
-                    
+                    filter_id = safe_regex_term(filter_item.get('id'), 'filter id')
+                    filter_value = safe_regex_term(filter_item.get('value'), 'filter value')
+
                     # Apply filters based on ontology terms
                     if filter_id and filter_value:
                         # Example: cohort type filters
@@ -703,8 +710,10 @@ def filtering_terms_list(request):
         if ontology:
             terms = terms.filter(ontology=ontology)
         if label:
-            terms = terms.filter(label__icontains=label)
-            
+            # A substring match is a collection scan, so cap the term length —
+            # otherwise the caller chooses how much CPU the match costs.
+            terms = terms.filter(label__icontains=safe_regex_term(label, 'label'))
+
         return BeaconResponse.success(
             data=MongoSerializer.serialize_many(terms),
             message="Filtering terms query successful"
@@ -718,27 +727,29 @@ def filtering_terms_list(request):
             
             # Handle Beacon v2 query structure
             if 'query' in query_data:
-                query = query_data['query']
+                query = scalar_query_mapping(query_data['query'])
                 if 'id' in query:
                     terms = terms.filter(id=query['id'])
                 if 'ontology' in query:
                     terms = terms.filter(ontology=query['ontology'])
                 if 'label' in query:
-                    terms = terms.filter(label__icontains=query['label'])
-            
+                    terms = terms.filter(
+                        label__icontains=safe_regex_term(query['label'], 'label')
+                    )
+
             # Handle Beacon v2 filters (ontology-specific searches)
             if 'filters' in query_data:
                 for filter_item in query_data['filters']:
-                    filter_id = filter_item.get('id')
-                    filter_value = filter_item.get('value')
-                    
+                    filter_id = safe_regex_term(filter_item.get('id'), 'filter id')
+                    filter_value = safe_regex_term(filter_item.get('value'), 'filter value')
+
                     # Apply filters based on ontology terms
                     if filter_id and filter_value:
                         # Example: ontology-specific filters
                         if 'ontology' in filter_id.lower():
                             terms = terms.filter(ontology=filter_value)
                         elif 'scope' in filter_id.lower():
-                            terms = terms.filter(scope__contains=filter_value)
+                            terms = terms.filter(term_category=filter_value)
             
             return BeaconResponse.success(
                 data=MongoSerializer.serialize_many(terms),
@@ -792,15 +803,25 @@ def beacon_query(request):
                 'alternateBases': alternate_bases
             }
         else:  # POST method
-            # Extract query from request body
-            query_params = {
-                'assemblyId': request.data.get('assemblyId'),
-                'referenceName': request.data.get('referenceName'),
-                'start': request.data.get('start'),
-                'referenceBases': request.data.get('referenceBases'),
-                'alternateBases': request.data.get('alternateBases')
-            }
-        
+            # Extract query from request body. Every value is scalar-ised
+            # first: these go into Variant.objects(**query) as equality
+            # lookups, and a dict value would be executed as a Mongo operator.
+            try:
+                query_params = {
+                    key: scalar_query_value(request.data.get(key), key)
+                    for key in ('assemblyId', 'referenceName', 'start',
+                                'referenceBases', 'alternateBases')
+                }
+            except UnsafeQueryValue as e:
+                # Bad input from the caller, not a server fault — the outer
+                # handler would otherwise report this as a 500.
+                logger.warning(f"Rejected unsafe beacon query: {e}")
+                return BeaconResponse.error(
+                    message=str(e),
+                    code="INVALID_PARAMETER",
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+
         # Check for required parameters
         missing_params = []
         for param in ['assemblyId', 'referenceName', 'start', 'referenceBases']:

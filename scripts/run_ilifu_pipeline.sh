@@ -24,6 +24,11 @@ OUTPUT_DIR="${OUTPUT_DIR:-/cbio/users/mamana/beacon_output}"
 BEACON_HOST="${BEACON_HOST:-<your-ssh-alias>}"
 MONGO_DB="${MONGO_DB:-beacon_db}"
 ASSEMBLY="${ASSEMBLY:-GRCh38}"
+# Written into every variant's dataset_ids. The API filters per-dataset results
+# on this field, so a wrong or empty value makes every dataset answer "not
+# found" and suppresses allele frequencies entirely. Must match the id in the
+# datasets collection — production serves H3A_V6_AFR.
+DATASET_ID="${DATASET_ID:-H3A_V6_AFR}"
 TUNNEL_PORT="${TUNNEL_PORT:-27017}"
 
 # --- Parse arguments ---
@@ -45,6 +50,9 @@ Arguments:
 Options:
   --phenotypes <file>       Path to phenotype data (CSV/TSV/XLSX)
   --assembly <id>           Genome assembly (default: GRCh38)
+  --dataset-id <id>         Dataset to attribute variants to (default: H3A_V6_AFR).
+                            Must match an id in the datasets collection, or the
+                            API reports "not found" for every dataset.
   --output <dir>            Output directory (default: /cbio/users/mamana/beacon_output)
   --batch-size <n>          Processing batch size (default: 5000)
   --workers <n>             Parallel workers (default: 4)
@@ -60,6 +68,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --phenotypes)   PHENOTYPE_FILE="$2"; shift 2 ;;
         --assembly)     ASSEMBLY="$2"; shift 2 ;;
+        --dataset-id)   DATASET_ID="$2"; shift 2 ;;
         --output)       OUTPUT_DIR="$2"; shift 2 ;;
         --batch-size)   BATCH_SIZE="$2"; shift 2 ;;
         --workers)      MAX_WORKERS="$2"; shift 2 ;;
@@ -83,6 +92,7 @@ step() { echo; echo "━━━ Step $1: $2 ━━━"; }
 log "AfriGend Beacon v2 — ILIFU Data Loading Pipeline"
 log "VCF:       $VCF_FILE"
 log "Assembly:  $ASSEMBLY"
+log "Dataset:   $DATASET_ID"
 log "Output:    $OUTPUT_DIR"
 log "Phenotype: ${PHENOTYPE_FILE:-none}"
 log "Batch:     $BATCH_SIZE, Workers: $MAX_WORKERS"
@@ -202,6 +212,7 @@ log "Output: $VCF_OUTPUT"
 python "$TOOLS_DIR/vcf_transform/vcf_to_beacon.py" "$VCF_FILE" \
     --output "$VCF_OUTPUT" \
     --assembly "$ASSEMBLY" \
+    --dataset-id "$DATASET_ID" \
     --config "$ILIFU_CONFIG" \
     --verbose
 
