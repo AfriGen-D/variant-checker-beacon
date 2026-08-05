@@ -124,37 +124,32 @@ class VCFTransformer:
         )
         self.logger = logging.getLogger(__name__)
 
-    def parse_vcf(self, vcf_path: str, assembly_id: str = None) -> Iterator[Tuple[VariantRecord, str]]:
-        """Parse VCF file and yield variant records."""
+    def parse_vcf(self, vcf_path: str, assembly_id: str = None) -> Iterator[VariantRecord]:
+        """Parse VCF file and yield variant records (no per-sample genotype extraction)."""
         if assembly_id is None:
             assembly_id = self.config['vcf']['default_assembly']
 
         self.logger.info(f"Starting VCF parsing: {vcf_path}")
-        
+
         try:
             vcf = cyvcf2.VCF(vcf_path)
             total_variants = 0
-            
+
             # Get sample names (individuals)
             samples = vcf.samples
             self.stats['individuals_found'] = len(samples)
-            
+
             for variant in vcf:
                 total_variants += 1
-                
+
                 # Apply quality filters
                 if not self._passes_quality_filters(variant):
                     self.stats['variants_filtered'] += 1
                     continue
 
-                # Create variant record
+                # Create variant record with population-level stats
                 variant_record = self._create_variant_record(variant, assembly_id)
-                
-                # Process each sample's genotype
-                for sample_idx, sample_name in enumerate(samples):
-                    genotype_info = self._extract_genotype_info(variant, sample_idx)
-                    if genotype_info:
-                        yield variant_record, sample_name, genotype_info
+                yield variant_record
 
                 self.stats['variants_processed'] += 1
 
@@ -163,7 +158,7 @@ class VCFTransformer:
             self.stats['errors'] += 1
             raise
 
-        self.logger.info(f"VCF parsing completed. Processed {total_variants} variants")
+        self.logger.info(f"VCF parsing completed. Total: {total_variants}, passed filters: {self.stats['variants_processed']}")
 
     def _passes_quality_filters(self, variant) -> bool:
         """Check if variant passes quality filters."""
@@ -316,15 +311,25 @@ class VCFTransformer:
                 'phased': bool(gt[2])
             }
             
-            # Extract FORMAT fields
-            if hasattr(variant, 'format'):
-                format_data = variant.format()
-                if 'DP' in format_data:
-                    genotype_info['depth'] = format_data['DP'][sample_idx]
-                if 'GQ' in format_data:
-                    genotype_info['quality'] = format_data['GQ'][sample_idx]
-                if 'AD' in format_data:
-                    genotype_info['allelic_depths'] = format_data['AD'][sample_idx]
+            # Extract FORMAT fields (cyvcf2: variant.format(field) returns numpy array)
+            try:
+                dp = variant.format('DP')
+                if dp is not None:
+                    genotype_info['depth'] = int(dp[sample_idx][0])
+            except (KeyError, IndexError):
+                pass
+            try:
+                gq = variant.format('GQ')
+                if gq is not None:
+                    genotype_info['quality'] = int(gq[sample_idx][0])
+            except (KeyError, IndexError):
+                pass
+            try:
+                ad = variant.format('AD')
+                if ad is not None:
+                    genotype_info['allelic_depths'] = ad[sample_idx].tolist()
+            except (KeyError, IndexError):
+                pass
                     
             return genotype_info
             
@@ -398,46 +403,29 @@ class VCFTransformer:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize output collections
+        # Process VCF — variant-level only (no per-sample genotypes for Boolean mode)
         variants = []
-        individuals = []
-        variant_individual_map = {}
-        
-        # Process VCF file
         batch_size = self.config['processing']['batch_size']
         show_progress = self.config['processing']['show_progress']
-        
+
         with tqdm(desc="Processing variants", disable=not show_progress) as pbar:
-            for variant_record, sample_name, genotype_info in self.parse_vcf(vcf_path, assembly_id):
-                # Add variant to collection
-                variant_dict = asdict(variant_record)
-                variants.append(variant_dict)
-                
-                # Track variant-individual relationships
-                if variant_record.id not in variant_individual_map:
-                    variant_individual_map[variant_record.id] = {}
-                variant_individual_map[variant_record.id][sample_name] = genotype_info
-                
+            for variant_record in self.parse_vcf(vcf_path, assembly_id):
+                variants.append(asdict(variant_record))
                 pbar.update(1)
-                
-                # Write in batches
+
                 if len(variants) >= batch_size:
                     self._write_batch(variants, output_path / "variants_batch.jsonl")
                     variants = []
 
-        # Write remaining variants
         if variants:
             self._write_batch(variants, output_path / "variants_batch.jsonl")
 
-        # Create individuals
+        # Create individuals list from VCF header (no genotype data)
         individuals = self.create_individuals_from_vcf(vcf_path, metadata_file)
-        individual_dicts = [asdict(ind) for ind in individuals]
-        
-        # Write individuals
-        self._write_json_file(individual_dicts, output_path / "individuals.json")
-        
-        # Write variant-individual mapping
-        self._write_json_file(variant_individual_map, output_path / "variant_genotypes.json")
+        self._write_json_file([asdict(ind) for ind in individuals], output_path / "individuals.json")
+
+        # Write empty genotypes file (placeholder for Secure mode later)
+        self._write_json_file([], output_path / "variant_genotypes.json")
         
         # Generate summary
         summary = {

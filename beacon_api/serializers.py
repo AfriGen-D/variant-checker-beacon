@@ -97,39 +97,65 @@ class DatasetSerializer(serializers.Serializer):
         return instance
 
 
-class VariantInDatasetSerializer(serializers.ModelSerializer):
+class VariantInDatasetSerializer(serializers.Serializer):
     variant = VariantSerializer(read_only=True)
     dataset = DatasetSerializer(read_only=True)
     individual = IndividualSerializer(read_only=True)
-    
-    class Meta:
-        model = VariantInDataset
-        fields = '__all__'
+    genotype = serializers.CharField(required=False, allow_null=True)
+    allele_frequency = serializers.FloatField(required=False, allow_null=True)
+    created = serializers.DateTimeField(read_only=True)
+    updated = serializers.DateTimeField(read_only=True)
 
 
 # New serializers for Beacon v2 compliance
-class BiosampleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Biosample
-        fields = '__all__'
+class BiosampleSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    individual_id = serializers.CharField()
+    description = serializers.CharField(required=False, allow_null=True)
+    sample_type = serializers.CharField(required=False, allow_null=True)
+    collection_date = serializers.DateTimeField(required=False, allow_null=True)
+    tissue = serializers.CharField(required=False, allow_null=True)
+    sample_processing = serializers.CharField(required=False, allow_null=True)
+    material_used = serializers.CharField(required=False, allow_null=True)
+    additional_properties = serializers.DictField(required=False)
+    created = serializers.DateTimeField(read_only=True)
+    updated = serializers.DateTimeField(read_only=True)
 
 
-class AnalysisSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Analysis
-        fields = '__all__'
+class AnalysisSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    biosample_id = serializers.CharField(required=False, allow_null=True)
+    analysis_type = serializers.CharField()
+    analysis_date = serializers.DateTimeField(required=False, allow_null=True)
+    software = serializers.CharField(required=False, allow_null=True)
+    software_version = serializers.CharField(required=False, allow_null=True)
+    pipeline_name = serializers.CharField(required=False, allow_null=True)
+    pipeline_version = serializers.CharField(required=False, allow_null=True)
+    analysis_results = serializers.DictField(required=False)
+    created = serializers.DateTimeField(read_only=True)
+    updated = serializers.DateTimeField(read_only=True)
 
 
-class CohortSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Cohort
-        fields = '__all__'
+class CohortSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    name = serializers.CharField()
+    description = serializers.CharField(required=False, allow_null=True)
+    cohort_type = serializers.CharField(required=False, allow_null=True)
+    cohort_size = serializers.IntegerField(required=False, allow_null=True)
+    individual_ids = serializers.ListField(child=serializers.CharField(), required=False)
+    created = serializers.DateTimeField(read_only=True)
+    updated = serializers.DateTimeField(read_only=True)
 
 
-class FilteringTermSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = FilteringTerm
-        fields = '__all__'
+class FilteringTermSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    label = serializers.CharField()
+    description = serializers.CharField(required=False, allow_null=True)
+    ontology = serializers.CharField(required=False, allow_null=True)
+    ontology_id = serializers.CharField(required=False, allow_null=True)
+    term_category = serializers.CharField(required=False, allow_null=True)
+    created = serializers.DateTimeField(read_only=True)
+    updated = serializers.DateTimeField(read_only=True)
 
 
 # Beacon specific serializers for the API responses

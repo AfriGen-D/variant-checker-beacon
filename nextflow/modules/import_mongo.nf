@@ -1,3 +1,32 @@
+process CLEAR_COLLECTIONS {
+    tag "clear:${collections}"
+    label 'local_only'
+
+    input:
+    val collections  // comma-separated collection names
+
+    output:
+    val true
+
+    script:
+    """
+    python3 -c "
+from pymongo import MongoClient
+client = MongoClient('${params.mongo_uri}')
+db = client['${params.mongo_db}']
+for coll in '${collections}'.split(','):
+    coll = coll.strip()
+    count = db[coll].count_documents({})
+    if count > 0:
+        db[coll].drop()
+        print(f'Dropped {coll} ({count} documents)')
+    else:
+        print(f'Collection {coll} already empty')
+client.close()
+"
+    """
+}
+
 process IMPORT_TO_MONGO {
     tag "${dataset_name}:${collection}"
     label 'local_only'

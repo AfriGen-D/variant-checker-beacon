@@ -1,6 +1,6 @@
 # Beacon Boolean Mode - Quick Start Guide
 
-Welcome to the **H3ABioNet Beacon** Boolean mode! This guide will help you start querying genomic data using our privacy-preserving discovery API.
+Welcome to the **AfriGen-D Beacon** Boolean mode! This guide will help you start querying genomic data using our privacy-preserving discovery API at [`beacon.afrigen-d.org`](https://beacon.afrigen-d.org/).
 
 ---
 
@@ -35,7 +35,7 @@ Welcome to the **H3ABioNet Beacon** Boolean mode! This guide will help you start
 Try this simple query in your terminal:
 
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?\
+curl "https://beacon.afrigen-d.org/api/g_variants?\
 assemblyId=GRCh38&\
 referenceName=1&\
 start=100000&\
@@ -54,7 +54,7 @@ That's it! You've just queried the Beacon.
 
 ## API Endpoint
 
-**Production**: `https://beacon2.h3abionet.org-ilifu/api/`
+**Production**: `https://beacon.afrigen-d.org/api/`
 
 **Local Development**: `http://localhost:8000/api/`
 
@@ -67,7 +67,7 @@ That's it! You've just queried the Beacon.
 **Query**: Does the dataset contain a specific SNP at position 100,000 on chromosome 1?
 
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?\
+curl "https://beacon.afrigen-d.org/api/g_variants?\
 assemblyId=GRCh38&\
 referenceName=1&\
 start=100000&\
@@ -86,22 +86,22 @@ Check multiple positions sequentially:
 
 ```bash
 # Variant 1
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?assemblyId=GRCh38&referenceName=1&start=100000"
+curl "https://beacon.afrigen-d.org/api/g_variants?assemblyId=GRCh38&referenceName=1&start=100000"
 # Response: {"exists": true}
 
 # Variant 2
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?assemblyId=GRCh38&referenceName=1&start=200000"
+curl "https://beacon.afrigen-d.org/api/g_variants?assemblyId=GRCh38&referenceName=1&start=200000"
 # Response: {"exists": false}
 
 # Variant 3
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?assemblyId=GRCh38&referenceName=2&start=300000"
+curl "https://beacon.afrigen-d.org/api/g_variants?assemblyId=GRCh38&referenceName=2&start=300000"
 # Response: {"exists": true}
 ```
 
 ### Example 3: Query Chromosome X
 
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?\
+curl "https://beacon.afrigen-d.org/api/g_variants?\
 assemblyId=GRCh38&\
 referenceName=X&\
 start=12345678&\
@@ -112,7 +112,7 @@ alternateBases=C"
 ### Example 4: Query Mitochondrial DNA
 
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?\
+curl "https://beacon.afrigen-d.org/api/g_variants?\
 assemblyId=GRCh38&\
 referenceName=MT&\
 start=10000&\
@@ -123,7 +123,7 @@ alternateBases=G"
 ### Example 5: Indel Query
 
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?\
+curl "https://beacon.afrigen-d.org/api/g_variants?\
 assemblyId=GRCh38&\
 referenceName=3&\
 start=5000000&\
@@ -135,7 +135,7 @@ alternateBases=A"
 
 ```bash
 # Minimum query (position only)
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?\
+curl "https://beacon.afrigen-d.org/api/g_variants?\
 assemblyId=GRCh38&\
 referenceName=1&\
 start=100000"
@@ -192,7 +192,7 @@ import requests
 
 def query_beacon(assembly, chrom, position, ref=None, alt=None):
     """Query Beacon Boolean mode"""
-    url = "https://beacon2.h3abionet.org-ilifu/api/g_variants"
+    url = "https://beacon.afrigen-d.org/api/g_variants"
 
     params = {
         "assemblyId": assembly,
@@ -239,7 +239,7 @@ async function queryBeacon(assembly, chrom, position, ref, alt) {
     if (ref) params.append('referenceBases', ref);
     if (alt) params.append('alternateBases', alt);
 
-    const url = `https://beacon2.h3abionet.org-ilifu/api/g_variants?${params}`;
+    const url = `https://beacon.afrigen-d.org/api/g_variants?${params}`;
 
     const response = await fetch(url);
     const data = await response.json();
@@ -276,7 +276,7 @@ library(httr)
 library(jsonlite)
 
 query_beacon <- function(assembly, chrom, position, ref = NULL, alt = NULL) {
-  url <- "https://beacon2.h3abionet.org-ilifu/api/g_variants"
+  url <- "https://beacon.afrigen-d.org/api/g_variants"
 
   query_params <- list(
     assemblyId = assembly,
@@ -327,7 +327,7 @@ print(variants)
 #!/bin/bash
 # beacon_query.sh
 
-BEACON_URL="https://beacon2.h3abionet.org-ilifu/api/g_variants"
+BEACON_URL="https://beacon.afrigen-d.org/api/g_variants"
 ASSEMBLY="GRCh38"
 
 query_variant() {
@@ -376,7 +376,7 @@ query_variant 2 300000 C A
 Response headers include rate limit information:
 
 ```bash
-curl -i "https://beacon2.h3abionet.org-ilifu/api/g_variants?assemblyId=GRCh38&referenceName=1&start=100000"
+curl -i "https://beacon.afrigen-d.org/api/g_variants?assemblyId=GRCh38&referenceName=1&start=100000"
 ```
 
 **Headers**:
@@ -391,7 +391,7 @@ X-RateLimit-Reset: 1706270400
 After 50 requests in an hour:
 
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?..."
+curl "https://beacon.afrigen-d.org/api/g_variants?..."
 ```
 
 **Response** (HTTP 429):
@@ -442,7 +442,7 @@ Cache-Control: public, max-age=300
 
 **Invalid Chromosome (400)**:
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?referenceName=999&start=100000"
+curl "https://beacon.afrigen-d.org/api/g_variants?referenceName=999&start=100000"
 ```
 
 ```json
@@ -456,7 +456,7 @@ curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?referenceName=999&start
 
 **Negative Position (400)**:
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?referenceName=1&start=-100"
+curl "https://beacon.afrigen-d.org/api/g_variants?referenceName=1&start=-100"
 ```
 
 ```json
@@ -470,7 +470,7 @@ curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?referenceName=1&start=-
 
 **Invalid DNA Bases (400)**:
 ```bash
-curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?referenceName=1&start=100000&referenceBases=XYZ"
+curl "https://beacon.afrigen-d.org/api/g_variants?referenceName=1&start=100000&referenceBases=XYZ"
 ```
 
 ```json
@@ -498,7 +498,7 @@ curl "https://beacon2.h3abionet.org-ilifu/api/g_variants?referenceName=1&start=1
 
 ### Q: What data is available?
 
-**A**: The Boolean mode provides access to genomic variant data from African populations. For dataset details, visit: https://beacon2.h3abionet.org-ilifu/
+**A**: The Boolean mode provides access to genomic variant data from African populations. For dataset details, visit: https://beacon.afrigen-d.org/
 
 ### Q: Can I get detailed variant information?
 
@@ -578,7 +578,7 @@ See [API Reference](docs/API_REFERENCE.md#authentication) for details.
 
 ## Quick Reference
 
-**Base URL**: `https://beacon2.h3abionet.org-ilifu/api/g_variants`
+**Base URL**: `https://beacon.afrigen-d.org/api/g_variants`
 
 **Required Parameters**: `assemblyId`, `referenceName`, `start`
 
