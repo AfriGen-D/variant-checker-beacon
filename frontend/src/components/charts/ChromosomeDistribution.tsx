@@ -70,8 +70,11 @@ export function ChromosomeDistribution({ datasets }: ChromosomeDistributionProps
                   borderRadius: '6px',
                   fontSize: '12px',
                 }}
-                formatter={(value: number) => [value.toLocaleString(), axisLabel]}
-                labelFormatter={(label: string, payload) =>
+                formatter={(value) => [
+                  typeof value === 'number' ? value.toLocaleString() : String(value ?? ''),
+                  axisLabel,
+                ]}
+                labelFormatter={(label, payload) =>
                   payload?.[0]?.payload?.fullName ?? label
                 }
               />
