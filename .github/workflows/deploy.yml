@@ -134,7 +134,10 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
-          file: ./frontend/docker/Dockerfile
+          # The repo tracks frontend/Dockerfile. Production additionally has an
+          # untracked frontend/docker/Dockerfile at a different path — both files
+          # are byte-identical, so building from the tracked one is equivalent.
+          file: ./frontend/Dockerfile
           push: true
           tags: |
             ${{ env.FRONTEND_IMAGE }}:${{ steps.version.outputs.version }}
