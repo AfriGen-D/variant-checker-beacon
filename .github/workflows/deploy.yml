@@ -1,0 +1,319 @@
+name: Deploy to Production
+
+# Tag-triggered production deploy, modelled on the myPandos dash pipeline
+# (validate -> build -> deploy -> verify -> cleanup -> notify).
+#
+# Difference from dash: the beacon hosts do NOT run Docker Swarm
+# (`docker info` reports `Swarm: inactive`), so there is no `docker service
+# update --update-failure-action rollback` to lean on. Deployment is plain
+# `docker compose`, and the rollback is done explicitly — capture the running
+# image ID first, and re-pin it if the health check fails.
+#
+# Why images rather than `git checkout` on the host: the production tree at
+# ~/afrigend-beacon2 is hand-managed and diverges from git by thousands of
+# lines (and has no `origin` remote). Checking out a tag there would destroy
+# prod-local edits. Shipping images makes the host's git state irrelevant.
+#
+# Required repository secrets:
+#   DEPLOY_HOST      - production host (154.114.10.84)
+#   DEPLOY_USERNAME  - SSH user on that host
+#   DEPLOY_SSH_KEY   - private half of a DEDICATED CI deploy key, whose public
+#                      half is in the host's ~/.ssh/authorized_keys. Do not
+#                      reuse a personal identity key here.
+#
+# Deploy either by pushing a semver tag, or from Actions -> Run workflow.
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy (e.g. v1.2.3)'
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE: ghcr.io/${{ github.repository }}/beacon-api
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/beacon-frontend
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install
+        working-directory: frontend
+        run: npm ci
+
+      # Type-check is the guard against the "@/lib/... resolves locally but not
+      # in the image" class of bug. It must run before we spend time building.
+      - name: Frontend type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Rate-limit middleware tests
+        # Self-contained: configures its own settings and a locmem cache, so it
+        # needs neither MongoDB nor the full requirements set.
+        run: |
+          pip install --quiet 'django==4.0.10'
+          python -m beacon_api.test_middleware
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="$INPUT_TAG"
+          fi
+          # The version is interpolated into shell on the remote host, so keep
+          # it to characters that cannot break out of the command.
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "Refusing to deploy: '$VERSION' is not a semver tag." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.boolean
+          push: true
+          tags: |
+            ${{ env.API_IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.API_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          # The repo tracks frontend/Dockerfile. Production additionally has an
+          # untracked frontend/docker/Dockerfile at a different path — both files
+          # are byte-identical, so building from the tracked one is equivalent.
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_BEACON_API_URL=
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy to production host
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_VERSION: ${{ needs.build.outputs.version }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DEPLOY_VERSION,GHCR_TOKEN,GH_ACTOR,REPO
+          command_timeout: 10m
+          script: |
+            set -e
+            cd ~/afrigend-beacon2
+
+            COMPOSE="docker compose -f docker-compose-boolean-ssl.yml"
+            API="ghcr.io/${REPO}/beacon-api:${DEPLOY_VERSION}"
+            FRONTEND="ghcr.io/${REPO}/beacon-frontend:${DEPLOY_VERSION}"
+
+            echo "Deploying ${DEPLOY_VERSION}"
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GH_ACTOR}" --password-stdin
+
+            # Capture what is running now, by image ID, so a rollback restores
+            # the exact bits rather than whatever a tag points at later.
+            PREV_API=$(docker inspect --format '{{.Image}}' beacon-api-boolean 2>/dev/null || echo "")
+            PREV_FRONTEND=$(docker inspect --format '{{.Image}}' beacon-frontend 2>/dev/null || echo "")
+            echo "Previous API image:      ${PREV_API:-none}"
+            echo "Previous frontend image: ${PREV_FRONTEND:-none}"
+
+            docker pull "$API"
+            docker pull "$FRONTEND"
+
+            # API_IMAGE/FRONTEND_IMAGE are consumed by the compose file. They
+            # are persisted to .env.deploy so a later manual `docker compose up`
+            # on the host does not silently revert to a stale local build.
+            printf 'API_IMAGE=%s\nFRONTEND_IMAGE=%s\n' "$API" "$FRONTEND" > .env.deploy
+
+            export API_IMAGE="$API" FRONTEND_IMAGE="$FRONTEND"
+            $COMPOSE up -d --no-deps beacon-api beacon-frontend
+
+            echo "Waiting for API to become healthy..."
+            HEALTHY=false
+            for i in $(seq 1 24); do
+              if curl -fsS --max-time 5 http://localhost/api/health > /dev/null 2>&1; then
+                HEALTHY=true
+                echo "Healthy after ${i} attempt(s)."
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "$HEALTHY" != true ]; then
+              echo "FAILED: API did not become healthy. Rolling back."
+              if [ -n "$PREV_API" ]; then
+                export API_IMAGE="$PREV_API" FRONTEND_IMAGE="${PREV_FRONTEND:-$FRONTEND}"
+                printf 'API_IMAGE=%s\nFRONTEND_IMAGE=%s\n' "$API_IMAGE" "$FRONTEND_IMAGE" > .env.deploy
+                $COMPOSE up -d --no-deps beacon-api beacon-frontend || true
+                echo "Rolled back to ${PREV_API}"
+              else
+                echo "No previous image recorded — cannot roll back automatically."
+              fi
+              $COMPOSE logs --tail 50 beacon-api || true
+              exit 1
+            fi
+
+            printf '%s %s %s -> %s\n' "$DEPLOY_VERSION" "$(date -u '+%Y-%m-%d %H:%M:%S')" "${PREV_API:-none}" "$API" >> deployment.log
+            echo "Deployment successful."
+
+  verify:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify public endpoints
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -e
+          echo "=== Post-deploy verification ==="
+
+          HEALTH=$(curl -fsS --retry 6 --retry-delay 5 --retry-all-errors \
+            --max-time 20 https://beacon.afrigen-d.org/api/health)
+          echo "health: $HEALTH"
+          printf '%s' "$HEALTH" | grep -q '"status":"healthy"'
+
+          # /info is the endpoint federation partners poll; a 200 here is what
+          # keeps this beacon listed as online across the network.
+          for path in /api/info /api/datasets; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+              "https://beacon.afrigen-d.org${path}")
+            echo "${path}: HTTP ${CODE}"
+            [ "$CODE" = "200" ]
+          done
+
+          UI=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://beacon.afrigen-d.org/)
+          echo "UI: HTTP ${UI}"
+          [ "$UI" = "200" ]
+
+          echo "=== Verification passed ==="
+
+  cleanup:
+    needs: [deploy, verify]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Prune old images when disk is tight
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            DISK=$(df / | tail -1 | awk '{print $5}' | tr -d '%')
+            echo "Disk usage: ${DISK}%"
+            if [ "$DISK" -gt 70 ]; then
+              # Keep the 3 most recent of each beacon image so a rollback target
+              # survives the prune.
+              for repo in beacon-api beacon-frontend; do
+                docker images --format '{{.Repository}}:{{.Tag}} {{.CreatedAt}}' \
+                  | grep "/${repo}" | sort -k2 -r | tail -n +4 \
+                  | awk '{print $1}' | xargs -r docker rmi || true
+              done
+              docker image prune -f || true
+              echo "Cleanup done. Now: $(df / | tail -1 | awk '{print $5}')"
+            else
+              echo "Disk OK, skipping cleanup"
+            fi
+
+  notify:
+    needs: [build, deploy, verify]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Record deployment status
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        with:
+          script: |
+            const { VERSION, DEPLOY_RESULT, VERIFY_RESULT } = process.env;
+            const ok = DEPLOY_RESULT === 'success' && VERIFY_RESULT === 'success';
+            try {
+              const { data: deployment } = await github.rest.repos.createDeployment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: VERSION,
+                environment: 'production',
+                auto_merge: false,
+                required_contexts: [],
+              });
+              await github.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: deployment.id,
+                state: ok ? 'success' : 'failure',
+                description: `deploy=${DEPLOY_RESULT} verify=${VERIFY_RESULT}`,
+                environment_url: 'https://beacon.afrigen-d.org',
+              });
+            } catch (e) {
+              core.warning(`Could not record deployment status: ${e.message}`);
+            }
