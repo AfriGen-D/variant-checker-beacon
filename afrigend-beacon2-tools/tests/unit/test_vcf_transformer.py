@@ -130,6 +130,24 @@ class TestCreateVariantRecord:
         rec = self.t._create_variant_record(v, "GRCh38")
         assert rec.variant_type == "INS"
 
+    def test_allele_frequency_extracted(self):
+        """AF in INFO is captured into the queryable allele_frequency field."""
+        v = _make_variant(info={"AF": 0.5})
+        rec = self.t._create_variant_record(v, "GRCh38")
+        assert rec.allele_frequency == 0.5
+
+    def test_allele_frequency_tuple_takes_first(self):
+        """Multi-allelic AF (tuple) → first ALT allele's frequency."""
+        v = _make_variant(info={"AF": (0.33, 0.01)})
+        rec = self.t._create_variant_record(v, "GRCh38")
+        assert rec.allele_frequency == 0.33
+
+    def test_allele_frequency_absent_is_none(self):
+        """No AF in INFO → allele_frequency stays None (no fabricated value)."""
+        v = _make_variant(info={"DP": 50})
+        rec = self.t._create_variant_record(v, "GRCh38")
+        assert rec.allele_frequency is None
+
 
 # ===================================================================
 # TestPassesQualityFilters
@@ -220,6 +238,90 @@ class TestExtractAnnotations:
 
 
 # ===================================================================
+# TestExtractAlleleFrequency
+# ===================================================================
+
+class TestExtractAlleleFrequency:
+    """Verify AF extraction from INFO — the value served at aggregated granularity."""
+
+    def setup_method(self):
+        self.t = _make_transformer()
+
+    def test_float_af(self):
+        v = _make_variant(info={"AF": 0.0423})
+        assert self.t._extract_allele_frequency(v) == pytest.approx(0.0423)
+
+    def test_string_af_is_coerced(self):
+        """Some writers emit AF as a string; it must still land as a float."""
+        v = _make_variant(info={"AF": "0.25"})
+        assert self.t._extract_allele_frequency(v) == pytest.approx(0.25)
+
+    def test_missing_af_returns_none(self):
+        v = _make_variant(info={})
+        assert self.t._extract_allele_frequency(v) is None
+
+    def test_no_info_attribute_returns_none(self):
+        v = MagicMock(spec=[])
+        assert self.t._extract_allele_frequency(v) is None
+
+    def test_multiallelic_af_takes_first_alt(self):
+        """
+        A multi-allelic site carries one AF per ALT. Only ALT[0]'s frequency is
+        kept, while alternate_bases is written as the joined "T,G" string — so
+        the retained AF describes an allele that cannot itself be queried.
+        This pins current behaviour; splitting multi-allelics at ingest is the
+        real fix.
+        """
+        v = _make_variant(info={"AF": (0.1, 0.9)})
+        assert self.t._extract_allele_frequency(v) == pytest.approx(0.1)
+
+    def test_empty_af_sequence_returns_none(self):
+        v = _make_variant(info={"AF": []})
+        assert self.t._extract_allele_frequency(v) is None
+
+    def test_non_numeric_af_returns_none(self):
+        v = _make_variant(info={"AF": "not-a-number"})
+        assert self.t._extract_allele_frequency(v) is None
+
+    def test_af_reaches_the_variant_record(self):
+        v = _make_variant(info={"AF": 0.31})
+        rec = self.t._create_variant_record(v, "GRCh38")
+        assert rec.allele_frequency == pytest.approx(0.31)
+
+    def test_record_af_is_none_when_absent(self):
+        v = _make_variant(info={})
+        rec = self.t._create_variant_record(v, "GRCh38")
+        assert rec.allele_frequency is None
+
+
+# ===================================================================
+# TestParseAnnotationHelpers
+# ===================================================================
+
+class TestParseAnnotationHelpers:
+    """Verify the VEP/SnpEff parsers, including non-list inputs."""
+
+    def setup_method(self):
+        self.t = _make_transformer()
+
+    def test_vep_non_list_yields_nothing(self):
+        assert self.t._parse_vep_annotations("missense_variant|BRCA1") == []
+
+    def test_vep_list_yields_one_per_entry(self):
+        anns = self.t._parse_vep_annotations(["a|1", "b|2"])
+        assert [a["source"] for a in anns] == ["VEP", "VEP"]
+        assert anns[1]["consequence"] == "b|2"
+
+    def test_snpeff_non_list_yields_nothing(self):
+        assert self.t._parse_snpeff_annotations("frameshift|HIGH") == []
+
+    def test_snpeff_list_yields_one_per_entry(self):
+        anns = self.t._parse_snpeff_annotations(["x|HIGH", "y|LOW"])
+        assert [a["source"] for a in anns] == ["SnpEff", "SnpEff"]
+        assert anns[0]["annotation"] == "x|HIGH"
+
+
+# ===================================================================
 # TestExtractGenotypeInfo
 # ===================================================================
 
@@ -266,14 +368,17 @@ class TestExtractGenotypeInfo:
         assert info is None
 
     def test_format_dp_extracted(self):
+        # cyvcf2's variant.format(field) takes the field name and returns a
+        # per-sample array indexed [sample_idx][0] — not a dict keyed by field.
+        # Absent fields come back as None.
         v = _make_variant(genotypes=[[0, 1, False]])
-        v.format.return_value = {"DP": [50]}
+        v.format.side_effect = lambda f: {"DP": [[50]]}.get(f)
         info = self.t._extract_genotype_info(v, 0)
         assert info["depth"] == 50
 
     def test_format_gq_extracted(self):
         v = _make_variant(genotypes=[[0, 1, False]])
-        v.format.return_value = {"GQ": [99]}
+        v.format.side_effect = lambda f: {"GQ": [[99]]}.get(f)
         info = self.t._extract_genotype_info(v, 0)
         assert info["quality"] == 99
 

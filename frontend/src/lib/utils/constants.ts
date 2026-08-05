@@ -38,12 +38,52 @@ export const CHROMOSOMES: { value: Chromosome; label: string }[] = [
 // Nucleotide bases
 export const BASES = ['A', 'T', 'G', 'C', 'N'] as const;
 
-// Validation constants
-export const MAX_GENOMIC_POSITION = 3000000000;
-export const MIN_GENOMIC_POSITION = 0;
+// Validation constants — the single source of truth for coordinate bounds on
+// the client. They mirror the backend caps in beacon_api/validators.py
+// (GenomicCoordinateValidator): anything the client lets through that the
+// server rejects surfaces as a 400 only after the user submits.
+export const MAX_GENOMIC_POSITION = 300000000; // validators.py MAX_COORDINATE
+// Positions are entered 1-based (converted to 0-based at the API boundary), so
+// the floor is 1 — a 0 would be sent as start=-1.
+export const MIN_GENOMIC_POSITION = 1;
+// validators.py MAX_RANGE, measured against the range the API receives, which
+// equals the inclusive base count of a 1-based region (end - start + 1).
+export const MAX_REGION_SPAN = 10_000_000;
 
 // Query parameter defaults
 export const DEFAULT_ASSEMBLY = 'GRCh38';
+
+// Query modes surfaced as tabs. `available: false` renders the tab disabled
+// with a "soon" marker (the Gene tab ships once the /genes resolver lands).
+export type QueryMode = 'variant' | 'region' | 'gene';
+
+export const QUERY_MODES: { value: QueryMode; label: string; description: string; available: boolean }[] = [
+  { value: 'variant', label: 'Variant', description: 'Exact change at one position (ref → alt)', available: true },
+  { value: 'region', label: 'Region', description: 'Any variant overlapping a coordinate range', available: true },
+  { value: 'gene', label: 'Gene', description: 'Look up by gene symbol (e.g. BRCA1)', available: false },
+];
+
+// Plain-language help shown via the ⓘ next to each field label. Centralized so
+// the wording (genomics domain copy) lives in one editable place.
+export const FIELD_HINTS = {
+  assembly: 'Reference genome build the coordinates refer to. GRCh38 (hg38) is current; GRCh37 (hg19) is for older datasets.',
+  chromosome: 'Chromosome the variant sits on (1–22, X, Y, or mitochondrial MT).',
+  start: '1-based position, as shown in dbSNP, Ensembl and ClinVar — the exact base for a single-nucleotide variant.',
+  end: 'Only needed for a range query. Leave blank for a single-position variant.',
+  ref: 'Reference allele — the base(s) in the reference genome (A, C, G, T or N).',
+  alt: 'Alternate allele — the observed base(s) you are checking for.',
+  regionStart: '1-based start of the region to scan.',
+  regionEnd: `1-based end of the region. A region is capped at ${MAX_REGION_SPAN.toLocaleString()} bases.`,
+  gene: 'Type a gene symbol (e.g. BRCA1). It is resolved to genomic coordinates and that region is scanned.',
+  datasets: 'Which reference panels to query. All are included by default.',
+  filters: 'Optional ontology filters (e.g. a gene or phenotype term) to narrow the query.',
+} as const;
+
+// Example region queries (range over a locus, no specific allele).
+export const REGION_EXAMPLES = [
+  { label: 'HBB locus', description: 'Beta-globin region on Chr 11', query: { assemblyId: 'GRCh38', referenceName: '11', start: 5225000, end: 5229000 } },
+  { label: 'BRCA1 exon', description: 'A BRCA1 stretch on Chr 17', query: { assemblyId: 'GRCh38', referenceName: '17', start: 43044000, end: 43045000 } },
+] as const;
 
 // Example queries for quick discovery. Positions are 1-based (the convention
 // used by dbSNP, Ensembl, ClinVar, AGVD); the API client converts to 0-based

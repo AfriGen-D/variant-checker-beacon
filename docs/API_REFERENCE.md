@@ -150,7 +150,8 @@ curl -X POST http://localhost:8000/api/auth/refresh \
 
 ### Boolean Mode (Public)
 
-- **Production**: `https://beacon2.h3abionet.org-ilifu/api/`
+- **Production (UI + API on the same host)**: `https://beacon.afrigen-d.org/api/`
+- **Production (API-only, Beacon Network sidecar)**: `https://api-beacon.afrigen-d.dev/api/`
 - **Local Development**: `http://localhost:8000/api/`
 
 ### Secure Mode (Authenticated)
@@ -345,8 +346,8 @@ curl http://localhost:8000/api/
       "contactUrl": "https://h3abionet.org/contact",
       "logoUrl": "https://h3abionet.org/logo.png"
     },
-    "welcomeUrl": "https://beacon2.h3abionet.org-ilifu",
-    "alternativeUrl": "https://beacon2.h3abionet.org-ilifu/api/",
+    "welcomeUrl": "https://beacon.afrigen-d.org",
+    "alternativeUrl": "https://beacon.afrigen-d.org/api/",
     "createDateTime": "2024-01-01T00:00:00Z",
     "updateDateTime": "2025-01-26T10:00:00Z"
   }
@@ -403,7 +404,7 @@ curl http://localhost:8000/api/service-info
     "url": "https://h3abionet.org"
   },
   "contactUrl": "https://h3abionet.org/contact",
-  "documentationUrl": "https://beacon2.h3abionet.org-ilifu/docs",
+  "documentationUrl": "https://beacon.afrigen-d.org/docs",
   "createdAt": "2024-01-01T00:00:00Z",
   "updatedAt": "2025-01-26T10:00:00Z",
   "environment": "production",

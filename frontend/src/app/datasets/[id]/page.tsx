@@ -5,10 +5,11 @@ import Link from 'next/link';
 import { Container } from '@/components/layout/Container';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { beaconApi } from '@/lib/api/beacon';
 import type { Dataset } from '@/lib/api/types';
-import { ArrowLeft, Database, Calendar, Dna, Tag, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Database, Calendar, Dna, Tag, ExternalLink, Users, Search } from 'lucide-react';
 
 function formatDate(dateStr?: string | null): string {
   if (!dateStr) return '';
@@ -82,8 +83,14 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
 
       {dataset && (
         <>
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold mb-2">{dataset.name}</h1>
+          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+            <h1 className="text-4xl font-bold">{dataset.name}</h1>
+            <Link href={`/?assemblyId=${encodeURIComponent(dataset.assemblyId ?? 'GRCh38')}`}>
+              <Button>
+                <Search className="h-4 w-4 mr-2" />
+                Query this dataset
+              </Button>
+            </Link>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
@@ -116,6 +123,15 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
                       <dd className="text-sm mt-0.5 flex items-center gap-1.5">
                         <Dna className="h-3.5 w-3.5 text-muted-foreground" />
                         <span className="font-semibold">{dataset.variantCount.toLocaleString()}</span>
+                      </dd>
+                    </div>
+                  )}
+                  {dataset.sampleCount !== undefined && (
+                    <div>
+                      <dt className="text-sm font-medium text-muted-foreground">Samples</dt>
+                      <dd className="text-sm mt-0.5 flex items-center gap-1.5">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="font-semibold">{dataset.sampleCount.toLocaleString()}</span>
                       </dd>
                     </div>
                   )}

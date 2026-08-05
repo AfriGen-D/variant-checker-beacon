@@ -13,6 +13,29 @@ import type {
   FilteringTerm,
 } from './types';
 
+// `/datasets` ships in two shapes across deployments today:
+//   legacy:  { apiVersion, beaconId, datasets: Dataset[] }
+//   v2 spec: { meta, responseSummary, response: { resultSets: [{ results: Dataset[] }] } }
+// This isolates the difference so callers always see Dataset[].
+function extractDatasets(payload: unknown): Dataset[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const data = payload as { datasets?: unknown; response?: { resultSets?: unknown } };
+
+  if (Array.isArray(data.datasets)) {
+    return data.datasets as Dataset[];
+  }
+
+  const resultSets = data.response?.resultSets;
+  if (Array.isArray(resultSets)) {
+    return resultSets.flatMap((rs: unknown) => {
+      const results = (rs as { results?: unknown })?.results;
+      return Array.isArray(results) ? (results as Dataset[]) : [];
+    });
+  }
+
+  return [];
+}
+
 /**
  * Beacon API Client
  * Functions for interacting with the GA4GH Beacon v2 API
@@ -92,11 +115,38 @@ export const beaconApi = {
       params.append(key, out.toString());
     });
 
+    // Always request aggregated granularity so allele frequencies come back
+    // when the beacon has them (it returns a boolean response otherwise).
+    if (!params.has('requestedGranularity')) {
+      params.append('requestedGranularity', 'aggregated');
+    }
+
     const response = await beaconClient.get(`/g_variants?${params.toString()}`);
     const raw = response.data as any;
 
     // Normalize flat Boolean-mode response into GA4GH v2 wrapper
-    if (raw.response) return raw as BeaconResponse<GenomicVariant>;
+    if (raw.response) {
+      // Beacon v2 envelope: per-dataset matches arrive in response.resultSets[].
+      // Synthesize the legacy datasetAlleleResponses[] shape so DatasetResults
+      // can render YES/NO badges + handover buttons per dataset without a
+      // second API call.
+      const r = raw.response;
+      if (!r.datasetAlleleResponses && Array.isArray(r.resultSets)) {
+        r.datasetAlleleResponses = r.resultSets.map((rs: any) => {
+          const freq = Array.isArray(rs.results)
+            ? rs.results[0]?.frequencyInPopulations?.[0]?.frequencies?.[0]?.alleleFrequency
+            : undefined;
+          return {
+            datasetId: rs.id,
+            datasetName: rs.name ?? rs.id ?? '',
+            exists: !!rs.exists,
+            resultsHandover: Array.isArray(rs.resultsHandover) ? rs.resultsHandover : undefined,
+            alleleFrequency: typeof freq === 'number' ? freq : undefined,
+          };
+        });
+      }
+      return raw as BeaconResponse<GenomicVariant>;
+    }
     const exists = raw.exists ?? false;
     return {
       meta: { apiVersion: raw.apiVersion ?? 'v2.0.0', beaconId: raw.beaconId ?? '', timestamp: new Date().toISOString() },
@@ -108,6 +158,7 @@ export const beaconApi = {
         ] : [
           { datasetId: 'H3A_V6_AFRICAN', datasetName: 'H3A V6 African Reference Panel', exists: false },
         ]),
+        beaconHandovers: raw.beaconHandovers,
       },
     };
   },
@@ -267,8 +318,8 @@ export const beaconApi = {
    * @returns Datasets list with variant counts
    */
   getDatasets: async (): Promise<DatasetsListResponse> => {
-    const response = await beaconClient.get<DatasetsListResponse>('/datasets');
-    return response.data;
+    const response = await beaconClient.get<unknown>('/datasets');
+    return { datasets: extractDatasets(response.data) };
   },
 };
 

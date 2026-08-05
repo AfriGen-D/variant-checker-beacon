@@ -3,17 +3,17 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { variantQuerySchema, type VariantQueryFormData } from '@/lib/utils/validators';
-import { ASSEMBLIES, CHROMOSOMES, EXAMPLE_QUERIES } from '@/lib/utils/constants';
+import { ASSEMBLIES, CHROMOSOMES, EXAMPLE_QUERIES, FIELD_HINTS } from '@/lib/utils/constants';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { Button } from '@/components/ui/Button';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
-import { Separator } from '@/components/ui/Separator';
-import { FilterSelector } from '@/components/query/FilterSelector';
-import type { Dataset } from '@/lib/api/types';
+import { QueryActions } from '@/components/query/QueryActions';
+import { UniversalSearch } from '@/components/query/UniversalSearch';
+import { RecentSearches } from '@/components/query/RecentSearches';
+import type { ParsedVariant } from '@/lib/utils/parseVariant';
+import type { Dataset, VariantQuery } from '@/lib/api/types';
 
 interface VariantQueryFormProps {
-  onSubmit: (data: VariantQueryFormData) => void;
+  onSubmit: (query: VariantQuery) => void;
   isLoading?: boolean;
   filters?: string[];
   onFiltersChange?: (filters: string[]) => void;
@@ -23,12 +23,29 @@ interface VariantQueryFormProps {
   onSelectedDatasetsChange?: (ids: string[]) => void;
 }
 
-export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFiltersChange, initialValues, datasets, selectedDatasetIds, onSelectedDatasetsChange }: VariantQueryFormProps) {
+/**
+ * Variant (exact) query: a specific ref → alt change at one position. Keeps the
+ * rich entry affordances — paste box, recent lookups, example chips — since a
+ * pasted/typed variant always resolves to this mode.
+ */
+export function VariantQueryForm({
+  onSubmit,
+  isLoading = false,
+  filters,
+  onFiltersChange,
+  initialValues,
+  datasets,
+  selectedDatasetIds,
+  onSelectedDatasetsChange,
+}: VariantQueryFormProps) {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
     reset,
+    getValues,
+    setFocus,
   } = useForm<VariantQueryFormData>({
     resolver: zodResolver(variantQuerySchema),
     defaultValues: initialValues ?? {
@@ -41,137 +58,165 @@ export function VariantQueryForm({ onSubmit, isLoading = false, filters, onFilte
     },
   });
 
+  // Live preview of the variant being assembled, so coordinate/allele mistakes
+  // are visible before the query is sent (input is 1-based).
+  const w = watch();
+  const queryPreview = (() => {
+    if (!w.referenceName || w.start === undefined || w.start === null || (w.start as unknown as string) === '') {
+      return null;
+    }
+    const chr = String(w.referenceName).startsWith('chr') ? String(w.referenceName) : `chr${w.referenceName}`;
+    const pos = Number(w.start).toLocaleString();
+    const range = w.end ? `${pos}–${Number(w.end).toLocaleString()}` : pos;
+    const allele = w.referenceBases && w.alternateBases ? ` ${w.referenceBases}>${w.alternateBases}` : '';
+    return `${chr}:${range}${allele}`;
+  })();
+
+  const submit = (data: VariantQueryFormData) => {
+    onSubmit({
+      assemblyId: data.assemblyId,
+      referenceName: data.referenceName,
+      start: data.start,
+      end: data.end,
+      referenceBases: data.referenceBases,
+      alternateBases: data.alternateBases,
+    });
+  };
+
+  // Load values into the form and immediately run the query — shared by the
+  // example chips, recent-search chips and a fully-specified universal search.
+  const applyAndSubmit = (data: VariantQueryFormData) => {
+    reset(data);
+    handleSubmit(submit)();
+  };
+
+  // A pasted/typed variant fills the structured fields. If it's complete we run
+  // it; if alleles are missing we just populate and focus the next gap so the
+  // user can finish by hand. Current assembly is preserved (rarely in a paste).
+  const handleParsed = (parsed: ParsedVariant) => {
+    const current = getValues();
+    const merged: VariantQueryFormData = {
+      assemblyId: current.assemblyId || parsed.data.assemblyId || 'GRCh38',
+      referenceName: parsed.data.referenceName ?? '',
+      start: parsed.data.start as number,
+      end: parsed.data.end,
+      referenceBases: parsed.data.referenceBases ?? '',
+      alternateBases: parsed.data.alternateBases ?? '',
+    };
+    if (parsed.complete) {
+      applyAndSubmit(merged);
+    } else {
+      reset(merged);
+      if (!merged.referenceBases) setFocus('referenceBases');
+      else if (!merged.alternateBases) setFocus('alternateBases');
+    }
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Query Genomic Variants</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {/* Example query chips */}
-        <div className="mb-6">
-          <p className="text-sm text-muted-foreground mb-2">Try an example:</p>
-          <div className="flex flex-wrap gap-2">
-            {EXAMPLE_QUERIES.map((ex) => (
-              <button
-                key={ex.label}
-                type="button"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-colors"
-                title={ex.description}
-                onClick={() => {
-                  reset(ex.query);
-                  handleSubmit(onSubmit)();
-                }}
-              >
-                {ex.label}
-                <span className="text-primary/60 text-xs">({ex.description})</span>
-              </button>
-            ))}
-          </div>
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Check whether a specific change at one position is present in each dataset.
+      </p>
+
+      {/* Universal "paste anything" search */}
+      <UniversalSearch onParsed={handleParsed} />
+
+      <RecentSearches onSelect={applyAndSubmit} />
+
+      {/* Example query chips */}
+      <div>
+        <p className="text-sm text-muted-foreground mb-2">Or try an example:</p>
+        <div className="flex flex-wrap gap-2">
+          {EXAMPLE_QUERIES.map((ex) => (
+            <button
+              key={ex.label}
+              type="button"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-colors"
+              title={ex.description}
+              onClick={() => applyAndSubmit(ex.query as unknown as VariantQueryFormData)}
+            >
+              {ex.label}
+              <span className="text-primary/60 text-xs">({ex.description})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">Or enter coordinates</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
+      <form onSubmit={handleSubmit(submit)} className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <Select
+            label="Assembly"
+            tooltip={FIELD_HINTS.assembly}
+            options={ASSEMBLIES}
+            error={errors.assemblyId?.message}
+            required
+            {...register('assemblyId')}
+          />
+          <Select
+            label="Chromosome"
+            tooltip={FIELD_HINTS.chromosome}
+            options={CHROMOSOMES}
+            placeholder="Select"
+            error={errors.referenceName?.message}
+            required
+            {...register('referenceName')}
+          />
+          <Input
+            label="Start"
+            tooltip={FIELD_HINTS.start}
+            type="number"
+            placeholder="1-based, e.g. 11796321"
+            error={errors.start?.message}
+            required
+            {...register('start')}
+          />
+          <Input
+            label="End"
+            tooltip={FIELD_HINTS.end}
+            type="number"
+            placeholder="Optional, 1-based"
+            error={errors.end?.message}
+            {...register('end')}
+          />
+          <Input
+            label="Ref"
+            tooltip={FIELD_HINTS.ref}
+            type="text"
+            placeholder="e.g., A"
+            error={errors.referenceBases?.message}
+            required
+            {...register('referenceBases')}
+          />
+          <Input
+            label="Alt"
+            tooltip={FIELD_HINTS.alt}
+            type="text"
+            placeholder="e.g., T"
+            error={errors.alternateBases?.message}
+            required
+            {...register('alternateBases')}
+          />
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Select
-              label="Assembly"
-              options={ASSEMBLIES}
-              error={errors.assemblyId?.message}
-              required
-              {...register('assemblyId')}
-            />
-            <Select
-              label="Chromosome"
-              options={CHROMOSOMES}
-              placeholder="Select"
-              error={errors.referenceName?.message}
-              required
-              {...register('referenceName')}
-            />
-            <Input
-              label="Start"
-              type="number"
-              placeholder="1-based, e.g. 11796321"
-              error={errors.start?.message}
-              required
-              {...register('start')}
-            />
-            <Input
-              label="End"
-              type="number"
-              placeholder="Optional, 1-based"
-              error={errors.end?.message}
-              {...register('end')}
-            />
-            <Input
-              label="Ref"
-              type="text"
-              placeholder="e.g., A"
-              error={errors.referenceBases?.message}
-              required
-              {...register('referenceBases')}
-            />
-            <Input
-              label="Alt"
-              type="text"
-              placeholder="e.g., T"
-              error={errors.alternateBases?.message}
-              required
-              {...register('alternateBases')}
-            />
-          </div>
-
-          {datasets && datasets.length > 1 && onSelectedDatasetsChange && (
-            <div>
-              <p className="text-sm font-medium mb-2">Datasets to query</p>
-              <div className="flex flex-wrap gap-3">
-                {datasets.map(ds => {
-                  const checked = !selectedDatasetIds || selectedDatasetIds.length === 0 || selectedDatasetIds.includes(ds.id);
-                  return (
-                    <label key={ds.id} className="inline-flex items-center gap-1.5 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          const allIds = datasets.map(d => d.id);
-                          // If nothing selected, treat as all selected
-                          const current = (!selectedDatasetIds || selectedDatasetIds.length === 0)
-                            ? [...allIds]
-                            : [...selectedDatasetIds];
-                          const next = checked
-                            ? current.filter(id => id !== ds.id)
-                            : [...current, ds.id];
-                          // If all selected again, clear to empty (= all)
-                          onSelectedDatasetsChange(next.length === allIds.length ? [] : next);
-                        }}
-                        className="rounded border-border"
-                      />
-                      {ds.name}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {onFiltersChange && (
-            <FilterSelector selected={filters ?? []} onChange={onFiltersChange} />
-          )}
-
-          <div className="flex gap-3">
-            <Button type="submit" className="flex-1" disabled={isLoading}>
-              {isLoading ? 'Querying...' : 'Query Beacon'}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => reset()}>
-              Reset
-            </Button>
-          </div>
-        </form>
-
-        <Separator className="mt-6" />
-        <p className="text-sm text-muted-foreground mt-4">
-          <strong>Boolean Mode:</strong> This query will return YES or NO indicating whether the
-          variant exists in the database.
-        </p>
-      </CardContent>
-    </Card>
+        <QueryActions
+          preview={queryPreview}
+          isLoading={isLoading}
+          submitLabel="Check variant"
+          loadingLabel="Checking…"
+          onReset={() => reset()}
+          datasets={datasets}
+          selectedDatasetIds={selectedDatasetIds}
+          onSelectedDatasetsChange={onSelectedDatasetsChange}
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+        />
+      </form>
+    </div>
   );
 }

@@ -58,7 +58,12 @@ chromosome/position) + Redis 6 (response cache, rate-limit counters).
                           └─────────┘         └─────────┘
 ```
 
-**Production status:** ILIFU infrastructure, host `afrigend-beacon-network` (192.168.101.163).
+**Production status:** Two ILIFU VMs serving distinct URLs:
+- **`https://beacon.afrigen-d.org/`** — full stack (UI + API) on `afrigend-beacon-prod` (192.168.101.151), fronted by a UCT-side nginx proxy on `bantumi.cbio.uct.ac.za`.
+- **`https://api-beacon.afrigen-d.dev/api/`** — API-only sidecar on `afrigend-beacon-network` (192.168.101.163), exposed via a Cloudflare tunnel.
+
+Full topology in [`CLAUDE.md`](CLAUDE.md#production-deployment).
+
 **Spec conformance:** ✅ 17/17 EGA `beacon-verifier` checks pass — see [`docs/SPEC_CONFORMANCE.md`](docs/SPEC_CONFORMANCE.md).
 
 ## Features
@@ -109,7 +114,7 @@ curl http://localhost/api/
 | **Full stack** (default) | `compose/docker-compose-boolean-ssl.yml` | Public discovery with web UI |
 | **Dev (no SSL)** | `compose/docker-compose.dev.yml` | Local development with Traefik dashboard |
 | **Frontend only** | `compose/docker-compose-frontend.yml` | Run UI against a remote API |
-| **API-only** | bring your own override | Federation node, programmatic-only access (e.g. via Cloudflared tunnel — see the ARDI deployment for a worked example: drop `beacon-frontend` and `nginx`, add `cloudflared`) |
+| **API-only** | bring your own override | Federation node, programmatic-only access (e.g. via Cloudflared tunnel — drop `beacon-frontend` and `nginx`, add `cloudflared`) |
 
 ### Deploy Locally
 
@@ -326,7 +331,7 @@ See [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for detailed developmen
 **Organization**: [AfriGEN-D](https://afrigen-d.org/)
 **Email**: support@bioinformaticsinstitute.africa
 **Project**: GA4GH Beacon v2 Implementation
-**Production**: beacon2.h3abionet.org-ilifu
+**Production**: [beacon.afrigen-d.org](https://beacon.afrigen-d.org/) (UI) · [api-beacon.afrigen-d.dev](https://api-beacon.afrigen-d.dev/api/) (API)
 
 ## Acknowledgments
 

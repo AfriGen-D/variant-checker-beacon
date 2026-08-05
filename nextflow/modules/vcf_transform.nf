@@ -1,5 +1,5 @@
 process VCF_TRANSFORM {
-    tag "$dataset_name"
+    tag "${dataset_name}:${vcf_file.simpleName}"
     label 'bigmem'
 
     publishDir "${params.outdir}/${dataset_name}/transformed", mode: 'copy'
@@ -17,8 +17,9 @@ process VCF_TRANSFORM {
     def metadata_arg = metadata_file.name != 'NO_METADATA' ? "--metadata ${metadata_file}" : ''
     def verbose_arg  = params.verbose ? '--verbose' : ''
     def config_arg   = params.tools_config ? "--config ${params.tools_config}" : ''
+    def python       = params.python_bin ?: 'python'
     """
-    python ${params.tools_base}/vcf_transform/vcf_to_beacon.py \\
+    ${python} ${params.tools_base}/vcf_transform/vcf_to_beacon.py \\
         ${vcf_file} \\
         --output . \\
         --assembly ${params.assembly} \\

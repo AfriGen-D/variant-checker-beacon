@@ -109,16 +109,29 @@ def build_beacon_response(results, num_total=None):
     }
 
 
-def build_meta(returned_granularity='boolean', received_request=None):
+# Declared in meta.returnedSchemas when a response carries genomicVariation
+# data beyond the default boolean shape (e.g. allele frequencies at
+# 'aggregated' granularity).
+GENOMIC_VARIATION_SCHEMA = {
+    'entityType': 'genomicVariation',
+    'schema': (
+        'https://raw.githubusercontent.com/ga4gh-beacon/beacon-v2/main/models/'
+        'json/beacon-v2-default-model/genomicVariations/defaultSchema.json'
+    ),
+}
+
+
+def build_meta(returned_granularity='boolean', received_request=None, returned_schemas=None):
     """
-    Beacon v2 spec meta envelope. Boolean mode forces 'boolean' granularity
-    regardless of what the client requested.
+    Beacon v2 spec meta envelope. Default granularity is 'boolean'; callers
+    serving richer data (e.g. allele frequencies) pass 'aggregated' and the
+    matching `returned_schemas`.
     """
     meta = {
         'beaconId': settings.BEACON_API_ID,
         'apiVersion': 'v2.0.0',
         'returnedGranularity': returned_granularity,
-        'returnedSchemas': [],
+        'returnedSchemas': returned_schemas if returned_schemas is not None else [],
     }
     if received_request is not None:
         meta['receivedRequestSummary'] = received_request
@@ -146,14 +159,56 @@ def build_info_envelope(payload):
     return {'meta': build_meta(), 'response': payload}
 
 
-def build_query_envelope(exists, num_total=0, result_sets=None, validated_params=None):
+def build_default_handovers():
+    """
+    Top-level Beacon v2 handovers for the AfriGen-D Beacon.
+
+    Underlying genomic data is NOT downloadable and there is no data-access
+    application process. The data is usable only via the AfriGen-D Federated
+    Imputation Service, where queries are computed against the reference
+    panel without exposing the raw genotypes. The handover points discoverers
+    at that service.
+    """
+    imputation_url = getattr(settings, 'BEACON_IMPUTATION_URL', None)
+    if not imputation_url:
+        return []
+    return [{
+        'handoverType': {
+            'id': 'CUSTOM:FEDERATED_IMPUTATION',
+            'label': 'AfriGen-D Federated Imputation Service',
+        },
+        'url': imputation_url,
+        'note': (
+            'The underlying genomic data is not available for download. '
+            'It can only be used through the AfriGen-D Federated Imputation '
+            'Service, which lets you submit your own genotypes for imputation '
+            'against this reference panel without exposing the raw data.'
+        ),
+    }]
+
+
+def build_query_envelope(exists, num_total=0, result_sets=None, validated_params=None,
+                         requested_granularity='boolean', returned_granularity='boolean'):
     """
     Beacon v2 envelope for query endpoints.
-    Spec: {meta, responseSummary, response: {resultSets}}
+    Spec: {meta, responseSummary, response: {resultSets, beaconHandovers}}
+
+    Default granularity is 'boolean' (backward compatible). When the caller
+    serves allele frequencies it passes returned_granularity='aggregated',
+    which also declares the genomicVariation schema in meta.returnedSchemas.
     """
+    returned_schemas = (
+        [GENOMIC_VARIATION_SCHEMA]
+        if returned_granularity in ('aggregated', 'record')
+        else None
+    )
     return {
         'meta': build_meta(
-            received_request=build_received_request_summary(validated_params)
+            returned_granularity=returned_granularity,
+            received_request=build_received_request_summary(
+                validated_params, granularity=requested_granularity
+            ),
+            returned_schemas=returned_schemas,
         ),
         'responseSummary': {
             'exists': bool(exists),
@@ -161,6 +216,60 @@ def build_query_envelope(exists, num_total=0, result_sets=None, validated_params
         },
         'response': {
             'resultSets': result_sets or [],
+            'beaconHandovers': build_default_handovers(),
+        },
+    }
+
+
+def extract_error_message(detail, fallback='Invalid request'):
+    """
+    Flatten a DRF validation error `detail` into one human-readable sentence.
+
+    `serializer.is_valid(raise_exception=True)` raises a ValidationError whose
+    `.detail` is a nested structure of dicts/lists of `ErrorDetail` (a str
+    subclass). Passing that to `str()` yields the raw Python repr, which is
+    what production was leaking:
+
+        "{'non_field_errors': [ErrorDetail(string='Invalid chromosome: 999',
+         code='invalid')]}"
+
+    Only the message strings are kept. Field names and error codes are
+    deliberately dropped: they describe our serializer's internal shape, not
+    anything the caller can act on.
+    """
+    messages = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                walk(value)
+        elif node is not None:
+            # ErrorDetail subclasses str; str() gives the message alone.
+            text = str(node).strip()
+            if text and text not in messages:
+                messages.append(text)
+
+    walk(detail)
+    if not messages:
+        return fallback
+    return ' '.join(m if m.endswith(('.', '!', '?')) else f'{m}.' for m in messages)
+
+
+def build_error_envelope(error_code, error_message):
+    """
+    Beacon v2 error envelope: {meta, error: {errorCode, errorMessage}}.
+
+    Uses the same `meta` block as the success envelopes so a client can parse
+    `meta` uniformly regardless of outcome.
+    """
+    return {
+        'meta': build_meta(),
+        'error': {
+            'errorCode': int(error_code),
+            'errorMessage': str(error_message),
         },
     }
 

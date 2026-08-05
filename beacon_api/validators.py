@@ -189,7 +189,16 @@ class BeaconQuerySerializer(serializers.Serializer):
         child=serializers.CharField(),
         required=False
     )
-    
+
+    # Granularity (Beacon v2). Default 'boolean'; 'aggregated' returns allele
+    # frequencies. 'count'/'record' are accepted but not distinct in this
+    # aggregate-panel beacon.
+    requestedGranularity = serializers.ChoiceField(
+        choices=['boolean', 'count', 'aggregated', 'record'],
+        required=False,
+        default='boolean',
+    )
+
     def validate(self, data):
         """Cross-field validation"""
         

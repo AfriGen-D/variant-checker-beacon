@@ -12,13 +12,25 @@ from django.views.decorators.cache import cache_page
 from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
+from .query_semantics import build_position_filter, POSITION_FILTER_KEYS
 from .utils import (
     create_boolean_response, build_beacon_response,
     build_info_envelope, build_query_envelope, build_collection_envelope,
+    build_error_envelope, extract_error_message,
 )
 import logging
 
 logger = logging.getLogger('beacon_api')
+
+
+def _error_response(status_code, message):
+    """Spec-shaped Beacon v2 error response with a matching HTTP status."""
+    return Response(build_error_envelope(status_code, message), status=status_code)
+
+
+def _server_error(message='An error occurred processing your request'):
+    """500 with the Beacon v2 error envelope."""
+    return _error_response(status.HTTP_500_INTERNAL_SERVER_ERROR, message)
 
 
 class QueryRateThrottle(AnonRateThrottle):
@@ -47,25 +59,38 @@ def variant_query_boolean(request):
             validated_params = validate_query_request(query_params)
             logger.info(f"Validated params: {validated_params}")
         except ValidationError as e:
-            logger.warning(f"Validation error: {e}")
-            return Response({
-                'error': 'Invalid query parameters',
-                'message': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
+            # `str(e)` here is the raw DRF/Python repr of the error dict —
+            # never return it to the caller. extract_error_message() pulls out
+            # just the human-readable text.
+            message = extract_error_message(
+                getattr(e, 'detail', None), fallback='Invalid query parameters'
+            )
+            logger.warning(f"Validation error: {message}")
+            return _error_response(status.HTTP_400_BAD_REQUEST, message)
 
         # Build MongoDB query
         mongo_query = {}
 
         if validated_params.get('referenceName'):
-            mongo_query['reference_name'] = validated_params['referenceName']
+            # The Beacon v2 spec uses bare chromosome names ("1", "X"). Stored
+            # data may use either bare or "chr"-prefixed names depending on the
+            # ingest pipeline. Match both so callers don't have to know which
+            # form the data uses.
+            ref = validated_params['referenceName']
+            bare = ref[3:] if ref.startswith('chr') else ref
+            mongo_query['reference_name__in'] = [bare, f'chr{bare}']
 
-        if 'start' in validated_params and 'end' in validated_params:
-            mongo_query['start__lte'] = validated_params['end']
-            mongo_query['end__gte'] = validated_params['start']
-        elif 'position' in validated_params:
-            position = validated_params['position']
-            mongo_query['start__lte'] = position
-            mongo_query['end__gte'] = position
+        # Position filter — half-open interval overlap for both point queries
+        # (only `start` provided, the standard Beacon v2 SNV lookup) and range
+        # queries (`start` + `end`). See beacon_api/query_semantics.py for the
+        # coordinate convention and why closed-interval (`lte`/`gte`) overlap
+        # is wrong here. Without this filter, a `start`-only query falls
+        # through with no position constraint, forcing a full-chromosome scan
+        # over millions of variants — observed as 30s requests.
+        position_start = validated_params.get('start', validated_params.get('position'))
+        mongo_query.update(build_position_filter(
+            position_start, validated_params.get('end')
+        ))
 
         if validated_params.get('referenceBases'):
             mongo_query['reference_bases'] = validated_params['referenceBases']
@@ -75,54 +100,87 @@ def variant_query_boolean(request):
         if validated_params.get('assemblyId'):
             mongo_query['assembly_id'] = validated_params['assemblyId']
 
+        # A positional query without a chromosome cannot use the
+        # {reference_name, start} index and would scan the entire collection
+        # (tens of millions of documents). Require referenceName whenever a
+        # position is supplied — this matches the UI, which marks Chromosome
+        # required.
+        if any(k in mongo_query for k in POSITION_FILTER_KEYS) and 'reference_name__in' not in mongo_query:
+            return _error_response(
+                status.HTTP_400_BAD_REQUEST,
+                'referenceName is required when querying by position',
+            )
+
+        # Granularity: default 'boolean'. 'aggregated' (or 'record') additionally
+        # returns allele frequencies for matched variants.
+        requested_granularity = validated_params.get('requestedGranularity', 'boolean')
+        want_frequency = requested_granularity in ('aggregated', 'record')
+        returned_granularity = 'boolean'
+
         # Query variants and collect dataset membership
         exists = False
         dataset_allele_responses = []
 
         if mongo_query:
             logger.info(f"MongoDB query: {mongo_query}")
-            matched_variants = list(Variant.objects.filter(**mongo_query).only('dataset_ids'))
-            exists = len(matched_variants) > 0
+            base_qs = Variant.objects.filter(**mongo_query)
+            # Existence only needs one document — never materialize the full
+            # match set, which can be millions of variants for a broad query.
+            exists = base_qs.first() is not None
 
             if exists:
-                # Collect dataset_ids from matched variants
-                matched_dataset_ids = set()
-                for v in matched_variants:
-                    matched_dataset_ids.update(v.dataset_ids or [])
-
-                # Get all datasets to build per-dataset responses
-                all_datasets = Dataset.objects.all()
-                for ds in all_datasets:
-                    dataset_allele_responses.append({
+                # Per-dataset attribution via a bounded check per dataset. Fetch
+                # the matched doc once and reuse it for the allele frequency
+                # rather than issuing a second query.
+                for ds in Dataset.objects.all():
+                    ds_variant = base_qs.filter(dataset_ids=ds.id).first()
+                    dar = {
                         'datasetId': ds.id,
                         'datasetName': ds.name,
-                        'exists': ds.id in matched_dataset_ids,
-                    })
+                        'exists': ds_variant is not None,
+                    }
+                    if want_frequency and ds_variant is not None and ds_variant.allele_frequency is not None:
+                        dar['alleleFrequency'] = ds_variant.allele_frequency
+                        returned_granularity = 'aggregated'
+                    dataset_allele_responses.append(dar)
 
         logger.info(f"Variant query: exists={exists}, params={validated_params.get('referenceName', 'unknown')}")
 
         result_sets = []
         if dataset_allele_responses:
             for dar in dataset_allele_responses:
-                result_sets.append({
+                rs = {
                     'id': dar['datasetId'],
+                    'name': dar['datasetName'],
                     'setType': 'dataset',
                     'exists': dar['exists'],
                     'resultsCount': 1 if dar['exists'] else 0,
-                })
+                }
+                # Spec-shaped allele frequency (GA4GH frequencyInPopulations)
+                if dar.get('alleleFrequency') is not None:
+                    rs['results'] = [{
+                        'frequencyInPopulations': [{
+                            'source': dar['datasetName'],
+                            'sourceReference': dar['datasetId'],
+                            'frequencies': [{
+                                'population': dar['datasetName'],
+                                'alleleFrequency': dar['alleleFrequency'],
+                            }],
+                        }],
+                    }]
+                result_sets.append(rs)
         return Response(build_query_envelope(
             exists=exists,
             num_total=sum(1 for d in dataset_allele_responses if d.get('exists')) if dataset_allele_responses else (1 if exists else 0),
             result_sets=result_sets,
             validated_params=validated_params,
+            requested_granularity=requested_granularity,
+            returned_granularity=returned_granularity,
         ))
 
     except Exception as e:
         logger.error(f"Query error: {e}", exc_info=True)
-        return Response({
-            'error': 'Query failed',
-            'message': 'An error occurred processing your request'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _server_error()
 
 
 @api_view(['GET', 'POST'])
@@ -172,10 +230,7 @@ def individual_query_boolean(request):
 
     except Exception as e:
         logger.error(f"Query error: {e}", exc_info=True)
-        return Response({
-            'error': 'Query failed',
-            'message': 'An error occurred processing your request'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _server_error()
 
 
 @api_view(['GET'])
@@ -189,17 +244,26 @@ def datasets_boolean(request):
         datasets = Dataset.objects.all()
         results = []
         for ds in datasets:
-            variant_count = Variant.objects.filter(dataset_ids=ds.id).count()
-            results.append({
+            # Read counts from the precomputed dataset_size field rather than
+            # scanning the variants collection — at production volume (~42M
+            # docs, dataset_ids unindexed and often unset) the per-dataset
+            # count() degrades into a 30s collection scan that hangs the view.
+            # Omit absent counts entirely (the frontend's `!== undefined`
+            # guard rejects undefined but not null).
+            size = ds.dataset_size or {}
+            entry = {
                 'id': ds.id,
                 'name': ds.name,
                 'description': ds.description,
                 'assemblyId': ds.assembly_id,
-                'variantCount': variant_count,
-                'sampleCount': ds.dataset_size.get('samples') if ds.dataset_size else None,
                 'createDateTime': ds.create_date.isoformat() if hasattr(ds.create_date, 'isoformat') else ds.create_date,
                 'updateDateTime': ds.update_date.isoformat() if hasattr(ds.update_date, 'isoformat') else ds.update_date,
-            })
+            }
+            if isinstance(size.get('variants'), int):
+                entry['variantCount'] = size['variants']
+            if isinstance(size.get('samples'), int):
+                entry['sampleCount'] = size['samples']
+            results.append(entry)
 
         result_sets = []
         if results:
@@ -218,10 +282,7 @@ def datasets_boolean(request):
 
     except Exception as e:
         logger.error(f"Datasets query error: {e}", exc_info=True)
-        return Response({
-            'error': 'Query failed',
-            'message': 'An error occurred processing your request'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _server_error()
 
 
 @api_view(['GET'])
@@ -230,7 +291,10 @@ def beacon_info_boolean(request):
     """
     Beacon information endpoint for boolean-only mode
     """
-    # Build datasets list from DB
+    # Build datasets list from DB. A DB failure must NOT be papered over with a
+    # fabricated placeholder dataset — /info is how clients discover what this
+    # beacon holds, and inventing an entry advertises data we cannot confirm
+    # exists. Surface it as a 5xx instead.
     datasets_list = []
     try:
         for ds in Dataset.objects.all():
@@ -240,8 +304,9 @@ def beacon_info_boolean(request):
                 'description': ds.description,
                 'createDateTime': ds.create_date.isoformat() if ds.create_date else None,
             })
-    except Exception:
-        datasets_list = [{'id': 'public', 'name': 'Public Dataset'}]
+    except Exception as e:
+        logger.error(f"Beacon info dataset lookup failed: {e}", exc_info=True)
+        return _server_error('Unable to retrieve beacon information')
 
     info_payload = {
         'id': settings.BEACON_API_ID,
@@ -433,9 +498,14 @@ def beacon_map(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([])
 def health_check(request):
     """
-    Health check endpoint for monitoring
+    Health check endpoint for monitoring.
+
+    Exempt from throttling: container/orchestration health probes poll this
+    frequently (every 30s) from a fixed source IP and would otherwise trip the
+    anonymous rate limit, marking a healthy container unhealthy.
     """
     try:
         # Check MongoDB connection
@@ -443,21 +513,36 @@ def health_check(request):
         Dataset.objects.limit(1).count()
         db_status = 'healthy'
     except Exception as e:
-        logger.error(f"Database health check failed: {e}")
+        logger.error(f"Database health check failed: {e}", exc_info=True)
         db_status = 'unhealthy'
 
-    # Check cache
+    # Check cache. Catch Exception, not a bare `except:` — the bare form also
+    # swallowed KeyboardInterrupt/SystemExit (so a shutdown signal arriving
+    # mid-probe was reported as a mere cache blip) and logged nothing at all,
+    # leaving no trace of *why* the cache was unhealthy.
     try:
         from django.core.cache import cache
         cache.set('health_check', 'test', 10)
         cache_status = 'healthy' if cache.get('health_check') == 'test' else 'unhealthy'
-    except:
+    except Exception as e:
+        logger.error(f"Cache health check failed: {e}", exc_info=True)
         cache_status = 'unhealthy'
 
+    # The database is load-bearing: without it the beacon cannot answer any
+    # query, so a DB failure is a hard 503. A cache failure is reported
+    # honestly as 'degraded' but stays 200 — queries still resolve correctly
+    # against MongoDB, and 503-ing here would make a transient Redis blip
+    # restart an otherwise-serving container.
     status_code = status.HTTP_200_OK if db_status == 'healthy' else status.HTTP_503_SERVICE_UNAVAILABLE
+    if db_status != 'healthy':
+        overall = 'unhealthy'
+    elif cache_status != 'healthy':
+        overall = 'degraded'
+    else:
+        overall = 'healthy'
 
     return Response({
-        'status': 'healthy' if db_status == 'healthy' else 'degraded',
+        'status': overall,
         'version': settings.BEACON_API_VERSION,
         'services': {
             'database': db_status,
@@ -511,7 +596,7 @@ def cohorts_list_boolean(request):
         ))
     except Exception as e:
         logger.error(f"Cohorts list error: {e}", exc_info=True)
-        return Response({'error': 'Query failed', 'message': 'An error occurred'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _server_error()
 
 
 @api_view(['GET'])
@@ -534,7 +619,7 @@ def cohort_detail_boolean(request, cohort_id):
         ))
     except Exception as e:
         logger.error(f"Cohort detail error: {e}", exc_info=True)
-        return Response({'error': 'Query failed', 'message': 'An error occurred'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _server_error()
 
 
 @api_view(['GET'])
@@ -547,7 +632,7 @@ def filtering_terms_list_boolean(request):
         return Response(build_collection_envelope(results, set_type='filteringTerm'))
     except Exception as e:
         logger.error(f"Filtering terms list error: {e}", exc_info=True)
-        return Response({'error': 'Query failed', 'message': 'An error occurred'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _server_error()
 
 
 # ---------------------------------------------------------------------------
@@ -623,8 +708,13 @@ def dataset_detail_boolean(request, dataset_id):
             exists=True, num_total=1, result_sets=result_sets,
         ))
     except Exception as e:
+        # A lookup failure is NOT the same as "no such dataset". Returning the
+        # empty 200 envelope here made a MongoDB outage indistinguishable from
+        # a genuine miss, so clients (and the Beacon Network aggregator) would
+        # record an authoritative "does not exist" for data we simply could
+        # not read. Only the `not ds` branch above may answer empty-but-200.
         logger.error(f"Dataset detail error: {e}", exc_info=True)
-        return Response(_empty_query())
+        return _server_error()
 
 
 @api_view(['GET'])

@@ -6,10 +6,11 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Menu, X } from 'lucide-react';
 
 const navLinks = [
-  { href: '/', label: 'Query' },
+  { href: '/', label: 'Check variant' },
   { href: '/datasets', label: 'Datasets' },
   { href: '/about', label: 'About' },
 ];
@@ -49,22 +50,32 @@ export function Header() {
                 {label}
               </Link>
             ))}
+            <ThemeToggle />
           </div>
 
-          {/* Mobile menu button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setMobileOpen(!mobileOpen)}
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
+          {/* Mobile: theme toggle + menu button */}
+          <div className="flex items-center md:hidden">
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label="Toggle navigation menu"
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-nav"
+            >
+              {mobileOpen ? (
+                <X className="h-5 w-5" aria-hidden="true" />
+              ) : (
+                <Menu className="h-5 w-5" aria-hidden="true" />
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Mobile nav */}
         {mobileOpen && (
-          <div className="md:hidden pb-4 space-y-1">
+          <div id="mobile-nav" className="md:hidden pb-4 space-y-1">
             {navLinks.map(({ href, label }) => (
               <Link
                 key={href}

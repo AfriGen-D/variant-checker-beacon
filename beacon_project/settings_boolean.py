@@ -13,8 +13,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Error tracking — GlitchTip (Sentry-protocol). No-op when SENTRY_DSN is unset.
 SENTRY_DSN = config('SENTRY_DSN', default='')
 if SENTRY_DSN:
+    import re
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
+
+    # DRF's Throttled exception puts the remaining-seconds count in the
+    # message, so each rate-limit denial fingerprints as a separate issue
+    # ("in 21 seconds", "in 51 seconds", ...). Collapse the family into one
+    # issue and demote it to "warning" — rate-limit denial is operational,
+    # not a bug.
+    _THROTTLE_SECONDS_RE = re.compile(r"in \d+ seconds?")
+
+    def _beacon_before_send(event, hint):
+        for v in (event.get('exception') or {}).get('values') or ():
+            if v.get('type') == 'Throttled':
+                event['fingerprint'] = ['beacon-api-throttled']
+                event['level'] = 'warning'
+                if 'value' in v:
+                    v['value'] = _THROTTLE_SECONDS_RE.sub(
+                        "in N seconds", v['value']
+                    )
+                break
+        return event
 
     sentry_sdk.init(
         dsn=SENTRY_DSN,
@@ -22,6 +42,7 @@ if SENTRY_DSN:
         integrations=[DjangoIntegration()],
         traces_sample_rate=0.0,
         send_default_pii=False,
+        before_send=_beacon_before_send,
     )
 
 # ============================================================================
@@ -133,6 +154,10 @@ CACHES = {
         'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/0',
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            # Bound cache I/O so a slow/hung Redis can't block request workers
+            # indefinitely (boolean mode previously set no timeouts).
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
         },
         'KEY_PREFIX': 'beacon_boolean',
         'TIMEOUT': CACHE_TIMEOUT,
@@ -181,6 +206,7 @@ BEACON_WELCOME_URL = config('BEACON_WELCOME_URL', default='https://afrigen-d.org
 BEACON_SERVICE_URL = config('BEACON_SERVICE_URL', default='https://beacon.afrigen-d.org/api/')
 BEACON_ORGANIZATION_URL = config('BEACON_ORGANIZATION_URL', default='https://afrigen-d.org')
 BEACON_CONTACT_URL = config('BEACON_CONTACT_URL', default='mailto:support@bioinformaticsinstitute.africa')
+BEACON_IMPUTATION_URL = config('BEACON_IMPUTATION_URL', default='https://fedimpute.afrigen-d.org')
 
 # Rate limits for specific endpoints
 BEACON_RATE_LIMITS = {

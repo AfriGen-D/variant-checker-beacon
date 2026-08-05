@@ -6,13 +6,28 @@ import mongoengine
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-a6fs2g5%0=$b-+w!u*g-q$hg^loe5n-hv_i0=yc0(k#b-)!0$&')
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() == 'true'
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = ['*']
+# SECURITY WARNING: keep the secret key used in production secret!
+# Required from the environment. In DEBUG an ephemeral key is generated so local
+# dev works without configuration; outside DEBUG a missing key is a hard error
+# rather than a silent fall back to a known, committed value.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        from django.core.management.utils import get_random_secret_key
+        SECRET_KEY = get_random_secret_key()
+    else:
+        raise RuntimeError(
+            'DJANGO_SECRET_KEY environment variable must be set when DEBUG is False'
+        )
+
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    if h.strip()
+]
 
 # Application definition
 INSTALLED_APPS = [

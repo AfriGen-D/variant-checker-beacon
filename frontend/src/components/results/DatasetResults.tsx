@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import type { DatasetAlleleResponse, Dataset, VariantQuery } from '@/lib/api/types';
+import type { DatasetAlleleResponse, Dataset, VariantQuery, Handover } from '@/lib/api/types';
 import { exportCsv, exportJson } from '@/lib/utils/exportResults';
+import { ExternalDbLinks } from '@/components/results/ExternalDbLinks';
 import { ExternalLink } from 'lucide-react';
 
 function getApiDisplayBase(): string {
@@ -17,16 +18,6 @@ function getApiDisplayBase(): string {
     return `${window.location.origin}/api`;
   }
   return '/api';
-}
-
-function buildAgvdUrl(query: VariantQuery): string {
-  const chr = query.referenceName.startsWith('chr') ? query.referenceName : `chr${query.referenceName}`;
-  return `https://agvd.afrigen-d.org/search/res?type=coordinate&input=${chr}:${query.start}&dataset=AGVD_24A_Main&page=1`;
-}
-
-function buildAgmpUrl(query: VariantQuery): string {
-  const chr = query.referenceName.startsWith('chr') ? query.referenceName : `chr${query.referenceName}`;
-  return `https://agmp.afrigen-d.org/?search_query=${chr}:${query.start}&model_selection=variantagmp`;
 }
 
 const PAGE_SIZE = 5;
@@ -81,6 +72,24 @@ function ApiQueryBlock({ query }: { query: VariantQuery }) {
         </div>
       )}
     </div>
+  );
+}
+
+function HandoverButton({ handover, size = 'md' }: { handover: Handover; size?: 'sm' | 'md' }) {
+  const sizing = size === 'sm'
+    ? 'px-2 py-1 text-xs gap-1'
+    : 'px-3 py-1.5 text-sm gap-1.5';
+  return (
+    <a
+      href={handover.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={handover.note}
+      className={`inline-flex items-center font-medium rounded-md border bg-background hover:bg-muted transition-colors ${sizing}`}
+    >
+      {handover.handoverType.label}
+      <ExternalLink className={size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+    </a>
   );
 }
 
@@ -196,16 +205,31 @@ function JsonResponseBlock({ data }: { data: unknown }) {
   );
 }
 
+type QueryStatus = 'idle' | 'loading' | 'error' | 'success';
+
 interface DatasetResultsProps {
   datasetAlleleResponses?: DatasetAlleleResponse[];
   datasets?: Dataset[];
   query?: VariantQuery | null;
   selectedDatasetIds?: string[];
   rawResponse?: unknown;
+  beaconHandovers?: Handover[];
+  status: QueryStatus;
 }
 
-export function DatasetResults({ datasetAlleleResponses, datasets, query, selectedDatasetIds, rawResponse }: DatasetResultsProps) {
+export function DatasetResults({ datasetAlleleResponses, datasets, query, selectedDatasetIds, rawResponse, beaconHandovers, status }: DatasetResultsProps) {
   const [page, setPage] = useState(0);
+
+  // Reset to the first page whenever the query, the response, or the dataset
+  // selection changes — a shorter list would otherwise render an empty page.
+  useEffect(() => {
+    setPage(0);
+  }, [query, datasetAlleleResponses, selectedDatasetIds]);
+
+  // A query that failed or is still in flight has no verdict to report. The
+  // no-results branch below would render "Found in 0 of N" with a red NO per
+  // dataset — a definitive negative the beacon never gave.
+  if (status === 'error' || status === 'loading') return null;
 
   // Filter by selected datasets (empty = show all)
   const filteredResponses = datasetAlleleResponses && selectedDatasetIds && selectedDatasetIds.length > 0
@@ -231,29 +255,7 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {query && (
-                <>
-                  <a
-                    href={buildAgvdUrl(query)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border bg-background hover:bg-muted transition-colors"
-                  >
-                    See in AGVD
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                  <a
-                    href={buildAgmpUrl(query)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border bg-background hover:bg-muted transition-colors"
-                  >
-                    See in AGMP
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                  <ExportButtons query={query} responses={filteredResponses} />
-                </>
-              )}
+              {query && <ExportButtons query={query} responses={filteredResponses} />}
             </div>
           </div>
           {query && (
@@ -265,20 +267,40 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {paged.map((dar) => (
-              <div
-                key={dar.datasetId}
-                className="flex items-center justify-between p-3 rounded-lg border bg-muted/50"
-              >
-                <p className="font-medium text-sm">{dar.datasetName}</p>
-                <Badge variant={dar.exists ? 'success' : 'destructive'} size="sm">
-                  {dar.exists ? 'YES' : 'NO'}
-                </Badge>
-              </div>
-            ))}
+            {paged.map((dar) => {
+              const rowHandovers = dar.resultsHandover?.length ? dar.resultsHandover : beaconHandovers;
+              return (
+                <div
+                  key={dar.datasetId}
+                  className="flex items-center justify-between p-3 rounded-lg border bg-muted/50"
+                >
+                  <p className="font-medium text-sm">{dar.datasetName}</p>
+                  <div className="flex items-center gap-2">
+                    {dar.exists && dar.alleleFrequency !== undefined && (
+                      <span className="text-xs font-mono tabular-nums text-muted-foreground" title="Allele frequency in this dataset">
+                        AF {dar.alleleFrequency.toFixed(4)}
+                      </span>
+                    )}
+                    {dar.exists && rowHandovers?.map((h) => (
+                      <HandoverButton key={h.handoverType.id + h.url} handover={h} size="sm" />
+                    ))}
+                    <Badge variant={dar.exists ? 'success' : 'destructive'} size="sm">
+                      {dar.exists ? 'YES' : 'NO'}
+                    </Badge>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} totalItems={total} />
-          {rawResponse != null && <JsonResponseBlock data={rawResponse} />}
+          {query && (
+            <div className="mt-5 pt-4 border-t">
+              <ExternalDbLinks query={query} variant="panel" />
+            </div>
+          )}
+          {process.env.NODE_ENV !== 'production' && rawResponse != null && (
+            <JsonResponseBlock data={rawResponse} />
+          )}
         </CardContent>
       </Card>
     );
@@ -328,6 +350,14 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
           <p className="text-sm text-muted-foreground text-center py-4">
             Submit a query to see results
           </p>
+        )}
+        {hasQuery && query && (
+          <div className="mt-5 pt-4 border-t">
+            <p className="text-sm text-muted-foreground mb-3">
+              Not in these datasets — check whether it appears in the wider databases:
+            </p>
+            <ExternalDbLinks query={query} variant="panel" />
+          </div>
         )}
       </CardContent>
     </Card>
