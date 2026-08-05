@@ -28,6 +28,11 @@ services:
 
   # Beacon API — Django + Gunicorn (Boolean mode)
   beacon-api:
+    # `image` lets CI deploy a prebuilt GHCR image by setting API_IMAGE; the
+    # `build` stanza stays so a local `docker compose build` still works and
+    # tags the result under the same name. Without the fallback value a plain
+    # `up` with no env would try to pull an empty image reference.
+    image: ${API_IMAGE:-afrigend-beacon2-beacon-api:local}
     build:
       context: ..
       dockerfile: Dockerfile.boolean
@@ -57,6 +62,10 @@ services:
 
   # Frontend — Next.js 14 standalone build
   beacon-frontend:
+    # NEXT_PUBLIC_BEACON_API_URL must stay empty so the browser bundle calls a
+    # relative /api, which nginx proxies. Baking a host in here is what breaks
+    # the live site. CI passes the same empty value as a build-arg.
+    image: ${FRONTEND_IMAGE:-afrigend-beacon2-beacon-frontend:local}
     build:
       context: ../frontend
       dockerfile: Dockerfile

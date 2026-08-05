@@ -111,28 +111,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Deploy (tag v* only) ──────────────────────────
-  deploy:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Deploy to production
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          envs: DEPLOY_TAG,DEPLOY_API_IMAGE,DEPLOY_FRONTEND_IMAGE
-          script: |
-            cd ~/afrigend-beacon2
-            git fetch --tags
-            git checkout "$DEPLOY_TAG"
-            API_IMAGE="$DEPLOY_API_IMAGE" \
-            FRONTEND_IMAGE="$DEPLOY_FRONTEND_IMAGE" \
-            ./scripts/deploy.sh --pull-only
-        env:
-          DEPLOY_TAG: ${{ github.ref_name }}
-          DEPLOY_API_IMAGE: ${{ env.API_IMAGE }}:${{ github.sha }}
-          DEPLOY_FRONTEND_IMAGE: ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+
+# Production deploy lives in deploy.yml (tag-triggered, GHCR images,
+# health-gated with rollback). The old deploy job that used to sit here
+# could never have worked: it ran `git fetch && git checkout` inside
+# ~/afrigend-beacon2 on the prod host, which has no `origin` remote and
+# thousands of lines of hand-edits, and it invoked scripts/deploy.sh
+# against a compose file production does not use.
