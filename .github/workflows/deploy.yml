@@ -21,17 +21,34 @@ name: Deploy to Production
 #                      half is in the host's ~/.ssh/authorized_keys. Do not
 #                      reuse a personal identity key here.
 #
-# Deploy either by pushing a semver tag, or from Actions -> Run workflow.
+# DEPLOYING IS A DELIBERATE ACT. Pushing a tag builds images; it does NOT
+# deploy them. Rolling them out to production is a separate, manual trigger:
+#
+#   gh workflow run deploy.yml -f tag=v1.2.3
+#   # or: Actions -> Deploy to Production -> Run workflow
+#
+# Splitting the trigger from the tag IS the gate, and it is the same shape the
+# fedimpute pipeline uses. It exists because the earlier tag-triggered version
+# of this workflow shipped straight to the only user-facing environment the
+# moment a tag was pushed, unattended — which is how a bad image took
+# beacon.afrigen-d.org down on 2026-08-05. A tag is now a build artefact and a
+# rollback target, not a deployment.
+#
+# Deploy to the sidecar first (see the deploy-sidecar job) and let it prove the
+# images before production is touched.
 
 on:
-  push:
-    tags: ['v*.*.*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to deploy (e.g. v1.2.3)'
+        description: 'Tag to deploy (e.g. v1.2.3). Images must already exist on GHCR at this tag.'
         required: true
         type: string
+      skip_sidecar:
+        description: 'Skip the sidecar smoke test (only when the sidecar is unavailable — you are deploying unproven images)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-production
@@ -43,12 +60,44 @@ env:
   FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/beacon-frontend
 
 jobs:
+  # Validate the tag BEFORE anything checks it out or interpolates it. The tag
+  # is dispatch input, and it ends up both as an actions/checkout ref and
+  # inside a shell command on the deploy host, so every later job consumes
+  # `needs.preflight.outputs.version` rather than the raw input.
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Validate tag format
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if ! printf '%s' "$INPUT_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "Refusing to deploy: '$INPUT_TAG' is not a semver tag." >&2
+            exit 1
+          fi
+          echo "version=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm the tag exists
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${VERSION} does not exist in this repository." >&2
+            exit 1
+          fi
+          echo "Tag ${VERSION} found."
+
   validate:
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.preflight.outputs.version }}
 
       - uses: actions/setup-node@v4
         with:
@@ -78,37 +127,18 @@ jobs:
           python -m beacon_api.test_middleware
 
   build:
-    needs: validate
+    needs: [preflight, validate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ needs.preflight.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.preflight.outputs.version }}
           fetch-depth: 0
-
-      - name: Resolve version
-        id: version
-        env:
-          INPUT_TAG: ${{ github.event.inputs.tag }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" = "push" ]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
-          else
-            VERSION="$INPUT_TAG"
-          fi
-          # The version is interpolated into shell on the remote host, so keep
-          # it to characters that cannot break out of the command.
-          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
-            echo "Refusing to deploy: '$VERSION' is not a semver tag." >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
         with:
@@ -125,7 +155,7 @@ jobs:
           file: ./Dockerfile.boolean
           push: true
           tags: |
-            ${{ env.API_IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.API_IMAGE }}:${{ needs.preflight.outputs.version }}
             ${{ env.API_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -140,15 +170,121 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           tags: |
-            ${{ env.FRONTEND_IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.FRONTEND_IMAGE }}:${{ needs.preflight.outputs.version }}
             ${{ env.FRONTEND_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             NEXT_PUBLIC_BEACON_API_URL=
 
+  # Prove the images on the API-only sidecar before production sees them.
+  #
+  # This is the environment production never had. The sidecar serves
+  # api-beacon.afrigen-d.dev, has no UI and no real users, and runs the same
+  # API image from the same compose definitions — so a boot failure, a missing
+  # module or a healthcheck that never passes surfaces here instead of on
+  # beacon.afrigen-d.org.
+  #
+  # Requires SIDECAR_* secrets. It sits on a private address behind the
+  # jumphost, so the SSH hop is proxied (the same shape the fedimpute pipeline
+  # uses for its own private prod host).
+  deploy-sidecar:
+    needs: [preflight, build]
+    if: ${{ !inputs.skip_sidecar }}
+    runs-on: ubuntu-latest
+    outputs:
+      smoked: ${{ steps.smoke.outputs.smoked }}
+    steps:
+      - name: Check the sidecar is configured
+        id: cfg
+        env:
+          SIDECAR_HOST: ${{ secrets.SIDECAR_HOST }}
+        run: |
+          if [ -z "$SIDECAR_HOST" ]; then
+            echo "SIDECAR_HOST is not set — the sidecar stage cannot run." >&2
+            echo "Add SIDECAR_HOST / SIDECAR_USERNAME / SIDECAR_SSH_KEY and" >&2
+            echo "JUMPHOST_HOST / JUMPHOST_USERNAME, or re-run with" >&2
+            echo "skip_sidecar=true to deploy unproven images deliberately." >&2
+            exit 1
+          fi
+
+      - name: Deploy images to the sidecar
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_VERSION: ${{ needs.preflight.outputs.version }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+        with:
+          host: ${{ secrets.SIDECAR_HOST }}
+          username: ${{ secrets.SIDECAR_USERNAME }}
+          key: ${{ secrets.SIDECAR_SSH_KEY }}
+          proxy_host: ${{ secrets.JUMPHOST_HOST }}
+          proxy_username: ${{ secrets.JUMPHOST_USERNAME }}
+          proxy_key: ${{ secrets.SIDECAR_SSH_KEY }}
+          command_timeout: 10m
+          # No `set -e`: every failure below needs to be reported, not to
+          # silently abort the script mid-way. Same reasoning as the prod job.
+          script: |
+            set -uo pipefail
+            cd /opt/afrigend/beacon
+
+            COMPOSE="docker compose -f docker-compose.sidecar.yml"
+            [ -f docker-compose.sidecar.yml ] || COMPOSE="docker compose -f docker-compose.dev.yml"
+            API="ghcr.io/${REPO}/beacon-api:${DEPLOY_VERSION}"
+
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GH_ACTOR}" --password-stdin
+            docker pull "$API" || { echo "pull failed"; exit 1; }
+
+            export API_IMAGE="$API"
+            $COMPOSE up -d --no-deps mongodb redis || true
+            $COMPOSE up -d --no-deps beacon-api || echo "compose up returned non-zero; checking health anyway"
+
+            # The API's own healthcheck has a 30s interval, so compose's
+            # dependency gate can give up before the container has ever been
+            # probed. Poll the endpoint directly instead of trusting that gate.
+            for i in $(seq 1 30); do
+              if curl -fsS --max-time 5 http://127.0.0.1:8000/api/health > /dev/null 2>&1; then
+                echo "Sidecar API healthy after ${i} attempt(s)."
+                exit 0
+              fi
+              sleep 5
+            done
+
+            echo "Sidecar API never became healthy — refusing to promote these images."
+            $COMPOSE logs --tail 60 beacon-api || true
+            exit 1
+
+      - name: Smoke the sidecar through its public endpoint
+        id: smoke
+        run: |
+          set -uo pipefail
+          ok=0
+          for i in $(seq 1 12); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+              https://api-beacon.afrigen-d.dev/api/health || echo 000)
+            echo "attempt ${i}: HTTP ${CODE}"
+            if [ "$CODE" = "200" ]; then ok=1; break; fi
+            sleep 10
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Sidecar is not answering publicly; not promoting to production." >&2
+            exit 1
+          fi
+          # A beacon that boots but answers nothing is not proven. Exercise a
+          # real query path before promoting.
+          for path in /api/info /api/datasets; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+              "https://api-beacon.afrigen-d.dev${path}")
+            echo "${path}: HTTP ${CODE}"
+            [ "$CODE" = "200" ] || exit 1
+          done
+          echo "smoked=true" >> "$GITHUB_OUTPUT"
+
   deploy:
-    needs: build
+    needs: [preflight, build, deploy-sidecar]
+    # Runs when the sidecar passed, or when it was deliberately skipped.
+    if: ${{ always() && needs.build.result == 'success' && (needs.deploy-sidecar.result == 'success' || inputs.skip_sidecar) }}
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -166,8 +302,12 @@ jobs:
           envs: DEPLOY_VERSION,GHCR_TOKEN,GH_ACTOR,REPO
           command_timeout: 10m
           script: |
-            set -e
-            cd ~/afrigend-beacon2
+            # NOT `set -e`. Everything below exists to recover from a bad
+            # image, and an abort-on-error shell skips the recovery. An earlier
+            # revision used `set -e`, so when `compose up` returned non-zero the
+            # script died before the rollback — leaving production down.
+            set -uo pipefail
+            cd ~/afrigend-beacon2 || exit 1
 
             COMPOSE="docker compose -f docker-compose-boolean-ssl.yml"
             API="ghcr.io/${REPO}/beacon-api:${DEPLOY_VERSION}"
@@ -183,8 +323,11 @@ jobs:
             echo "Previous API image:      ${PREV_API:-none}"
             echo "Previous frontend image: ${PREV_FRONTEND:-none}"
 
-            docker pull "$API"
-            docker pull "$FRONTEND"
+            # Pull before touching anything. Without `set -e` these need
+            # explicit checks — and failing here is the good case: nothing has
+            # been recreated yet, so there is nothing to roll back.
+            docker pull "$API" || { echo "Failed to pull $API — aborting before touching containers."; exit 1; }
+            docker pull "$FRONTEND" || { echo "Failed to pull $FRONTEND — aborting before touching containers."; exit 1; }
 
             # API_IMAGE/FRONTEND_IMAGE are consumed by the compose file. They
             # are persisted to .env.deploy so a later manual `docker compose up`
