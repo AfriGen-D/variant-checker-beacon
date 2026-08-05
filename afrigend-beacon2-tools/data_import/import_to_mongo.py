@@ -11,11 +11,11 @@ import logging
 import argparse
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, Iterator, List, Optional, Union
 from tqdm import tqdm
 
 import yaml
-from pymongo import MongoClient
+from pymongo import MongoClient, InsertOne, ReplaceOne
 from pymongo.errors import BulkWriteError, ConnectionFailure
 
 # Add parent directory to path for imports
@@ -114,60 +114,109 @@ class MongoImporter:
                 self.logger.error(f"File not found: {json_file}")
                 return False
 
-            # Determine file type and load data
+            # Determine file type and stream data. JSONL is streamed record by
+            # record — a chromosome-scale variants file does not fit in memory.
             if json_file.endswith('.jsonl'):
-                data = self._load_jsonl_file(json_file)
+                records = self._iter_jsonl_file(json_file)
             else:
-                data = self._load_json_file(json_file)
+                records = iter(self._load_json_file(json_file))
 
-            if not data:
+            self.logger.info(f"Importing records to {db_name}.{collection_name}")
+
+            batch = []
+            seen = 0
+            failed = False
+
+            with tqdm(desc=f"Importing {collection_name}", disable=not show_progress) as pbar:
+                for record in records:
+                    batch.append(record)
+                    seen += 1
+                    if len(batch) >= batch_size:
+                        failed |= not self._write_batch(collection, batch)
+                        pbar.update(len(batch))
+                        batch = []
+
+                if batch:
+                    failed |= not self._write_batch(collection, batch)
+                    pbar.update(len(batch))
+
+            if seen == 0:
                 self.logger.warning(f"No data found in {json_file}")
                 return False
 
-            # Import data in batches
-            total_records = len(data)
-            self.logger.info(f"Importing {total_records} records to {db_name}.{collection_name}")
-            
-            with tqdm(total=total_records, desc=f"Importing {collection_name}", 
-                     disable=not show_progress) as pbar:
-                
-                for i in range(0, total_records, batch_size):
-                    batch = data[i:i + batch_size]
-                    
-                    # Remove MongoDB _id if present to avoid conflicts
-                    for record in batch:
-                        if isinstance(record, dict):
-                            record.pop('_id', None)
-                    
-                    try:
-                        if len(batch) == 1:
-                            result = collection.insert_one(batch[0])
-                        else:
-                            result = collection.insert_many(batch, ordered=False)
-                        
-                        self.stats['records_imported'] += len(batch)
-                        pbar.update(len(batch))
-                        
-                    except BulkWriteError as e:
-                        self.logger.warning(f"Some records failed to import: {e.details}")
-                        # Count successful inserts
-                        successful = len(e.details.get('writeErrors', []))
-                        self.stats['records_imported'] += (len(batch) - successful)
-                        self.stats['errors'] += successful
-                        pbar.update(len(batch))
-                        
-                    except Exception as e:
-                        self.logger.error(f"Error importing batch: {e}")
-                        self.stats['errors'] += len(batch)
-                        pbar.update(len(batch))
-
             self.stats['files_processed'] += 1
-            self.logger.info(f"Successfully imported {self.stats['records_imported']} records to {collection_name}")
-            return True
-            
+            self.logger.info(f"Imported {self.stats['records_imported']} records to {collection_name}")
+            return not failed
+
         except Exception as e:
             self.logger.error(f"Error importing {json_file}: {e}")
             self.stats['errors'] += 1
+            return False
+
+    @staticmethod
+    def _natural_key(record: Dict) -> Optional[Union[str, int]]:
+        """Return the record's natural key, or None if it has none.
+
+        Variants and individuals carry it as `id` (CHROM:POS:REF:ALT, sample
+        ID). Phenotype and disease records have no `id` — their natural key is
+        the individual plus the term.
+        """
+        key = record.get('id')
+        if isinstance(key, (str, int)) and key != '':
+            return key
+
+        individual_id = record.get('individual_id')
+        for term_field in ('phenotype_id', 'disease_id'):
+            if individual_id and record.get(term_field):
+                return f"{individual_id}:{record[term_field]}"
+
+        return None
+
+    def _write_batch(self, collection, batch: List[Dict]) -> bool:
+        """Upsert a batch of records. Returns False if any record failed.
+
+        Records are keyed on the natural key the transform already computes
+        (`id` — CHROM:POS:REF:ALT for variants, the sample ID for individuals),
+        written to `_id` so that re-running the pipeline replaces documents
+        instead of duplicating them. One bulk round trip per batch.
+        """
+        operations = []
+        for record in batch:
+            if not isinstance(record, dict):
+                self.logger.warning(f"Skipping non-object record: {record!r}")
+                self.stats['errors'] += 1
+                continue
+
+            record.pop('_id', None)
+            natural_key = self._natural_key(record)
+            if natural_key is not None:
+                record['_id'] = natural_key
+                operations.append(ReplaceOne({'_id': natural_key}, record, upsert=True))
+            else:
+                # Nothing to key on — insert, and say so rather than silently
+                # pretending the import was idempotent.
+                self.logger.warning("Record has no 'id' field; inserting without upsert key")
+                operations.append(InsertOne(record))
+
+        if not operations:
+            return False
+
+        try:
+            collection.bulk_write(operations, ordered=False)
+            self.stats['records_imported'] += len(operations)
+            return True
+
+        except BulkWriteError as e:
+            write_errors = e.details.get('writeErrors', []) if e.details else []
+            failed_count = len(write_errors) or len(operations)
+            self.logger.error(f"{failed_count} records failed to import: {e.details}")
+            self.stats['records_imported'] += (len(operations) - failed_count)
+            self.stats['errors'] += failed_count
+            return False
+
+        except Exception as e:
+            self.logger.error(f"Error importing batch: {e}")
+            self.stats['errors'] += len(operations)
             return False
 
     def _load_json_file(self, json_file: str) -> List[Dict]:
@@ -192,25 +241,21 @@ class MongoImporter:
             self.logger.error(f"Error loading {json_file}: {e}")
             return []
 
-    def _load_jsonl_file(self, jsonl_file: str) -> List[Dict]:
-        """Load data from JSONL file (one JSON object per line)."""
-        data = []
-        try:
-            with open(jsonl_file, 'r') as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
-                    if line:
-                        try:
-                            record = json.loads(line)
-                            data.append(record)
-                        except json.JSONDecodeError as e:
-                            self.logger.warning(f"Invalid JSON on line {line_num}: {e}")
-                            continue
-            return data
-            
-        except Exception as e:
-            self.logger.error(f"Error loading {jsonl_file}: {e}")
-            return []
+    def _iter_jsonl_file(self, jsonl_file: str) -> Iterator[Dict]:
+        """Yield records from a JSONL file (one JSON object per line).
+
+        Streams — the variants file for a single chromosome is millions of
+        records and must never be materialized as a list.
+        """
+        with open(jsonl_file, 'r') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"Invalid JSON on line {line_num}: {e}")
 
     def import_directory(self, input_dir: str, db_name: str, 
                         collection_mapping: Dict[str, str] = None) -> Dict:
@@ -350,22 +395,31 @@ def main():
                 
         elif os.path.isdir(args.input):
             results = importer.import_directory(args.input, args.db)
-            
+
             print("\nImport Summary:")
             for file_path, result in results.items():
                 status = "SUCCESS" if result['success'] else "FAILED"
                 print(f"  {file_path} -> {result['collection']}: {status}")
-                
+
+            if not results or not all(r['success'] for r in results.values()):
+                print("Import failed for at least one file")
+                sys.exit(1)
+
         else:
             print(f"Error: {args.input} is not a valid file or directory")
             sys.exit(1)
-            
+
         # Print statistics
         print(f"\nStatistics:")
         print(f"  Files processed: {importer.stats['files_processed']}")
         print(f"  Records imported: {importer.stats['records_imported']}")
         print(f"  Errors: {importer.stats['errors']}")
-        
+
+        # A failed batch must stop the pipeline, not be swallowed into a stat
+        if importer.stats['errors'] > 0:
+            print(f"Import completed with {importer.stats['errors']} failed records")
+            sys.exit(1)
+
     except KeyboardInterrupt:
         print("\nImport interrupted by user")
         sys.exit(1)

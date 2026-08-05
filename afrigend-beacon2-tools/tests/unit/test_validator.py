@@ -190,6 +190,83 @@ class TestStrictMode:
 
 
 # ===================================================================
+# TestJsonlValidation
+# ===================================================================
+
+class TestJsonlValidation:
+    """JSONL is what the VCF transform emits — json.load() cannot read it."""
+
+    def setup_method(self):
+        self.v = _make_validator()
+
+    def test_multiline_jsonl_is_parsed(self, json_fixtures_dir):
+        result = self.v.validate_json_file(
+            str(json_fixtures_dir / "valid_variants.jsonl"), schema_type="variant"
+        )
+        assert result.is_valid is True
+        assert result.record_count == 5
+
+    def test_invalid_records_in_jsonl_are_detected(self, tmp_path):
+        fp = tmp_path / "variants.jsonl"
+        fp.write_text(
+            json.dumps({"id": "1:1:A:T", "assembly_id": "GRCh38", "reference_name": "1",
+                        "start": 1, "end": 2, "reference_bases": "A", "alternate_bases": "T"}) + "\n"
+            + json.dumps({"id": "no-position"}) + "\n"
+        )
+        result = self.v.validate_json_file(str(fp), schema_type="variant")
+        assert result.is_valid is False
+
+    def test_malformed_jsonl_line_fails(self, tmp_path):
+        fp = tmp_path / "variants.jsonl"
+        fp.write_text('{"id":"1"}\nnot json at all\n')
+        result = self.v.validate_json_file(str(fp), schema_type="variant")
+        assert result.is_valid is False
+        assert result.record_count == 0
+
+    def test_blank_lines_ignored(self, tmp_path):
+        fp = tmp_path / "individuals.jsonl"
+        fp.write_text('{"id":"S1"}\n\n{"id":"S2"}\n')
+        result = self.v.validate_json_file(str(fp), schema_type="individual")
+        assert result.is_valid is True
+        assert result.record_count == 2
+
+    def test_unreadable_jsonl_returns_empty(self, tmp_path):
+        result = self.v.validate_json_file(str(tmp_path / "nope.jsonl"), schema_type="variant")
+        assert result.is_valid is False
+
+
+# ===================================================================
+# TestSingleFileStats
+# ===================================================================
+
+class TestSingleFileStats:
+    """The single-file path is what the pipeline uses — it must count failures,
+    otherwise the CLI prints FAIL and still exits 0."""
+
+    def test_failure_counted(self, json_fixtures_dir):
+        v = _make_validator()
+        v.validate_json_file(
+            str(json_fixtures_dir / "invalid_variants.json"), schema_type="variant"
+        )
+        assert v.stats["files_validated"] == 1
+        assert v.stats["files_failed"] == 1
+        assert v.stats["total_errors"] >= 1
+
+    def test_pass_counted(self, json_fixtures_dir):
+        v = _make_validator()
+        v.validate_json_file(
+            str(json_fixtures_dir / "valid_variants.json"), schema_type="variant"
+        )
+        assert v.stats["files_passed"] == 1
+        assert v.stats["files_failed"] == 0
+
+    def test_not_double_counted_via_directory(self, json_fixtures_dir):
+        v = _make_validator()
+        results = v.validate_directory(str(json_fixtures_dir))
+        assert v.stats["files_validated"] == len(results)
+
+
+# ===================================================================
 # TestValidateDirectory
 # ===================================================================
 

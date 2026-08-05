@@ -155,8 +155,28 @@ class BeaconValidator:
         }
         return schemas
 
-    def validate_json_file(self, json_file: str, schema: Dict = None, 
-                          schema_type: str = None) -> ValidationResult:
+    def validate_json_file(self, json_file: str, schema: Dict = None,
+                           schema_type: str = None) -> ValidationResult:
+        """Validate a JSON file against a schema, recording it in the stats.
+
+        Counting happens here rather than in validate_directory so that the
+        single-file path (what Nextflow and run_ilifu_pipeline.sh use) also
+        registers failures — otherwise the CLI printed FAIL and exited 0.
+        """
+        result = self._validate_json_file(json_file, schema, schema_type)
+
+        self.stats['files_validated'] += 1
+        if result.is_valid:
+            self.stats['files_passed'] += 1
+        else:
+            self.stats['files_failed'] += 1
+        self.stats['total_errors'] += len(result.errors)
+        self.stats['total_warnings'] += len(result.warnings)
+
+        return result
+
+    def _validate_json_file(self, json_file: str, schema: Dict = None,
+                            schema_type: str = None) -> ValidationResult:
         """Validate a JSON file against a schema."""
         import time
         start_time = time.time()
@@ -247,11 +267,14 @@ class BeaconValidator:
             )
 
     def _load_json_file(self, json_file: str) -> List[Dict]:
-        """Load data from JSON file."""
+        """Load data from a JSON or JSONL file."""
+        if str(json_file).endswith('.jsonl'):
+            return self._load_jsonl_file(json_file)
+
         try:
             with open(json_file, 'r') as f:
                 data = json.load(f)
-            
+
             # Ensure data is a list
             if isinstance(data, dict):
                 data = [data]
@@ -266,6 +289,32 @@ class BeaconValidator:
             return []
         except Exception as e:
             self.logger.error(f"Error loading {json_file}: {e}")
+            return []
+
+    def _load_jsonl_file(self, jsonl_file: str) -> List[Dict]:
+        """Load data from a JSONL file (one JSON object per line).
+
+        json.load() cannot read these — every multi-line .jsonl the pipeline
+        produced was previously reported as "Failed to load JSON data".
+        """
+        data = []
+        try:
+            with open(jsonl_file, 'r') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data.append(json.loads(line))
+                    except json.JSONDecodeError as e:
+                        # A malformed line is a validation failure, not
+                        # something to skip — this is the safety net.
+                        self.logger.error(f"Invalid JSON on line {line_num} of {jsonl_file}: {e}")
+                        return []
+            return data
+
+        except Exception as e:
+            self.logger.error(f"Error loading {jsonl_file}: {e}")
             return []
 
     def _infer_schema_type(self, file_path: str) -> Optional[str]:
@@ -307,17 +356,7 @@ class BeaconValidator:
             self.logger.info(f"Validating {json_file}")
             result = self.validate_json_file(str(json_file), schema_type=schema_type)
             results.append(result)
-            
-            # Update statistics
-            self.stats['files_validated'] += 1
-            if result.is_valid:
-                self.stats['files_passed'] += 1
-            else:
-                self.stats['files_failed'] += 1
-            
-            self.stats['total_errors'] += len(result.errors)
-            self.stats['total_warnings'] += len(result.warnings)
-        
+
         return results
 
 

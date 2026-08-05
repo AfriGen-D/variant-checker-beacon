@@ -23,6 +23,7 @@ process VCF_TRANSFORM {
         ${vcf_file} \\
         --output . \\
         --assembly ${params.assembly} \\
+        --dataset-id ${dataset_name} \\
         ${metadata_arg} \\
         ${config_arg} \\
         ${verbose_arg}

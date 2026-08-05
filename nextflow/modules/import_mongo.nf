@@ -34,6 +34,12 @@ process IMPORT_TO_MONGO {
     input:
     tuple val(dataset_name), path(json_file), val(collection)
 
+    // Completion signal — main.nf collects these to gate FLUSH_REDIS_CACHE.
+    // Without a declared output that channel never resolves and the post-load
+    // cache flush silently never runs.
+    output:
+    tuple val(dataset_name), val(collection)
+
     script:
     def verbose_arg = params.verbose ? '--verbose' : ''
     def batch_arg   = params.import_batch_size ? "--batch-size ${params.import_batch_size}" : ''

@@ -61,7 +61,7 @@ class TestLoadJsonFile:
 # TestLoadJsonlFile
 # ===================================================================
 
-class TestLoadJsonlFile:
+class TestIterJsonlFile:
     def setup_method(self):
         self.imp = _make_importer()
 
@@ -69,20 +69,27 @@ class TestLoadJsonlFile:
         fp = tmp_path / "data.jsonl"
         lines = [json.dumps({"id": str(i)}) for i in range(5)]
         fp.write_text("\n".join(lines))
-        data = self.imp._load_jsonl_file(str(fp))
-        assert len(data) == 5
+        assert len(list(self.imp._iter_jsonl_file(str(fp)))) == 5
 
     def test_skips_blank_lines(self, tmp_path):
         fp = tmp_path / "data.jsonl"
         fp.write_text('{"id":"1"}\n\n{"id":"2"}\n')
-        data = self.imp._load_jsonl_file(str(fp))
-        assert len(data) == 2
+        assert len(list(self.imp._iter_jsonl_file(str(fp)))) == 2
 
     def test_skips_invalid_line(self, tmp_path):
         fp = tmp_path / "data.jsonl"
         fp.write_text('{"id":"1"}\nbad line\n{"id":"2"}\n')
-        data = self.imp._load_jsonl_file(str(fp))
-        assert len(data) == 2
+        assert len(list(self.imp._iter_jsonl_file(str(fp)))) == 2
+
+    def test_streams_without_materializing(self, tmp_path):
+        """The whole file must never be read into a list up front."""
+        import inspect
+        assert inspect.isgeneratorfunction(MongoImporter._iter_jsonl_file)
+
+        fp = tmp_path / "data.jsonl"
+        fp.write_text("\n".join(json.dumps({"id": str(i)}) for i in range(1000)))
+        it = self.imp._iter_jsonl_file(str(fp))
+        assert next(it)["id"] == "0"  # first record available before the rest
 
 
 # ===================================================================
@@ -132,33 +139,31 @@ class TestImportJsonFile:
         imp = _make_importer()
         imp.client = MagicMock()
         coll = imp.client.__getitem__.return_value.__getitem__.return_value
-        coll.insert_many.return_value = MagicMock(inserted_ids=["a", "b"])
         result = imp.import_json_file(str(fp), "test_db", "variants")
         assert result is True
         assert imp.stats["records_imported"] >= 2
 
-    def test_bulk_write_error_handled(self, tmp_path):
+    def test_bulk_write_error_fails_the_import(self, tmp_path):
+        """A failed batch must surface as failure, not be swallowed into a stat."""
         fp = tmp_path / "data.json"
         fp.write_text(json.dumps([{"id": "1"}, {"id": "2"}]))
         imp = _make_importer()
         imp.client = MagicMock()
         coll = imp.client.__getitem__.return_value.__getitem__.return_value
-        coll.insert_many.side_effect = BulkWriteError({"writeErrors": [{"index": 0}]})
+        coll.bulk_write.side_effect = BulkWriteError({"writeErrors": [{"index": 0}]})
         result = imp.import_json_file(str(fp), "test_db", "variants")
-        assert result is True
+        assert result is False
         assert imp.stats["errors"] >= 1
 
-    def test_id_field_stripped(self, tmp_path):
-        """_id fields should be removed to avoid MongoDB conflicts."""
+    def test_unexpected_batch_error_fails_the_import(self, tmp_path):
         fp = tmp_path / "data.json"
-        fp.write_text(json.dumps([{"_id": "old_id", "id": "1"}]))
+        fp.write_text(json.dumps([{"id": "1"}]))
         imp = _make_importer()
         imp.client = MagicMock()
         coll = imp.client.__getitem__.return_value.__getitem__.return_value
-        coll.insert_one.return_value = MagicMock(inserted_id="new_id")
-        imp.import_json_file(str(fp), "test_db", "variants")
-        call_args = coll.insert_one.call_args[0][0]
-        assert "_id" not in call_args
+        coll.bulk_write.side_effect = RuntimeError("connection reset")
+        assert imp.import_json_file(str(fp), "test_db", "variants") is False
+        assert imp.stats["errors"] == 1
 
     def test_jsonl_file_loaded(self, tmp_path):
         fp = tmp_path / "data.jsonl"
@@ -166,9 +171,79 @@ class TestImportJsonFile:
         imp = _make_importer()
         imp.client = MagicMock()
         coll = imp.client.__getitem__.return_value.__getitem__.return_value
-        coll.insert_many.return_value = MagicMock(inserted_ids=["a", "b"])
         result = imp.import_json_file(str(fp), "test_db", "variants")
         assert result is True
+
+
+# ===================================================================
+# TestIdempotentImport
+# ===================================================================
+
+class TestIdempotentImport:
+    """Re-running the pipeline must replace documents, not duplicate them."""
+
+    def _import(self, tmp_path, records, filename="data.jsonl"):
+        fp = tmp_path / filename
+        fp.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+        imp = _make_importer()
+        imp.client = MagicMock()
+        coll = imp.client.__getitem__.return_value.__getitem__.return_value
+        ok = imp.import_json_file(str(fp), "test_db", "variants")
+        return imp, coll, ok
+
+    def test_uses_bulk_write_not_insert(self, tmp_path):
+        _, coll, _ = self._import(tmp_path, [{"id": "1:100:A:T"}])
+        assert coll.bulk_write.called
+        assert not coll.insert_many.called
+        assert not coll.insert_one.called
+
+    def test_upserts_on_natural_key(self, tmp_path):
+        _, coll, _ = self._import(tmp_path, [{"id": "1:100:A:T"}, {"id": "1:200:C:G"}])
+        ops = coll.bulk_write.call_args[0][0]
+        assert [op._filter for op in ops] == [{"_id": "1:100:A:T"}, {"_id": "1:200:C:G"}]
+        assert all(op._upsert for op in ops)
+
+    def test_natural_key_written_to_id(self, tmp_path):
+        """_id carries the natural key so a re-import replaces the document."""
+        _, coll, _ = self._import(tmp_path, [{"id": "1:100:A:T", "start": 99}])
+        replacement = coll.bulk_write.call_args[0][0][0]._doc
+        assert replacement["_id"] == "1:100:A:T"
+
+    def test_stale_id_is_replaced_by_natural_key(self, tmp_path):
+        """An _id from a previous export must not survive into the upsert."""
+        _, coll, _ = self._import(tmp_path, [{"_id": "old_object_id", "id": "1:100:A:T"}])
+        op = coll.bulk_write.call_args[0][0][0]
+        assert op._filter == {"_id": "1:100:A:T"}
+        assert op._doc["_id"] == "1:100:A:T"
+
+    def test_batched_not_per_document(self, tmp_path):
+        """500 records at batch_size 100 → 5 round trips, not 500."""
+        records = [{"id": f"1:{i}:A:T"} for i in range(500)]
+        _, coll, _ = self._import(tmp_path, records)
+        assert coll.bulk_write.call_count == 5
+
+    def test_phenotype_composite_key(self, tmp_path):
+        """Phenotype records have no `id` — individual + term is their key."""
+        _, coll, _ = self._import(
+            tmp_path, [{"individual_id": "S1", "phenotype_id": "HP:0001250"}]
+        )
+        assert coll.bulk_write.call_args[0][0][0]._filter == {"_id": "S1:HP:0001250"}
+
+    def test_disease_composite_key(self, tmp_path):
+        _, coll, _ = self._import(
+            tmp_path, [{"individual_id": "S1", "disease_id": "MONDO:0005148"}]
+        )
+        assert coll.bulk_write.call_args[0][0][0]._filter == {"_id": "S1:MONDO:0005148"}
+
+    def test_record_without_id_falls_back_to_insert(self, tmp_path):
+        _, coll, ok = self._import(tmp_path, [{"start": 1}])
+        op = coll.bulk_write.call_args[0][0][0]
+        assert type(op).__name__ == "InsertOne"
+        assert ok is True
+
+    def test_empty_jsonl_returns_false(self, tmp_path):
+        _, _, ok = self._import(tmp_path, [], filename="empty.jsonl")
+        assert ok is False
 
     def test_empty_data_returns_false(self, tmp_path):
         fp = tmp_path / "empty.json"
