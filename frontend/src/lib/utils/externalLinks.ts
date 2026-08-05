@@ -40,27 +40,36 @@ const isGrch37 = (assembly?: string) => (assembly ?? '').toUpperCase().includes(
  * that live in the global databases.
  */
 export function buildExternalLinks(query: VariantQuery): ExternalLink[] {
-  const chr = bareChr(query.referenceName);
   const pos = query.start;
-  const ref = query.referenceBases;
-  const alt = query.alternateBases;
   const grch37 = isGrch37(query.assemblyId);
   const links: ExternalLink[] = [];
 
   if (pos === undefined) return links;
 
+  // Every interpolated value below originates in the query form or a shared
+  // URL, so encode it before it becomes part of an href. The schemes here are
+  // all literal https://, so this is not a javascript:-URL sink — but without
+  // encoding, a value like "1&dataset=x" injects extra query parameters into
+  // the destination.
+  const chr = encodeURIComponent(bareChr(query.referenceName));
+  const chrPrefixed = encodeURIComponent(prefixedChr(query.referenceName));
+  const ref = encodeURIComponent(query.referenceBases ?? '');
+  const alt = encodeURIComponent(query.alternateBases ?? '');
+  const end = encodeURIComponent(String(query.end ?? pos));
+  const start = encodeURIComponent(String(pos));
+
   // --- African resources (home team) -----------------------------------
   links.push({
     id: 'agvd',
     label: 'AGVD',
-    url: `https://agvd.afrigen-d.org/search/res?type=coordinate&input=${prefixedChr(query.referenceName)}:${pos}&dataset=AGVD_24A_Main&page=1`,
+    url: `https://agvd.afrigen-d.org/search/res?type=coordinate&input=${chrPrefixed}:${start}&dataset=AGVD_24A_Main&page=1`,
     note: 'African Genome Variation Database',
     group: 'african',
   });
   links.push({
     id: 'agmp',
     label: 'AGMP',
-    url: `https://agmp.afrigen-d.org/?search_query=${prefixedChr(query.referenceName)}:${pos}&model_selection=variantagmp`,
+    url: `https://agmp.afrigen-d.org/?search_query=${chrPrefixed}:${start}&model_selection=variantagmp`,
     note: 'African Genome Medicine Portal',
     group: 'african',
   });
@@ -71,7 +80,7 @@ export function buildExternalLinks(query: VariantQuery): ExternalLink[] {
     links.push({
       id: 'gnomad',
       label: 'gnomAD',
-      url: `https://gnomad.broadinstitute.org/variant/${chr}-${pos}-${ref}-${alt}?dataset=${grch37 ? 'gnomad_r2_1' : 'gnomad_r4'}`,
+      url: `https://gnomad.broadinstitute.org/variant/${chr}-${start}-${ref}-${alt}?dataset=${grch37 ? 'gnomad_r2_1' : 'gnomad_r4'}`,
       note: 'Population allele frequencies',
       group: 'global',
     });
@@ -79,7 +88,7 @@ export function buildExternalLinks(query: VariantQuery): ExternalLink[] {
     links.push({
       id: 'gnomad',
       label: 'gnomAD',
-      url: `https://gnomad.broadinstitute.org/region/${chr}-${pos}-${pos}?dataset=${grch37 ? 'gnomad_r2_1' : 'gnomad_r4'}`,
+      url: `https://gnomad.broadinstitute.org/region/${chr}-${start}-${end}?dataset=${grch37 ? 'gnomad_r2_1' : 'gnomad_r4'}`,
       note: 'Population allele frequencies (region)',
       group: 'global',
     });
@@ -88,7 +97,7 @@ export function buildExternalLinks(query: VariantQuery): ExternalLink[] {
   links.push({
     id: 'ensembl',
     label: 'Ensembl',
-    url: `https://${grch37 ? 'grch37.' : ''}ensembl.org/Homo_sapiens/Location/View?r=${chr}:${pos}-${query.end ?? pos}`,
+    url: `https://${grch37 ? 'grch37.' : ''}ensembl.org/Homo_sapiens/Location/View?r=${chr}:${start}-${end}`,
     note: 'Gene & transcript annotations',
     group: 'global',
   });
@@ -96,7 +105,7 @@ export function buildExternalLinks(query: VariantQuery): ExternalLink[] {
   links.push({
     id: 'ucsc',
     label: 'UCSC',
-    url: `https://genome.ucsc.edu/cgi-bin/hgTracks?db=${grch37 ? 'hg19' : 'hg38'}&position=${prefixedChr(query.referenceName)}:${pos}-${query.end ?? pos}`,
+    url: `https://genome.ucsc.edu/cgi-bin/hgTracks?db=${grch37 ? 'hg19' : 'hg38'}&position=${chrPrefixed}:${start}-${end}`,
     note: 'UCSC Genome Browser',
     group: 'global',
   });
@@ -104,7 +113,7 @@ export function buildExternalLinks(query: VariantQuery): ExternalLink[] {
   links.push({
     id: 'dbsnp',
     label: 'dbSNP',
-    url: `https://www.ncbi.nlm.nih.gov/snp/?term=${chr}%5BChromosome%5D+AND+${pos}%5BBase+Position+for+Assembly+${grch37 ? 'GRCh37' : 'GRCh38'}%5D`,
+    url: `https://www.ncbi.nlm.nih.gov/snp/?term=${chr}%5BChromosome%5D+AND+${start}%5BBase+Position+for+Assembly+${grch37 ? 'GRCh37' : 'GRCh38'}%5D`,
     note: 'NCBI variation records',
     group: 'global',
   });
@@ -112,7 +121,7 @@ export function buildExternalLinks(query: VariantQuery): ExternalLink[] {
   links.push({
     id: 'clinvar',
     label: 'ClinVar',
-    url: `https://www.ncbi.nlm.nih.gov/clinvar/?term=${chr}%5BChromosome%5D+AND+${pos}%5BBase+Position+for+Assembly+${grch37 ? 'GRCh37' : 'GRCh38'}%5D`,
+    url: `https://www.ncbi.nlm.nih.gov/clinvar/?term=${chr}%5BChromosome%5D+AND+${start}%5BBase+Position+for+Assembly+${grch37 ? 'GRCh37' : 'GRCh38'}%5D`,
     note: 'Clinical significance',
     group: 'global',
   });
