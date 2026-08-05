@@ -192,32 +192,55 @@ jobs:
             printf 'API_IMAGE=%s\nFRONTEND_IMAGE=%s\n' "$API" "$FRONTEND" > .env.deploy
 
             export API_IMAGE="$API" FRONTEND_IMAGE="$FRONTEND"
-            $COMPOSE up -d --no-deps beacon-api beacon-frontend
 
-            echo "Waiting for API to become healthy..."
+            # `up` must NOT be allowed to abort the script: the whole point of
+            # what follows is to recover from a bad image. It exits non-zero
+            # when the new API fails its healthcheck (the frontend depends_on
+            # it with condition: service_healthy), and under `set -e` that
+            # killed the script before the rollback below could run — which is
+            # exactly how a bad image once left production down.
+            UP_OK=true
+            $COMPOSE up -d --no-deps beacon-api beacon-frontend || UP_OK=false
+            echo "compose up ok: ${UP_OK}"
+
             HEALTHY=false
-            for i in $(seq 1 24); do
-              if curl -fsS --max-time 5 http://localhost/api/health > /dev/null 2>&1; then
-                HEALTHY=true
-                echo "Healthy after ${i} attempt(s)."
-                break
-              fi
-              sleep 5
-            done
+            if [ "$UP_OK" = true ]; then
+              echo "Waiting for API to become healthy..."
+              for i in $(seq 1 24); do
+                if curl -fsS --max-time 5 http://localhost/api/health > /dev/null 2>&1; then
+                  HEALTHY=true
+                  echo "Healthy after ${i} attempt(s)."
+                  break
+                fi
+                sleep 5
+              done
+            fi
 
             if [ "$HEALTHY" != true ]; then
               echo "FAILED: API did not become healthy. Rolling back."
               if [ -n "$PREV_API" ]; then
                 export API_IMAGE="$PREV_API" FRONTEND_IMAGE="${PREV_FRONTEND:-$FRONTEND}"
                 printf 'API_IMAGE=%s\nFRONTEND_IMAGE=%s\n' "$API_IMAGE" "$FRONTEND_IMAGE" > .env.deploy
-                $COMPOSE up -d --no-deps beacon-api beacon-frontend || true
+                $COMPOSE up -d --no-deps --force-recreate beacon-api beacon-frontend || true
+                # nginx resolves the upstream container IPs once at startup, so
+                # a recreated container is unreachable — 502 — until it re-reads
+                # them, even though the container itself is healthy.
+                docker exec beacon-nginx nginx -s reload || true
                 echo "Rolled back to ${PREV_API}"
+                for i in $(seq 1 12); do
+                  curl -fsS --max-time 5 http://localhost/api/health > /dev/null 2>&1 && { echo "Rollback verified healthy."; break; }
+                  sleep 5
+                done
               else
                 echo "No previous image recorded — cannot roll back automatically."
               fi
               $COMPOSE logs --tail 50 beacon-api || true
               exit 1
             fi
+
+            # Same reason as the rollback path: recreated containers get new
+            # IPs and nginx caches the old ones.
+            docker exec beacon-nginx nginx -s reload || true
 
             printf '%s %s %s -> %s\n' "$DEPLOY_VERSION" "$(date -u '+%Y-%m-%d %H:%M:%S')" "${PREV_API:-none}" "$API" >> deployment.log
             echo "Deployment successful."
