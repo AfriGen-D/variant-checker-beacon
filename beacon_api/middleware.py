@@ -3,9 +3,12 @@ Custom middleware for Beacon API
 """
 import time
 import logging
+from datetime import datetime, timedelta
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.conf import settings
+
+from .privacy import anonymize_client_ip
 
 logger = logging.getLogger('beacon_api')
 
@@ -142,7 +145,18 @@ class QueryLogMiddleware:
     is swallowed so the beacon response is never blocked.
     Skips internal/service endpoints (info, configuration, entry_types, map,
     service-info, health) — only logs actual data-discovery queries.
+
+    Data minimisation: the row pairs a requester with the exact locus they
+    queried, so the client address is reduced to its network prefix before it
+    is written, and every row carries an expiry the TTL index acts on. See
+    beacon_api/models.py::QueryLog and beacon_api/privacy.py.
     """
+
+    # Retention default. 90 days spans a full quarter, which is what an abuse
+    # or access review actually needs, and it comfortably covers the longest
+    # window on the Grafana beacon dashboard. Longer than that the rows stop
+    # answering operational questions and are just accumulated personal data.
+    DEFAULT_RETENTION_DAYS = 90
 
     # Path *prefixes* (after /api) that are real beacon queries.
     LOGGED_PREFIXES = (
@@ -193,7 +207,15 @@ class QueryLogMiddleware:
                 pass
 
         hits = self._extract_hits(response)
-        ip = self._client_ip(request)
+        # Truncated to a network prefix — the full address is never persisted.
+        ip = anonymize_client_ip(self._client_ip(request))
+
+        retention_days = getattr(
+            settings, 'BEACON_QUERYLOG_RETENTION_DAYS', self.DEFAULT_RETENTION_DAYS
+        )
+        # Naive UTC, matching QueryLog.created's datetime.utcnow default and
+        # the UTC clock MongoDB's TTL monitor compares against.
+        expires_at = datetime.utcnow() + timedelta(days=retention_days)
 
         QueryLog(
             query_type=query_type,
@@ -202,6 +224,7 @@ class QueryLogMiddleware:
             response_time_ms=elapsed_ms,
             hits_count=hits,
             client_ip=ip,
+            expires_at=expires_at,
         ).save()
 
     @staticmethod

@@ -1,4 +1,4 @@
-# API-only public sidecar (afrigend-beacon-network, 192.168.101.163).
+# API-only public sidecar deployment.
 #
 # Serves https://api-beacon.afrigen-d.dev/api/ through a Cloudflare tunnel,
 # which connects to the API on loopback. There is no UI and no nginx here.

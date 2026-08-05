@@ -220,6 +220,34 @@ BEACON_RATE_LIMITS = {
 }
 
 # ============================================================================
+# PRIVACY / DISCLOSURE CONTROL
+# ============================================================================
+
+# How long a query_logs row survives before the MongoDB TTL index deletes it.
+# A row pairs a requester with the exact genomic locus queried, so it is
+# personal data and cannot be kept indefinitely. 90 days = one full quarter,
+# which is what an abuse or access review actually needs and what the longest
+# Grafana dashboard window covers. Applied per row at write time, so a change
+# here affects new rows only. See beacon_api/models.py::QueryLog.
+BEACON_QUERYLOG_RETENTION_DAYS = config(
+    'BEACON_QUERYLOG_RETENTION_DAYS', default=90, cast=int
+)
+
+# Published allele-frequency precision. An unrounded AF is a carrier count in
+# disguise (AF == k/2N inverts to k), which is the Homer / Shringarpure-
+# Bustamante re-identification primitive. The rounding step must be coarser
+# than 1/2N: the V6HC-S_AFR panel has 1,895 samples (2N = 3,790), so
+# 1/2N ~ 0.00026 and a 3-decimal grid is ~4x coarser. Reduce `decimals` for a
+# smaller cohort. Does NOT affect the boolean `exists` answer.
+BEACON_AF_DECIMALS = config('BEACON_AF_DECIMALS', default=3, cast=int)
+
+# Small-cell suppression floor: frequencies below this are withheld entirely,
+# because rounding alone cannot protect the rarest (most identifying)
+# variants. 0.01 is ~38 alleles in the AFR panel, well above the conventional
+# "at least 5 per cell" rule.
+BEACON_AF_MIN_PUBLISHED = config('BEACON_AF_MIN_PUBLISHED', default=0.01, cast=float)
+
+# ============================================================================
 # API DOCUMENTATION
 # ============================================================================
 
