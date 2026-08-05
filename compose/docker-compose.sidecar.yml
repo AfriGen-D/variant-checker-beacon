@@ -1,0 +1,80 @@
+# API-only public sidecar (afrigend-beacon-network, 192.168.101.163).
+#
+# Serves https://api-beacon.afrigen-d.dev/api/ through a Cloudflare tunnel,
+# which connects to the API on loopback. There is no UI and no nginx here.
+#
+# This exists because the host was previously running docker-compose.dev.yml,
+# which serves public traffic from the Django development server and publishes
+# an unauthenticated MongoDB on 0.0.0.0. Use this file on that host instead.
+services:
+  mongodb:
+    image: mongo:5.0
+    container_name: beacon-sidecar-mongodb
+    restart: unless-stopped
+    # No published ports: reachable only from the compose network. The app
+    # connects without credentials (see settings_boolean.py), so network
+    # isolation is the only thing protecting this data.
+    volumes:
+      - beacon_sidecar_mongodb_data:/data/db
+    networks:
+      - beacon-sidecar-network
+    healthcheck:
+      # mongo:5.0 has the legacy `mongo` shell, not `mongosh`.
+      test: ["CMD", "mongo", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:6-alpine
+    container_name: beacon-sidecar-redis
+    restart: unless-stopped
+    networks:
+      - beacon-sidecar-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  beacon-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.boolean
+    container_name: beacon-api-boolean
+    restart: unless-stopped
+    # Loopback only — the Cloudflare tunnel is the sole ingress.
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=beacon_project.settings_boolean
+      - MONGODB_HOST=mongodb
+      - REDIS_HOST=redis
+    env_file:
+      - ../.env.boolean
+    volumes:
+      - ../logs:/app/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - beacon-sidecar-network
+    # gunicorn, not `manage.py runserver`: the dev server is single-threaded,
+    # unsupported for production by Django, and leaks tracebacks.
+    command: gunicorn beacon_project.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile -
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+networks:
+  beacon-sidecar-network:
+    driver: bridge
+
+volumes:
+  beacon_sidecar_mongodb_data:
+    driver: local

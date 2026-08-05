@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -205,6 +205,8 @@ function JsonResponseBlock({ data }: { data: unknown }) {
   );
 }
 
+type QueryStatus = 'idle' | 'loading' | 'error' | 'success';
+
 interface DatasetResultsProps {
   datasetAlleleResponses?: DatasetAlleleResponse[];
   datasets?: Dataset[];
@@ -212,10 +214,22 @@ interface DatasetResultsProps {
   selectedDatasetIds?: string[];
   rawResponse?: unknown;
   beaconHandovers?: Handover[];
+  status: QueryStatus;
 }
 
-export function DatasetResults({ datasetAlleleResponses, datasets, query, selectedDatasetIds, rawResponse, beaconHandovers }: DatasetResultsProps) {
+export function DatasetResults({ datasetAlleleResponses, datasets, query, selectedDatasetIds, rawResponse, beaconHandovers, status }: DatasetResultsProps) {
   const [page, setPage] = useState(0);
+
+  // Reset to the first page whenever the query, the response, or the dataset
+  // selection changes — a shorter list would otherwise render an empty page.
+  useEffect(() => {
+    setPage(0);
+  }, [query, datasetAlleleResponses, selectedDatasetIds]);
+
+  // A query that failed or is still in flight has no verdict to report. The
+  // no-results branch below would render "Found in 0 of N" with a red NO per
+  // dataset — a definitive negative the beacon never gave.
+  if (status === 'error' || status === 'loading') return null;
 
   // Filter by selected datasets (empty = show all)
   const filteredResponses = datasetAlleleResponses && selectedDatasetIds && selectedDatasetIds.length > 0
@@ -284,7 +298,9 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
               <ExternalDbLinks query={query} variant="panel" />
             </div>
           )}
-          {rawResponse != null && <JsonResponseBlock data={rawResponse} />}
+          {process.env.NODE_ENV !== 'production' && rawResponse != null && (
+            <JsonResponseBlock data={rawResponse} />
+          )}
         </CardContent>
       </Card>
     );

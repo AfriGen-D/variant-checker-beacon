@@ -155,6 +155,9 @@ function HomePageInner() {
           selectedDatasetIds={selectedDatasetIds}
           rawResponse={data}
           beaconHandovers={data?.response?.beaconHandovers}
+          status={
+            isLoading ? 'loading' : error ? 'error' : submittedQuery ? 'success' : 'idle'
+          }
         />
       </div>
     </Container>

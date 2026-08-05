@@ -38,9 +38,17 @@ export const CHROMOSOMES: { value: Chromosome; label: string }[] = [
 // Nucleotide bases
 export const BASES = ['A', 'T', 'G', 'C', 'N'] as const;
 
-// Validation constants
-export const MAX_GENOMIC_POSITION = 3000000000;
-export const MIN_GENOMIC_POSITION = 0;
+// Validation constants — the single source of truth for coordinate bounds on
+// the client. They mirror the backend caps in beacon_api/validators.py
+// (GenomicCoordinateValidator): anything the client lets through that the
+// server rejects surfaces as a 400 only after the user submits.
+export const MAX_GENOMIC_POSITION = 300000000; // validators.py MAX_COORDINATE
+// Positions are entered 1-based (converted to 0-based at the API boundary), so
+// the floor is 1 — a 0 would be sent as start=-1.
+export const MIN_GENOMIC_POSITION = 1;
+// validators.py MAX_RANGE, measured against the range the API receives, which
+// equals the inclusive base count of a 1-based region (end - start + 1).
+export const MAX_REGION_SPAN = 10_000_000;
 
 // Query parameter defaults
 export const DEFAULT_ASSEMBLY = 'GRCh38';
@@ -65,7 +73,7 @@ export const FIELD_HINTS = {
   ref: 'Reference allele — the base(s) in the reference genome (A, C, G, T or N).',
   alt: 'Alternate allele — the observed base(s) you are checking for.',
   regionStart: '1-based start of the region to scan.',
-  regionEnd: '1-based end of the region. A region is capped at 10 million bases.',
+  regionEnd: `1-based end of the region. A region is capped at ${MAX_REGION_SPAN.toLocaleString()} bases.`,
   gene: 'Type a gene symbol (e.g. BRCA1). It is resolved to genomic coordinates and that region is scanned.',
   datasets: 'Which reference panels to query. All are included by default.',
   filters: 'Optional ontology filters (e.g. a gene or phenotype term) to narrow the query.',

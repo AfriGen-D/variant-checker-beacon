@@ -1,14 +1,17 @@
 import { z } from 'zod';
-import { MAX_GENOMIC_POSITION, MIN_GENOMIC_POSITION, BASES, CHROMOSOMES } from './constants';
+import {
+  MAX_GENOMIC_POSITION,
+  MIN_GENOMIC_POSITION,
+  MAX_REGION_SPAN,
+  BASES,
+  CHROMOSOMES,
+} from './constants';
 
 // Valid chromosome values
 const validChromosomes = CHROMOSOMES.map((c) => c.value);
 
 // Valid base values
 const validBases = BASES.join('');
-
-// Backend caps a region scan at 10M bases (validators.py: MAX_RANGE).
-export const MAX_REGION_SPAN = 10_000_000;
 
 // Shared field builders so variant and region modes validate coordinates the
 // same way (the only difference between modes is which fields are required).
@@ -97,7 +100,9 @@ export const regionQuerySchema = z
     message: 'End position must be greater than or equal to start position',
     path: ['end'],
   })
-  .refine((data) => data.end - data.start <= MAX_REGION_SPAN, {
+  // The API receives start - 1, so the range the backend measures against
+  // MAX_RANGE is end - (start - 1) — the inclusive base count of the region.
+  .refine((data) => data.end - data.start + 1 <= MAX_REGION_SPAN, {
     message: `Region must be ${MAX_REGION_SPAN.toLocaleString()} bases or fewer`,
     path: ['end'],
   });

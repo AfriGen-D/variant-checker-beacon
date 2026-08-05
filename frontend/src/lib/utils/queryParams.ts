@@ -1,5 +1,10 @@
 import type { VariantQueryFormData, RegionQueryFormData } from './validators';
-import { CHROMOSOMES, type QueryMode } from './constants';
+import {
+  CHROMOSOMES,
+  MAX_GENOMIC_POSITION,
+  MIN_GENOMIC_POSITION,
+  type QueryMode,
+} from './constants';
 import type { VariantQuery } from '../api/types';
 
 const validChromosomes = CHROMOSOMES.map((c) => c.value) as string[];
@@ -23,14 +28,17 @@ export function queryFromSearchParams(params: URLSearchParams): ParsedQuery | nu
   if (!assemblyId || !referenceName || !startRaw) return null;
   if (!validChromosomes.includes(referenceName)) return null;
 
+  const inBounds = (pos: number) =>
+    Number.isInteger(pos) && pos >= MIN_GENOMIC_POSITION && pos <= MAX_GENOMIC_POSITION;
+
   const start = Number(startRaw);
-  if (!Number.isInteger(start) || start < 0) return null;
+  if (!inBounds(start)) return null;
 
   const referenceBases = params.get('referenceBases');
   const alternateBases = params.get('alternateBases');
   const endRaw = params.get('end');
   const end = endRaw ? Number(endRaw) : undefined;
-  if (end !== undefined && (!Number.isInteger(end) || end < start)) return null;
+  if (end !== undefined && (!inBounds(end) || end < start)) return null;
 
   const modeParam = params.get('mode');
   const mode: QueryMode =
