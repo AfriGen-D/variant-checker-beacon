@@ -89,7 +89,7 @@ This document describes the comprehensive security implementation for the Afrige
 |---------|--------------|-------------|
 | **Authentication** | None | JWT required |
 | **Response Format** | YES/NO only | Full records |
-| **Rate Limiting** | 50/hour per IP | 1000/hour per user |
+| **Rate Limiting** | 50/hour per IP; 1000/hour discovery | 1000/hour per user |
 | **Network** | Public internet | VPN recommended |
 | **Encryption** | HTTPS | HTTPS + DB encryption |
 | **Audit Logging** | Basic | Comprehensive |

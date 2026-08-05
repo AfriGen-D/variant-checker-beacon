@@ -17,4 +17,4 @@ django-redis==5.4.0
 dj-database-url==2.1.0
 
 # Error tracking (GlitchTip / Sentry-protocol; disabled when SENTRY_DSN unset)
-sentry-sdk[django]==2.59.0 
+sentry-sdk[django]==2.59.0

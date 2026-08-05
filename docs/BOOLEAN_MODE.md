@@ -22,7 +22,7 @@ Welcome to the **AfriGen-D Beacon** Boolean mode! This guide will help you start
 |---------|--------------|-------------|
 | **Authentication** | None | JWT required |
 | **Response** | YES/NO only | Full variant details |
-| **Rate Limit** | 50 requests/hour | 1,000 requests/hour |
+| **Rate Limit** | 50/hour queries, 1,000/hour discovery | 1,000 requests/hour |
 | **Use Case** | Discovery | Detailed analysis |
 | **Access** | Public | Authorized users only |
 
@@ -364,12 +364,43 @@ query_variant 2 300000 C A
 
 ### Limits
 
-**Rate Limit**: 50 requests per hour per IP address
+Budgets are per IP address, per bucket, and the buckets are independent —
+exhausting queries does not affect discovery, or vice versa.
+
+- **`query` / `variants` / `individuals`** — 50/hour, set by
+  `RATELIMIT_QUERY_ENDPOINT`. Covers `/query`, `/g_variants`, `/individuals`.
+- **`discovery`** — 1000/hour, set by `RATELIMIT_DISCOVERY_ENDPOINT`. Covers
+  `/info`, `/service-info`, `/configuration`, `/entry_types`, `/map`,
+  `/datasets`, `/cohorts`, `/filtering_terms`.
+- **`default`** — 100/hour, not configurable. Anything else under `/api/`.
+
+`/api/health` is never rate limited.
+
+**Why discovery gets its own budget**: Beacon Network aggregators and GA4GH
+registries poll the metadata endpoints on a fixed cadence — the African Beacon
+Network's health cron alone spends 24 requests/hour. Sharing the general
+budget with genomic queries throttled those partners out, and a federation
+peer that cannot read `/info` reports this beacon as **offline** to the whole
+network.
 
 **Why Rate Limiting?**
 - Prevents abuse
 - Protects against re-identification attacks
 - Ensures fair usage
+
+### Window semantics
+
+The window is a **fixed window derived from the wall clock**
+(`int(time.time()) // period`), not a TTL countdown: the counter resets on the
+period boundary regardless of traffic. Two consequences worth knowing:
+
+- A client can legitimately spend up to 2× the budget across a boundary
+  (end of one window plus start of the next). This is the standard fixed-window
+  trade-off and is accepted here.
+- Being blocked never extends the block. An earlier implementation keyed
+  without the window and rewrote the TTL on every accepted request, so any
+  client polling faster than once per period never got a fresh window and
+  latched into a full hour of `429`s once it hit the limit.
 
 ### Checking Rate Limit
 
@@ -586,7 +617,7 @@ See [API Reference](docs/API_REFERENCE.md#authentication) for details.
 
 **Response**: `{"exists": true}` or `{"exists": false}`
 
-**Rate Limit**: 50 requests/hour
+**Rate Limit**: 50 requests/hour for queries, 1,000/hour for discovery endpoints
 
 **Cache**: 5 minutes
 

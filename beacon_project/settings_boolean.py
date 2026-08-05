@@ -213,6 +213,10 @@ BEACON_RATE_LIMITS = {
     'query': config('RATELIMIT_QUERY_ENDPOINT', default='50/hour'),
     'variants': config('RATELIMIT_QUERY_ENDPOINT', default='50/hour'),
     'individuals': config('RATELIMIT_QUERY_ENDPOINT', default='50/hour'),
+    # Discovery/metadata only. Federation partners and registries poll these
+    # on a fixed cadence, so the budget has to comfortably exceed the sum of
+    # their schedules plus normal browsing.
+    'discovery': config('RATELIMIT_DISCOVERY_ENDPOINT', default='1000/hour'),
 }
 
 # ============================================================================
