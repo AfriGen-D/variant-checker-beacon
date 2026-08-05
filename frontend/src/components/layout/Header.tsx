@@ -26,7 +26,7 @@ export function Header() {
           <Link href="/" className="flex items-center">
             <Image
               src="/afrigen-d-beacon.png"
-              alt="AfriGen-D Beacon"
+              alt="Variant Checker — Beacon"
               width={200}
               height={48}
               priority
