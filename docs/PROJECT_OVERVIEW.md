@@ -30,7 +30,7 @@ The **Afrigen Beacon v2 Implementation** is a production-ready genomic data disc
 
 **Organization**: AfriGEND
 **Primary Purpose**: Genomic variant discovery for research collaboration
-**Production Deployment**: Hosted on ILIFU infrastructure
+**Production Deployment**: Two ILIFU VMs — full-stack node + API-only network sidecar. See [Production Deployment](#production-deployment) below
 **Status**: Production (Boolean mode), In Development (Secure mode)
 **Repository**: afrigen-beacon-v2
 
@@ -1904,14 +1904,22 @@ redis-cli INFO stats
 
 ## Production Deployment
 
-### Current Production Instance
+This repo deploys to **two** distinct hosts, each serving a different URL with a different stack. They are not interchangeable. The full topology + manual deploy steps live in [`CLAUDE.md`](../CLAUDE.md#production-deployment) (kept in sync with the canonical entry in `~/.claude/projects/.../memory/reference_prod_topology.md`).
 
-**Host**: beacon2.h3abionet.org-ilifu (<your-server-ip>)
-**User**: ubuntu
-**Path**: ~/afrigend-beacon2
-**Mode**: Boolean (public access)
-**Status**: Production (API healthy, Nginx unhealthy)
-**Disk Usage**: 86% (17G/20G) ⚠️ **Monitor closely**
+| | Deployment 1 (full stack) | Deployment 2 (API-only sidecar) |
+|---|---|---|
+| SSH alias | `afrigend-beacon-prod` | `afrigend-beacon-network` |
+| ILIFU IP | 192.168.101.151 (FIP 154.114.10.84) | 192.168.101.163 |
+| Path | `~/afrigend-beacon2` (git, no remote) | `/opt/afrigend/beacon` (no git) |
+| Containers | API + UI + nginx + Mongo + Redis | API + Mongo + Redis only |
+| Compose | `docker-compose-boolean-ssl.yml` | `docker-compose.dev.yml` |
+| Public URL | **`https://beacon.afrigen-d.org/`** (UI + API) | **`https://api-beacon.afrigen-d.dev/api/`** |
+| Mode | Boolean (public) | Boolean (public) |
+| Front-end proxy | UCT nginx on `bantumi.cbio.uct.ac.za` | Cloudflare tunnel `03c0acae-...` |
+
+> **Important**: this section in PROJECT_OVERVIEW gives the architectural overview. For exact manual deploy commands per host, see [`CLAUDE.md`](../CLAUDE.md#production-deployment). The CI/CD pipeline (`.github/workflows/ci-cd.yml`) is wired up but **has never run successfully** — there are no tags on the repo and as written the deploy job would fail in several ways. Until that's fixed, deploys are manual.
+
+The deploy steps below describe the **manual flow for Deployment 1** (the user-facing full-stack VM); the architectural diagrams and checklists also apply to Deployment 2's sidecar.
 
 ### Deployment Architecture
 
@@ -1967,10 +1975,10 @@ Internet
 #### 1. SSH to Production
 
 ```bash
-ssh ubuntu@beacon2.h3abionet.org-ilifu
-# or
-ssh <your-ssh-alias>
+ssh afrigend-beacon-prod
 ```
+
+(Backward-compat: the legacy alias `H3ABN-Beacon_beacon2.h3abionet.org-ilifu` still works.)
 
 #### 2. Navigate to Project
 
@@ -1988,13 +1996,17 @@ docker exec beacon-mongodb mongodump --out /backup/$(date +%Y%m%d)
 tar -czf backup-$(date +%Y%m%d).tar.gz --exclude='.git' .
 ```
 
-#### 4. Pull Latest Code
+#### 4. Sync Latest Code
 
-```bash
-git fetch origin
-git checkout main
-git pull origin main
-```
+> **Heads up — this VM's working tree has no `origin` remote configured**, so `git pull` won't work. Sync from a known-good local clone instead:
+>
+> ```bash
+> # On your laptop, from a fresh clone of mamanambiya/afrigen-beacon-v2:
+> rsync -av --delete --exclude='.git' --exclude='node_modules' --exclude='__pycache__' \
+>   ./ afrigend-beacon-prod:~/afrigend-beacon2/
+> ```
+>
+> Once CI/CD is fixed, this step becomes a tag push instead.
 
 #### 5. Update Configuration
 
@@ -2113,7 +2125,7 @@ curl http://localhost:8000/api/health
 # Django
 DJANGO_SECRET_KEY=<production-secret-key>
 DJANGO_DEBUG=False
-DJANGO_ALLOWED_HOSTS=beacon2.h3abionet.org-ilifu,<your-server-ip>
+DJANGO_ALLOWED_HOSTS=beacon.afrigen-d.org,api-beacon.afrigen-d.dev,154.114.10.84
 
 # MongoDB
 MONGODB_HOST=mongodb
@@ -2188,7 +2200,7 @@ upstream beacon_backend {
 
 server {
     listen 80;
-    server_name beacon2.h3abionet.org-ilifu <your-server-ip>;
+    server_name beacon.afrigen-d.org 154.114.10.84;
 
     # Redirect HTTP to HTTPS
     return 301 https://$host$request_uri;
@@ -2196,11 +2208,12 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name beacon2.h3abionet.org-ilifu <your-server-ip>;
+    server_name beacon.afrigen-d.org 154.114.10.84;
 
-    # SSL certificates
-    ssl_certificate /etc/letsencrypt/live/beacon2.h3abionet.org-ilifu/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/beacon2.h3abionet.org-ilifu/privkey.pem;
+    # SSL certificates (issued for beacon.afrigen-d.org; the hostname in the cert
+    # path matches whatever the host's certbot was originally run with)
+    ssl_certificate /etc/letsencrypt/live/beacon.afrigen-d.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/beacon.afrigen-d.org/privkey.pem;
 
     # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -3055,8 +3068,8 @@ See [GA4GH_AAI_IMPLEMENTATION_PLAN.md](GA4GH_AAI_IMPLEMENTATION_PLAN.md) for det
 
 **Organization**: AfriGEND
 **Project**: GA4GH Beacon v2 Implementation
-**Production**: beacon2.h3abionet.org-ilifu
-**Repository**: https://github.com/afrigen/afrigen-beacon-v2
+**Production**: [beacon.afrigen-d.org](https://beacon.afrigen-d.org/) (UI) · [api-beacon.afrigen-d.dev](https://api-beacon.afrigen-d.dev/api/) (API)
+**Repository**: https://github.com/mamanambiya/afrigen-beacon-v2
 **Issues**: GitHub Issues
 
 For questions, bug reports, or feature requests, please open an issue on GitHub.

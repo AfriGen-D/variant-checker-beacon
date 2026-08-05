@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useId, useState, useMemo } from 'react';
 import { useFilteringTerms } from '@/lib/hooks/useBeaconQuery';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
@@ -16,6 +16,7 @@ export function FilterSelector({ selected, onChange }: FilterSelectorProps) {
   const { data, isLoading } = useFilteringTerms();
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
+  const searchId = useId();
 
   const terms = useMemo(() => {
     const all = data?.response?.results ?? [];
@@ -36,22 +37,30 @@ export function FilterSelector({ selected, onChange }: FilterSelectorProps) {
 
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium">Filtering Terms (Optional)</label>
+      <label htmlFor={searchId} className="text-sm font-medium">Filtering Terms (Optional)</label>
 
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {selected.map(id => (
-            <Badge key={id} variant="info" size="sm" className="gap-1 cursor-pointer" onClick={() => toggleFilter(id)}>
+            <Badge key={id} variant="info" size="sm" className="gap-1">
               {id}
-              <X className="h-3 w-3" />
+              <button
+                type="button"
+                aria-label={`Remove filter ${id}`}
+                onClick={() => toggleFilter(id)}
+                className="-mr-0.5 rounded-full hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           ))}
         </div>
       )}
 
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
         <Input
+          id={searchId}
           placeholder="Search filters..."
           value={search}
           onChange={e => { setSearch(e.target.value); setOpen(true); }}

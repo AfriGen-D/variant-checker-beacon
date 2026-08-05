@@ -28,8 +28,13 @@ const badgeVariants = cva(
   }
 );
 
+/**
+ * `onClick` is deliberately omitted: a Badge renders a <div>, so an attached
+ * handler is unreachable by keyboard and invisible to assistive technology.
+ * Put a real <button> inside the badge instead (see DatasetSelector).
+ */
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onClick'>,
     VariantProps<typeof badgeVariants> {}
 
 function Badge({ className, variant, size, ...props }: BadgeProps) {

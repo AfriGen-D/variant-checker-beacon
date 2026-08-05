@@ -17,7 +17,7 @@ export function Footer() {
             <ul className="space-y-2">
               <li>
                 <Link href="/" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                  Query Interface
+                  Check variant
                 </Link>
               </li>
               <li>

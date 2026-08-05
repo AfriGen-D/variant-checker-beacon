@@ -1,17 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useVariantQuery } from '@/lib/hooks/useBeaconQuery';
 import { useQueryStore } from '@/lib/store/queryStore';
 import { Container } from '@/components/layout/Container';
-import { VariantQueryForm } from '@/components/query/VariantQueryForm';
-import { DatasetResults } from '@/components/results/DatasetResults';
+import { QueryConsole } from '@/components/query/QueryConsole';
+import { DatasetResults, type QueryStatus } from '@/components/results/DatasetResults';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { VariantQuery, Dataset } from '@/lib/api/types';
 import type { VariantQueryFormData } from '@/lib/utils/validators';
+import type { QueryMode } from '@/lib/utils/constants';
 import { queryFromSearchParams, searchParamsFromQuery } from '@/lib/utils/queryParams';
 import toast from 'react-hot-toast';
 import { getErrorMessage, isRateLimitError } from '@/lib/api/client';
@@ -20,18 +21,25 @@ import { beaconApi } from '@/lib/api/beacon';
 function HomePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  // Parse initial query (+ mode) from URL params
+  const initialParsed = useRef(queryFromSearchParams(searchParams));
+  const [mode, setMode] = useState<QueryMode>(initialParsed.current?.mode ?? 'variant');
   const [submittedQuery, setSubmittedQuery] = useState<VariantQuery | null>(null);
   const [filters, setFilters] = useState<string[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDatasetIds, setSelectedDatasetIds] = useState<string[]>([]);
   const { addQuery } = useQueryStore();
 
-  // Parse initial query from URL params
-  const initialQuery = useRef(queryFromSearchParams(searchParams));
   const autoSubmitted = useRef(false);
 
   useEffect(() => {
-    beaconApi.getDatasets().then(res => setDatasets(res.datasets ?? [])).catch(() => {});
+    beaconApi
+      .getDatasets()
+      .then(res => setDatasets(res.datasets ?? []))
+      .catch(err => {
+        console.error('Failed to load datasets:', err);
+        toast.error('Could not load available datasets');
+      });
   }, []);
 
   const { data, isLoading, error } = useVariantQuery(
@@ -39,26 +47,33 @@ function HomePageInner() {
     !!submittedQuery
   );
 
-  const handleSubmit = (formData: VariantQueryFormData) => {
-    const query: VariantQuery = {
-      assemblyId: formData.assemblyId,
-      referenceName: formData.referenceName,
-      start: formData.start,
-      end: formData.end,
-      referenceBases: formData.referenceBases,
-      alternateBases: formData.alternateBases,
-    };
+  const handleSubmit = (query: VariantQuery, submittedMode: QueryMode) => {
+    setMode(submittedMode);
     setSubmittedQuery(query);
     // Update URL without scroll or history entry
-    router.replace(`/?${searchParamsFromQuery(formData)}`, { scroll: false });
+    router.replace(`/?${searchParamsFromQuery(query, submittedMode)}`, { scroll: false });
     toast.success('Query submitted');
   };
 
   // Auto-submit on mount if URL has valid params
   useEffect(() => {
-    if (initialQuery.current && !autoSubmitted.current) {
+    const parsed = initialParsed.current;
+    if (parsed && !autoSubmitted.current) {
       autoSubmitted.current = true;
-      handleSubmit(initialQuery.current);
+      const data = parsed.variant ?? parsed.region;
+      if (data) {
+        handleSubmit(
+          {
+            assemblyId: data.assemblyId,
+            referenceName: data.referenceName,
+            start: data.start,
+            end: data.end,
+            referenceBases: (data as VariantQueryFormData).referenceBases,
+            alternateBases: (data as VariantQueryFormData).alternateBases,
+          },
+          parsed.mode
+        );
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -85,52 +100,102 @@ function HomePageInner() {
     }
   }, [error]);
 
+  const status: QueryStatus = isLoading
+    ? 'loading'
+    : error
+      ? 'error'
+      : submittedQuery
+        ? 'success'
+        : 'idle';
+
+  // Spoken outcome for the live region below. The failure path stays silent
+  // here because react-hot-toast already renders the error into its own
+  // polite live region — announcing it twice reads the failure twice.
+  const announcement = useMemo(() => {
+    if (status === 'loading') return 'Searching datasets…';
+    if (status !== 'success') return '';
+    const all = data?.response?.datasetAlleleResponses ?? [];
+    const scoped =
+      selectedDatasetIds.length > 0
+        ? all.filter(d => selectedDatasetIds.includes(d.datasetId))
+        : all;
+    // With no per-dataset responses, DatasetResults falls back to listing every
+    // known dataset as a miss — mirror that denominator so the two agree.
+    const total = scoped.length > 0 ? scoped.length : datasets.length;
+    const matched = scoped.filter(d => d.exists).length;
+    return `Search complete. Found in ${matched} of ${total} dataset${total === 1 ? '' : 's'}.`;
+  }, [status, data, selectedDatasetIds, datasets]);
+
   return (
     <Container className="py-8">
-      <h1 className="text-4xl font-bold mb-8">Genomic Variant Query</h1>
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold tracking-tight">Variant checker</h1>
+        <p className="text-lg text-muted-foreground mt-2 max-w-2xl">
+          Look up any genomic variant across African reference panels, then jump straight to
+          allele frequencies, annotations and clinical detail in the major public databases.
+        </p>
+      </div>
 
       <div className="space-y-6">
-        <VariantQueryForm
+        <QueryConsole
+          mode={mode}
+          onModeChange={setMode}
           onSubmit={handleSubmit}
           isLoading={isLoading}
           filters={filters}
           onFiltersChange={setFilters}
-          initialValues={initialQuery.current}
           datasets={datasets}
           selectedDatasetIds={selectedDatasetIds}
           onSelectedDatasetsChange={setSelectedDatasetIds}
+          initialVariant={initialParsed.current?.variant ?? null}
+          initialRegion={initialParsed.current?.region ?? null}
         />
 
-        {isLoading && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                <Skeleton className="h-8 w-1/3" />
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Announces the query outcome. Kept outside the aria-busy region
+            below, which would otherwise suppress updates while loading. */}
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </p>
 
-        {error && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center py-8">
-                <p className="text-destructive font-semibold mb-2">Query Failed</p>
-                <p className="text-sm text-muted-foreground">{getErrorMessage(error)}</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <div
+          className="space-y-6"
+          role="region"
+          aria-label="Results"
+          aria-busy={status === 'loading' || undefined}
+        >
+          {isLoading && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  <Skeleton className="h-8 w-1/3" />
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-        <DatasetResults
-          datasetAlleleResponses={data?.response?.datasetAlleleResponses}
-          datasets={datasets}
-          query={submittedQuery}
-          selectedDatasetIds={selectedDatasetIds}
-          rawResponse={data}
-        />
+          {error && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-8">
+                  <p className="text-destructive font-semibold mb-2">Query Failed</p>
+                  <p className="text-sm text-muted-foreground">{getErrorMessage(error)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <DatasetResults
+            datasetAlleleResponses={data?.response?.datasetAlleleResponses}
+            datasets={datasets}
+            query={submittedQuery}
+            selectedDatasetIds={selectedDatasetIds}
+            rawResponse={data}
+            beaconHandovers={data?.response?.beaconHandovers}
+            status={status}
+          />
+        </div>
       </div>
     </Container>
   );

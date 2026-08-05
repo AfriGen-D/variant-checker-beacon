@@ -1,10 +1,16 @@
+# LOCAL DEVELOPMENT ONLY. This stack runs the Django dev server and exposes an
+# unauthenticated MongoDB; it must never serve public traffic. For the API-only
+# public sidecar use compose/docker-compose.sidecar.yml instead.
 services:
   # MongoDB - No authentication for boolean-only mode
   mongodb:
     image: mongo:5.0
     container_name: beacon-dev-mongodb
+    restart: unless-stopped
+    # Bound to loopback: this database has no authentication, so publishing it
+    # on 0.0.0.0 hands full read/write to anything that can reach the host.
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - beacon_dev_mongodb_data:/data/db
     networks:
@@ -19,8 +25,9 @@ services:
   redis:
     image: redis:6-alpine
     container_name: beacon-dev-redis
+    restart: unless-stopped
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     networks:
       - beacon-dev-network
     healthcheck:
@@ -35,8 +42,9 @@ services:
       context: ..
       dockerfile: Dockerfile.boolean
     container_name: beacon-api-boolean
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=beacon_project.settings_boolean
       - MONGODB_HOST=mongodb
@@ -69,9 +77,10 @@ services:
   traefik:
     image: traefik:v3.4
     container_name: beacon-dev-traefik
+    restart: unless-stopped
     ports:
-      - "8080:80"    # HTTP entrypoint
-      - "8081:8080"  # Traefik dashboard
+      - "127.0.0.1:8080:80"    # HTTP entrypoint
+      - "127.0.0.1:8081:8080"  # Traefik dashboard (unauthenticated)
     volumes:
       - ../traefik/traefik-dev.yml:/etc/traefik/traefik.yml:ro
       - ../traefik/dynamic:/etc/traefik/dynamic:ro

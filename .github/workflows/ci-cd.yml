@@ -43,10 +43,15 @@ jobs:
         working-directory: afrigend-beacon2-tools
         # Skip tests that need cyvcf2/pybedtools/pysam — those libs need
         # native system deps not installed on the runner.
+        #
+        # test_vcf_transformer.py is NOT skipped: it stubs cyvcf2 with
+        # MagicMock before importing the module under test, so it needs no
+        # native deps. Skipping it while [tool.coverage.run].source still
+        # counted vcf_transform is what pushed coverage under --cov-fail-under
+        # and made this job red.
         run: |
           python -m pytest tests/ \
             -m "not requires_cyvcf2" \
-            --ignore=tests/unit/test_vcf_transformer.py \
             --ignore=tests/integration/test_vcf_pipeline.py
 
       # Frontend lint + type-check (Node 20 for parity with frontend/Dockerfile).

@@ -151,7 +151,11 @@ After future fixes, re-run and diff against these baselines.
 - The African Beacon Network (ABN) aggregator at `beacon-network-dev.afrigen-d.dev`
   federates over this beacon. Its conformance is downstream of ours —
   if our `/g_variants` returns malformed JSON, ABN merger has to handle
-  it. See `../afrigend-beacon-network/docs/SPEC_CONFORMANCE.md`.
+  it. ABN lives in a separate repo (`AfriGen-D/african-beacon-network`,
+  cloned locally at `/Users/mamana/projects-uct/_afrigen-d/afrigend-beacon-network/`),
+  with its own `docs/SPEC_CONFORMANCE.md`. ABN runs on the same VM as
+  this repo's API-only sidecar (`afrigend-beacon-network`), but in a
+  different `/opt/afrigend/beacon-network/` working tree.
 - Real query metrics (separate from spec conformance) are now captured
   via `QueryLog` model + middleware → MongoDB `query_logs`. See main
   CLAUDE.md "Query Logging" section.

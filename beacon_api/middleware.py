@@ -3,9 +3,12 @@ Custom middleware for Beacon API
 """
 import time
 import logging
+from datetime import datetime, timedelta
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.conf import settings
+
+from .privacy import anonymize_client_ip
 
 logger = logging.getLogger('beacon_api')
 
@@ -119,17 +122,143 @@ class BooleanResponseMiddleware:
     """
     Middleware to ensure only boolean responses for public API
     """
-    
+
     def __init__(self, get_response):
         self.get_response = get_response
         self.boolean_mode = getattr(settings, 'BEACON_RESPONSE_MODE', 'FULL') == 'BOOLEAN'
-        
+
     def __call__(self, request):
         response = self.get_response(request)
-        
+
         # Only modify API responses in boolean mode
         if self.boolean_mode and request.path.startswith('/api/'):
             # This will be handled in the views
             pass
-            
+
         return response
+
+
+class QueryLogMiddleware:
+    """
+    Records each beacon API query into MongoDB (collection: query_logs) for
+    audit, dashboard metrics, and debugging. Best-effort: any DB write failure
+    is swallowed so the beacon response is never blocked.
+    Skips internal/service endpoints (info, configuration, entry_types, map,
+    service-info, health) — only logs actual data-discovery queries.
+
+    Data minimisation: the row pairs a requester with the exact locus they
+    queried, so the client address is reduced to its network prefix before it
+    is written, and every row carries an expiry the TTL index acts on. See
+    beacon_api/models.py::QueryLog and beacon_api/privacy.py.
+    """
+
+    # Retention default. 90 days spans a full quarter, which is what an abuse
+    # or access review actually needs, and it comfortably covers the longest
+    # window on the Grafana beacon dashboard. Longer than that the rows stop
+    # answering operational questions and are just accumulated personal data.
+    DEFAULT_RETENTION_DAYS = 90
+
+    # Path *prefixes* (after /api) that are real beacon queries.
+    LOGGED_PREFIXES = (
+        '/api/g_variants', '/api/individuals', '/api/biosamples',
+        '/api/cohorts', '/api/analyses', '/api/datasets',
+        '/api/filtering_terms', '/api/query',
+    )
+    # Subpaths that are metadata, not queries — skip.
+    SKIP_SUFFIXES = ('/info', '/health', '/configuration', '/entry_types', '/map', '/service-info')
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        start = time.monotonic()
+        response = self.get_response(request)
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+
+        if self._should_log(request.path):
+            try:
+                self._record(request, response, elapsed_ms)
+            except Exception as e:
+                # Never block the response on a logging failure.
+                logger.warning(f"QueryLog write failed: {e}")
+
+        return response
+
+    def _should_log(self, path):
+        if not any(path.startswith(p) for p in self.LOGGED_PREFIXES):
+            return False
+        if any(path.endswith(s) for s in self.SKIP_SUFFIXES):
+            return False
+        return True
+
+    def _record(self, request, response, elapsed_ms):
+        # Lazy import to avoid Django app-loading issues at module import time.
+        from beacon_api.models import QueryLog
+
+        query_type = self._extract_query_type(request.path)
+        params = dict(request.GET.lists()) if request.method == 'GET' else {}
+        if request.method == 'POST' and request.content_type == 'application/json':
+            try:
+                import json as _json
+                body = request.body.decode('utf-8') if request.body else ''
+                if body:
+                    params['_body'] = _json.loads(body)
+            except Exception:
+                pass
+
+        hits = self._extract_hits(response)
+        # Truncated to a network prefix — the full address is never persisted.
+        ip = anonymize_client_ip(self._client_ip(request))
+
+        retention_days = getattr(
+            settings, 'BEACON_QUERYLOG_RETENTION_DAYS', self.DEFAULT_RETENTION_DAYS
+        )
+        # Naive UTC, matching QueryLog.created's datetime.utcnow default and
+        # the UTC clock MongoDB's TTL monitor compares against.
+        expires_at = datetime.utcnow() + timedelta(days=retention_days)
+
+        QueryLog(
+            query_type=query_type,
+            query_params=params,
+            response_status=response.status_code,
+            response_time_ms=elapsed_ms,
+            hits_count=hits,
+            client_ip=ip,
+            expires_at=expires_at,
+        ).save()
+
+    @staticmethod
+    def _extract_query_type(path):
+        # /api/g_variants/<id> -> g_variants  ;  /api/query -> query
+        parts = path.strip('/').split('/')
+        # parts == ['api', '<entry>', ...]  -> '<entry>'
+        return parts[1] if len(parts) >= 2 else 'unknown'
+
+    @staticmethod
+    def _extract_hits(response):
+        # Best-effort: parse JSON body for resultSets[].resultsCount summed.
+        try:
+            content_type = response.get('Content-Type', '') if hasattr(response, 'get') else ''
+            if 'application/json' not in content_type:
+                return 0
+            import json as _json
+            body = response.content.decode('utf-8') if response.content else '{}'
+            data = _json.loads(body)
+            # Beacon v2 shape: {"responseSummary": {"numTotalResults": N, "exists": bool}, ...}
+            rs = data.get('responseSummary') or {}
+            if 'numTotalResults' in rs:
+                return int(rs['numTotalResults'] or 0)
+            if rs.get('exists') is True:
+                return 1
+            # Fallback: count items in 'response.resultSets[*].resultsCount'
+            sets = (data.get('response') or {}).get('resultSets') or []
+            return sum(int(s.get('resultsCount') or 0) for s in sets)
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _client_ip(request):
+        xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+        if xff:
+            return xff.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR', '')
