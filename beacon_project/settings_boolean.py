@@ -247,6 +247,24 @@ BEACON_AF_DECIMALS = config('BEACON_AF_DECIMALS', default=3, cast=int)
 # "at least 5 per cell" rule.
 BEACON_AF_MIN_PUBLISHED = config('BEACON_AF_MIN_PUBLISHED', default=0.01, cast=float)
 
+# Server-side time budget for a single MongoDB query, in milliseconds, applied
+# via max_time_ms(). MongoDB kills the operation when it expires and the worker
+# is released immediately.
+#
+# This is the backstop for query cost, and it is the only bound that holds in
+# the worst case: a `limit` does not bound a query that matches nothing,
+# because the server still scans the entire collection looking for documents to
+# fill the page. Before this existed, an unparameterized GET /api/g_variants
+# ran for 30.7s and returned HTTP 504 — unauthenticated and trivially
+# repeatable, so with `--workers 4` four concurrent requests saturated the API.
+#
+# 5s is well above any indexed locus query (single-digit ms) and well below the
+# 30s gateway timeout, so a refused query is refused by us, with an actionable
+# message, rather than by nginx with a 504.
+BEACON_QUERY_MAX_TIME_MS = config(
+    'BEACON_QUERY_MAX_TIME_MS', default=5000, cast=int
+)
+
 # ============================================================================
 # API DOCUMENTATION
 # ============================================================================

@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useVariantQuery } from '@/lib/hooks/useBeaconQuery';
 import { useQueryStore } from '@/lib/store/queryStore';
 import { Container } from '@/components/layout/Container';
 import { QueryConsole } from '@/components/query/QueryConsole';
-import { DatasetResults } from '@/components/results/DatasetResults';
+import { DatasetResults, type QueryStatus } from '@/components/results/DatasetResults';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { VariantQuery, Dataset } from '@/lib/api/types';
@@ -100,6 +100,32 @@ function HomePageInner() {
     }
   }, [error]);
 
+  const status: QueryStatus = isLoading
+    ? 'loading'
+    : error
+      ? 'error'
+      : submittedQuery
+        ? 'success'
+        : 'idle';
+
+  // Spoken outcome for the live region below. The failure path stays silent
+  // here because react-hot-toast already renders the error into its own
+  // polite live region — announcing it twice reads the failure twice.
+  const announcement = useMemo(() => {
+    if (status === 'loading') return 'Searching datasets…';
+    if (status !== 'success') return '';
+    const all = data?.response?.datasetAlleleResponses ?? [];
+    const scoped =
+      selectedDatasetIds.length > 0
+        ? all.filter(d => selectedDatasetIds.includes(d.datasetId))
+        : all;
+    // With no per-dataset responses, DatasetResults falls back to listing every
+    // known dataset as a miss — mirror that denominator so the two agree.
+    const total = scoped.length > 0 ? scoped.length : datasets.length;
+    const matched = scoped.filter(d => d.exists).length;
+    return `Search complete. Found in ${matched} of ${total} dataset${total === 1 ? '' : 's'}.`;
+  }, [status, data, selectedDatasetIds, datasets]);
+
   return (
     <Container className="py-8">
       <div className="mb-8">
@@ -125,40 +151,51 @@ function HomePageInner() {
           initialRegion={initialParsed.current?.region ?? null}
         />
 
-        {isLoading && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                <Skeleton className="h-8 w-1/3" />
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Announces the query outcome. Kept outside the aria-busy region
+            below, which would otherwise suppress updates while loading. */}
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </p>
 
-        {error && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center py-8">
-                <p className="text-destructive font-semibold mb-2">Query Failed</p>
-                <p className="text-sm text-muted-foreground">{getErrorMessage(error)}</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <div
+          className="space-y-6"
+          role="region"
+          aria-label="Results"
+          aria-busy={status === 'loading' || undefined}
+        >
+          {isLoading && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  <Skeleton className="h-8 w-1/3" />
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-        <DatasetResults
-          datasetAlleleResponses={data?.response?.datasetAlleleResponses}
-          datasets={datasets}
-          query={submittedQuery}
-          selectedDatasetIds={selectedDatasetIds}
-          rawResponse={data}
-          beaconHandovers={data?.response?.beaconHandovers}
-          status={
-            isLoading ? 'loading' : error ? 'error' : submittedQuery ? 'success' : 'idle'
-          }
-        />
+          {error && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-8">
+                  <p className="text-destructive font-semibold mb-2">Query Failed</p>
+                  <p className="text-sm text-muted-foreground">{getErrorMessage(error)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <DatasetResults
+            datasetAlleleResponses={data?.response?.datasetAlleleResponses}
+            datasets={datasets}
+            query={submittedQuery}
+            selectedDatasetIds={selectedDatasetIds}
+            rawResponse={data}
+            beaconHandovers={data?.response?.beaconHandovers}
+            status={status}
+          />
+        </div>
       </div>
     </Container>
   );

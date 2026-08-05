@@ -6,6 +6,11 @@ import re
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
+from .filters import UnsupportedFilters, reject_filters
+from .pagination import (
+    DEFAULT_SKIP, InvalidPagination, MAX_SKIP, clamp_limit, parse_pagination,
+)
+
 
 class GenomicCoordinateValidator:
     """Validate genomic coordinates for safety and correctness"""
@@ -199,9 +204,30 @@ class BeaconQuerySerializer(serializers.Serializer):
         default='boolean',
     )
 
+    # Pagination (Beacon v2). Bounds live in beacon_api/pagination.py so the
+    # collection endpoints — which never reach this serializer — enforce the
+    # identical limits. Note the deliberate asymmetry between the two:
+    #
+    #   * `limit` has no max_value here; clamp_limit() caps it in validate().
+    #     An over-large limit means "give me everything", and clamping it while
+    #     reporting the applied value in receivedRequestSummary answers that
+    #     honestly.
+    #   * `skip` IS hard-capped, because silently reducing an offset would
+    #     serve a *different page* than the one requested while the response
+    #     claimed otherwise — the exact class of lie this work removes.
+    skip = serializers.IntegerField(required=False, min_value=0, max_value=MAX_SKIP)
+    limit = serializers.IntegerField(required=False, min_value=0)
+
     def validate(self, data):
         """Cross-field validation"""
-        
+
+        # Always resolve pagination, including when the caller omitted it, so
+        # downstream code and the echoed receivedRequestSummary read the same
+        # two numbers rather than each inventing a default.
+        data['skip'] = data.get('skip', DEFAULT_SKIP)
+        data['limit'] = clamp_limit(data.get('limit'))
+
+
         # Get chromosome (handle both referenceName and chromosome fields)
         chromosome = data.get('referenceName') or data.get('chromosome')
         if chromosome:
@@ -245,12 +271,41 @@ def validate_query_request(request_data):
     """
     Main validation function for query requests
     Returns sanitized and validated data
+
+    Raises DRF ``ValidationError`` for every rejection, including the
+    filters/pagination ones raised as plain ``ValueError`` subclasses by the
+    standalone modules. Converting here means callers keep a single
+    ``except ValidationError`` and the existing ``extract_error_message()``
+    path renders all of them identically.
     """
+    # `filters` must be judged BEFORE sanitization. QueryParameterSanitizer
+    # stringifies each value and rejects quotes and braces, so a spec-shaped
+    # POST body — filters: [{"id": "NCIT:C16576"}] — would otherwise fail as
+    # "Invalid characters detected in query", which tells the client nothing
+    # about the real reason (this beacon publishes no filtering terms).
+    try:
+        reject_filters(request_data if isinstance(request_data, dict) else {})
+    except UnsupportedFilters as e:
+        raise ValidationError(str(e))
+
+    # Same reason for pagination: parse it off the raw request so a POST body
+    # carrying a non-scalar skip/limit gets a pagination-specific message.
+    try:
+        skip, limit = parse_pagination(request_data)
+    except InvalidPagination as e:
+        raise ValidationError(str(e))
+
     # Sanitize all input parameters first
     sanitized = QueryParameterSanitizer.sanitize_query_params(request_data)
-    
+
     # Validate using serializer
     serializer = BeaconQuerySerializer(data=sanitized)
     serializer.is_valid(raise_exception=True)
-    
-    return serializer.validated_data
+
+    validated = serializer.validated_data
+    # parse_pagination() saw the untouched values; the serializer saw the
+    # stringified copies. They agree, but the former is the canonical parse
+    # shared with the collection endpoints, so it wins.
+    validated['skip'] = skip
+    validated['limit'] = limit
+    return validated

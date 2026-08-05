@@ -1,6 +1,6 @@
 'use client';
 
-import { History, X } from 'lucide-react';
+import { Check, History, Minus, X } from 'lucide-react';
 import { useQueryStore } from '@/lib/store/queryStore';
 import type { VariantQuery } from '@/lib/api/types';
 import type { VariantQueryFormData } from '@/lib/utils/validators';
@@ -59,24 +59,28 @@ export function RecentSearches({ onSelect, max = 6 }: RecentSearchesProps) {
       <div className="flex flex-wrap gap-2">
         {items.map((item, i) => {
           const found = item.result?.response?.exists;
+          const outcome = found === undefined ? 'outcome unknown' : found ? 'found' : 'not found';
+          const description = `Re-run ${label(item.query)} — ${outcome}`;
+          // The outcome carries a distinct glyph as well as a colour: a red/green
+          // dot alone is indistinguishable under deuteranopia and silent to a
+          // screen reader, which instead gets the outcome via the accessible name.
+          const Icon = found === undefined ? Minus : found ? Check : X;
+          const iconColor =
+            found === undefined
+              ? 'text-muted-foreground/60'
+              : found
+                ? 'text-emerald-600'
+                : 'text-destructive';
           return (
             <button
               key={`${label(item.query)}-${i}`}
               type="button"
               onClick={() => onSelect(toFormData(item.query))}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-full border bg-background hover:bg-muted hover:border-primary/30 transition-colors"
-              title={`Re-run ${label(item.query)}`}
+              title={description}
+              aria-label={description}
             >
-              <span
-                className={
-                  found === undefined
-                    ? 'h-1.5 w-1.5 rounded-full bg-muted-foreground/40'
-                    : found
-                      ? 'h-1.5 w-1.5 rounded-full bg-emerald-500'
-                      : 'h-1.5 w-1.5 rounded-full bg-destructive'
-                }
-                aria-hidden="true"
-              />
+              <Icon className={`h-3 w-3 shrink-0 ${iconColor}`} aria-hidden="true" />
               <span className="font-mono">{label(item.query)}</span>
             </button>
           );

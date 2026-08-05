@@ -5,13 +5,14 @@ Converts VCF files into Beacon v2 compliant JSON format for MongoDB storage.
 """
 
 import os
+import re
 import sys
 import json
 import logging
 import argparse
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Iterator, Tuple
+from typing import Dict, List, Optional, Iterator, Set, Tuple
 from dataclasses import dataclass, asdict
 
 import yaml
@@ -82,6 +83,38 @@ class IndividualRecord:
 class VCFTransformer:
     """Main class for transforming VCF files to Beacon v2format."""
 
+    # Symbolic ALT alleles (<DEL>, <DUP:TANDEM>, ...) that map onto a Beacon
+    # variant type directly. Anything else symbolic is reported as generic SV
+    # rather than being guessed at from allele-string lengths.
+    _SYMBOLIC_TYPES = {'DEL', 'DUP', 'INS', 'INV', 'CNV'}
+
+    # SnpEff's ANN layout, from the "VCF annotation format" spec (v1.0). Used
+    # when the VCF header does not declare the field list itself.
+    _DEFAULT_ANN_COLUMNS = [
+        'Allele', 'Annotation', 'Annotation_Impact', 'Gene_Name', 'Gene_ID',
+        'Feature_Type', 'Feature_ID', 'Transcript_BioType', 'Rank', 'HGVS.c',
+        'HGVS.p', 'cDNA.pos / cDNA.length', 'CDS.pos / CDS.length',
+        'AA.pos / AA.length', 'Distance', 'ERRORS / WARNINGS / INFO',
+    ]
+
+    # Column (slugified) → VariantAnnotation field, so what is written can be
+    # read back through the API's ODM and matched by its annotation filters.
+    _VEP_FIELD_MAP = {
+        'symbol': 'gene_symbol',
+        'gene_symbol': 'gene_symbol',
+        'gene': 'gene_id',
+        'consequence': 'molecular_consequence',
+        'clin_sig': 'clinical_significance',
+    }
+    _SNPEFF_FIELD_MAP = {
+        'gene_name': 'gene_symbol',
+        'gene_id': 'gene_id',
+        'annotation': 'molecular_consequence',
+    }
+
+    # An annotation with none of these carries no usable information.
+    _ANNOTATION_CORE_FIELDS = ('gene_symbol', 'gene_id', 'molecular_consequence')
+
     def __init__(self, config_path: str = None, dataset_id: str = None):
         """Initialize the VCF transformer with configuration.
 
@@ -95,9 +128,18 @@ class VCFTransformer:
         self.stats = {
             'variants_processed': 0,
             'variants_filtered': 0,
+            'variants_skipped': 0,
+            'skipped_reasons': {},
+            'annotations_skipped': 0,
             'individuals_found': 0,
             'errors': 0
         }
+        # CSQ column order varies per VEP invocation, so it is read from the
+        # VCF header rather than assumed. None means "no declared format" —
+        # in which case CSQ entries are left unparsed instead of guessed.
+        self._csq_columns: Optional[List[str]] = None
+        self._ann_columns: List[str] = list(self._DEFAULT_ANN_COLUMNS)
+        self._unparseable_sources: Set[str] = set()
 
     def _load_config(self, config_path: str = None) -> Dict:
         """Load configuration from YAML file."""
@@ -147,6 +189,12 @@ class VCFTransformer:
             vcf = cyvcf2.VCF(vcf_path)
             total_variants = 0
 
+            # Column layouts for CSQ/ANN come from this file's own header.
+            self._csq_columns = self._read_format_columns(vcf, 'CSQ')
+            self._ann_columns = (self._read_format_columns(vcf, 'ANN')
+                                 or list(self._DEFAULT_ANN_COLUMNS))
+            self._unparseable_sources = set()
+
             # Get sample names (individuals)
             samples = vcf.samples
             self.stats['individuals_found'] = len(samples)
@@ -163,7 +211,10 @@ class VCFTransformer:
                 # single "T,G" document can never match an exact-allele query
                 # and would carry ALT-1's frequency on the joined string.
                 for alt_index in range(max(1, len(self._alt_alleles(variant)))):
-                    yield self._create_variant_record(variant, assembly_id, alt_index)
+                    record = self._create_variant_record(variant, assembly_id, alt_index)
+                    if record is None:
+                        continue  # unrepresentable allele — counted in stats
+                    yield record
                     self.stats['variants_processed'] += 1
 
         except Exception as e:
@@ -171,22 +222,46 @@ class VCFTransformer:
             self.stats['errors'] += 1
             raise
 
-        self.logger.info(f"VCF parsing completed. Total: {total_variants}, passed filters: {self.stats['variants_processed']}")
+        self.logger.info(
+            f"VCF parsing completed. Total: {total_variants}, "
+            f"records emitted: {self.stats['variants_processed']}, "
+            f"quality-filtered: {self.stats['variants_filtered']}, "
+            f"skipped alleles: {self.stats['variants_skipped']} "
+            f"{self.stats['skipped_reasons'] or ''}"
+        )
 
     def _passes_quality_filters(self, variant) -> bool:
         """Check if variant passes quality filters."""
         quality_filters = self.config['vcf']['quality_filters']
-        
+
         # Check QUAL field
         if variant.QUAL is not None and variant.QUAL < quality_filters.get('min_qual', 0):
             return False
-            
-        # Check depth (DP in INFO field)
-        if hasattr(variant, 'INFO') and 'DP' in variant.INFO:
-            if variant.INFO['DP'] < quality_filters.get('min_depth', 0):
-                return False
-                
+
+        # Check depth (DP in INFO field). Read via INFO.get(): cyvcf2's INFO
+        # object iterates as (key, value) pairs, so `'DP' in variant.INFO` is
+        # always False and the depth filter never fired.
+        depth = self._info_get(variant, 'DP')
+        if depth is not None:
+            try:
+                if float(depth) < quality_filters.get('min_depth', 0):
+                    return False
+            except (TypeError, ValueError):
+                pass
+
         return True
+
+    @staticmethod
+    def _info_get(variant, key: str):
+        """Read one INFO field, tolerating variants without an INFO object."""
+        info = getattr(variant, 'INFO', None)
+        getter = getattr(info, 'get', None)
+        if not callable(getter):
+            return None
+        try:
+            return getter(key)
+        except KeyError:
+            return None
 
     @staticmethod
     def _alt_alleles(variant) -> List[str]:
@@ -213,16 +288,41 @@ class VCFTransformer:
         return value if alt_index == 0 else None
 
     def _create_variant_record(self, variant, assembly_id: str,
-                               alt_index: int = 0) -> VariantRecord:
-        """Create a VariantRecord for one ALT allele of a cyvcf2 variant."""
+                               alt_index: int = 0) -> Optional[VariantRecord]:
+        """Create a VariantRecord for one ALT allele of a cyvcf2 variant.
+
+        Returns None when the allele cannot be represented faithfully (a
+        spanning-deletion `*`, or a symbolic allele whose span the VCF never
+        states). Such alleles are counted in `stats['skipped_reasons']` rather
+        than stored with a fabricated span.
+        """
         alts = self._alt_alleles(variant)
         alt_allele = alts[alt_index] if alt_index < len(alts) else ''
 
-        # Natural key — unique per emitted allele, not per site
-        variant_id = f"{variant.CHROM}:{variant.POS}:{variant.REF}:{alt_allele}"
+        # `*` marks an allele deleted by an overlapping upstream event. It is
+        # not a sequence, so it can neither be queried nor spanned.
+        if alt_allele == '*':
+            self._record_skip('spanning_deletion_allele')
+            return None
+
+        reference_name = self._normalize_chromosome(variant.CHROM)
+        ref = variant.REF or ''
+        start = variant.POS - 1  # Convert to 0-based coordinates
 
         # Determine variant type for this allele specifically
-        variant_type = self._determine_variant_type(variant.REF, [alt_allele])
+        variant_type = self._determine_variant_type(ref, [alt_allele])
+
+        end = self._compute_end(variant, ref, alt_allele, start, variant_type, alt_index)
+        if end is None:
+            self._record_skip('symbolic_allele_without_span')
+            self.logger.warning(
+                f"Skipping {reference_name}:{variant.POS} {alt_allele}: symbolic "
+                f"allele with neither INFO/END nor SVLEN — span is unknown"
+            )
+            return None
+
+        # Natural key — unique per emitted allele, not per site
+        variant_id = f"{reference_name}:{variant.POS}:{ref}:{alt_allele}"
 
         # Extract annotations, with AF/AC narrowed to this allele
         annotations = self._extract_annotations(variant, alt_index)
@@ -233,16 +333,53 @@ class VCFTransformer:
         return VariantRecord(
             id=variant_id,
             assembly_id=assembly_id,
-            reference_name=str(variant.CHROM),
-            start=variant.POS - 1,  # Convert to 0-based coordinates
-            end=variant.POS - 1 + len(variant.REF),
-            reference_bases=variant.REF,
+            reference_name=reference_name,
+            start=start,
+            end=end,
+            reference_bases=ref,
             alternate_bases=alt_allele,
             variant_type=variant_type,
             dataset_ids=[self.dataset_id] if self.dataset_id else [],
             annotations=annotations,
             allele_frequency=allele_frequency,
         )
+
+    def _record_skip(self, reason: str):
+        """Count a skipped allele under a named reason for the run summary."""
+        self.stats['variants_skipped'] += 1
+        reasons = self.stats.setdefault('skipped_reasons', {})
+        reasons[reason] = reasons.get(reason, 0) + 1
+
+    # ------------------------------------------------------------------
+    # Chromosome naming
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_chromosome(chrom) -> str:
+        """Normalise a contig name to the bare form Beacon v2 queries use.
+
+        `chr1`/`1` → `1`, `chrX` → `X`, `chrM`/`MT` → `MT`. Source panels
+        disagree on the prefix, and storing both forms forced the API into a
+        `$in` that cannot use the plain `reference_name` index. Unrecognised
+        contigs (scaffolds, decoys, alt loci) are returned untouched — mangling
+        them would be worse than leaving them verbatim.
+        """
+        if chrom is None:
+            return ''
+        name = str(chrom).strip()
+        core = name[3:] if name[:3].lower() == 'chr' else name
+        upper = core.upper()
+        if core.isdigit() and 1 <= int(core) <= 22:
+            return str(int(core))
+        if upper in ('X', 'Y'):
+            return upper
+        if upper in ('M', 'MT'):
+            return 'MT'
+        return name
+
+    # ------------------------------------------------------------------
+    # Allele typing and spans
+    # ------------------------------------------------------------------
 
     @classmethod
     def _extract_allele_frequency(cls, variant, alt_index: int = 0) -> float:
@@ -251,21 +388,50 @@ class VCFTransformer:
         cyvcf2's INFO exposes `.get(key)`; for a multi-allelic site AF is a
         tuple/list with one entry per ALT, so it is indexed by alt_index.
         """
-        if not hasattr(variant, 'INFO'):
-            return None
-        af = cls._per_allele_value(variant.INFO.get('AF'), alt_index)
+        af = cls._per_allele_value(cls._info_get(variant, 'AF'), alt_index)
         try:
             return float(af) if af is not None else None
         except (TypeError, ValueError):
             return None
 
+    @staticmethod
+    def _symbolic_base(alt: str) -> Optional[str]:
+        """Return the base type of a symbolic ALT (`<DUP:TANDEM>` → `DUP`)."""
+        if not alt or not (alt.startswith('<') and alt.endswith('>')):
+            return None
+        inner = alt[1:-1].strip()
+        return inner.split(':')[0].strip().upper() or None
+
+    @staticmethod
+    def _is_breakend(alt: str) -> bool:
+        """Detect VCF breakend notation, e.g. `A[chr2:321682[` or `]chr2:321681]T`."""
+        return bool(alt) and ('[' in alt or ']' in alt)
+
     def _determine_variant_type(self, ref: str, alt: List[str]) -> str:
-        """Determine variant type based on REF and ALT alleles."""
+        """Determine variant type based on REF and ALT alleles.
+
+        Symbolic and breakend alleles are classified by what they declare, not
+        by string length — `<DEL>` is 5 characters and was previously recorded
+        as an insertion against a 1-character REF.
+        """
         if not alt or not alt[0]:
             return "unknown"
 
-        alt_allele = alt[0]
-        
+        alt_allele = str(alt[0])
+
+        if alt_allele == '*':
+            return "unknown"  # allele removed by an upstream deletion
+
+        if self._is_breakend(alt_allele):
+            return "BND"
+
+        symbolic = self._symbolic_base(alt_allele)
+        if symbolic:
+            return symbolic if symbolic in self._SYMBOLIC_TYPES else "SV"
+
+        if not ref:
+            return "unknown"
+
         if len(ref) == len(alt_allele) == 1:
             return "SNV"  # Single Nucleotide Variant
         elif len(ref) > len(alt_allele):
@@ -275,69 +441,274 @@ class VCFTransformer:
         else:
             return "COMPLEX"  # Complex variant
 
+    def _compute_end(self, variant, ref: str, alt_allele: str, start: int,
+                     variant_type: str, alt_index: int = 0) -> Optional[int]:
+        """Return the 0-based, half-open end coordinate for this allele.
+
+        `INFO/END` is authoritative when present (it is 1-based inclusive, which
+        equals the 0-based exclusive end). Without it, a symbolic allele's span
+        comes from SVLEN. A 10 kb `<DEL>` used to be stored as a 1 bp span, so
+        no overlapping range query could ever find it.
+        """
+        end_value = self._info_get(variant, 'END')
+        if end_value is not None:
+            try:
+                end = int(end_value)
+                if end > start:
+                    return end
+                self.logger.warning(
+                    f"Ignoring INFO/END={end_value} at {variant.CHROM}:{variant.POS}: "
+                    f"not past the variant start"
+                )
+            except (TypeError, ValueError):
+                self.logger.warning(f"Ignoring non-integer INFO/END={end_value!r}")
+
+        if self._symbolic_base(alt_allele) is None:
+            # Sequence allele (including breakends): REF spans the reference.
+            return start + max(1, len(ref))
+
+        if variant_type == 'INS':
+            # A symbolic insertion adds sequence without consuming reference.
+            return start + max(1, len(ref))
+
+        svlen = self._per_allele_value(self._info_get(variant, 'SVLEN'), alt_index)
+        try:
+            span = abs(int(svlen)) if svlen is not None else 0
+        except (TypeError, ValueError):
+            span = 0
+        if span:
+            return start + span
+
+        return None
+
     def _extract_annotations(self, variant, alt_index: int = 0) -> List[Dict]:
-        """Extract variant annotations from INFO field for one ALT allele."""
+        """Extract variant annotations from INFO field for one ALT allele.
+
+        Every emitted annotation uses the API's `VariantAnnotation` shape
+        (gene_id / gene_symbol / molecular_consequence / clinical_significance
+        / additional_annotations), so the records can be read back through the
+        ODM and matched by the `annotations__gene_symbol` filters.
+        """
         annotations = []
-        
-        if not hasattr(variant, 'INFO'):
+
+        info = getattr(variant, 'INFO', None)
+        if info is None or not callable(getattr(info, 'get', None)):
             return annotations
-            
-        info = variant.INFO
-        
-        # Extract VEP annotations (CSQ field)
-        if 'CSQ' in info:
-            annotations.extend(self._parse_vep_annotations(info['CSQ']))
-            
-        # Extract SnpEff annotations (ANN field)
-        if 'ANN' in info:
-            annotations.extend(self._parse_snpeff_annotations(info['ANN']))
-            
-        # Extract basic annotations. Use INFO.get(): cyvcf2's INFO object is not
-        # a dict and does not support `in`/subscript reliably, so the previous
-        # `field in info` / `info[field]` form silently extracted nothing.
-        # AF and AC are per-ALT, so they are narrowed to the allele this record
-        # describes; GENE and AN are site-level and kept whole.
-        basic_annotation = {}
+
+        alts = self._alt_alleles(variant)
+        alt_allele = alts[alt_index] if alt_index < len(alts) else ''
+        ref = getattr(variant, 'REF', '') or ''
+
+        # VEP (CSQ) and SnpEff (ANN). These were read with `'CSQ' in info`,
+        # which is always False on a cyvcf2 INFO object — it iterates as
+        # (key, value) tuples — so no annotation was ever extracted.
+        annotations.extend(self._parse_vep_annotations(
+            self._info_get(variant, 'CSQ'), ref, alt_allele, alt_index, len(alts)))
+        annotations.extend(self._parse_snpeff_annotations(
+            self._info_get(variant, 'ANN'), ref, alt_allele, alt_index, len(alts)))
+
+        # Basic INFO fields. AF and AC are per-ALT, so they are narrowed to the
+        # allele this record describes; GENE and AN are site-level.
+        extra = {'source': 'INFO'}
+        gene_symbol = None
         for field in ['GENE', 'AF', 'AC', 'AN']:
-            val = info.get(field)
+            val = self._info_get(variant, field)
             if field in ('AF', 'AC'):
                 val = self._per_allele_value(val, alt_index)
-            if val is not None:
-                basic_annotation[field.lower()] = val
-                
-        if basic_annotation:
-            annotations.append({
-                'source': 'INFO',
-                'annotations': basic_annotation
-            })
-            
+            if val is None:
+                continue
+            if field == 'GENE':
+                gene_symbol = str(val)
+            else:
+                extra[field.lower()] = val
+
+        if gene_symbol or len(extra) > 1:
+            basic = {'additional_annotations': extra}
+            if gene_symbol:
+                basic['gene_symbol'] = gene_symbol
+            annotations.append(basic)
+
         return annotations
 
-    def _parse_vep_annotations(self, csq_data) -> List[Dict]:
-        """Parse VEP CSQ annotations."""
+    # ------------------------------------------------------------------
+    # VEP / SnpEff annotation parsing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _slugify_column(name: str) -> str:
+        """`HGVS.c` → `hgvs_c`, `cDNA.pos / cDNA.length` → `cdna_pos_cdna_length`."""
+        return re.sub(r'[^0-9a-z]+', '_', str(name).lower()).strip('_')
+
+    @staticmethod
+    def _split_annotation_entries(value) -> List[str]:
+        """Split a CSQ/ANN INFO value into its per-transcript entries.
+
+        cyvcf2 hands back one comma-joined string for a `Number=.` String field;
+        other producers hand back a list. Both are accepted.
+        """
+        if value is None:
+            return []
+        items = value if isinstance(value, (list, tuple)) else [value]
+        entries = []
+        for item in items:
+            for part in str(item).split(','):
+                part = part.strip()
+                if part:
+                    entries.append(part)
+        return entries
+
+    def _read_format_columns(self, vcf, key: str) -> Optional[List[str]]:
+        """Read the pipe-delimited column layout an INFO field declares.
+
+        VEP writes `Format: Allele|Consequence|IMPACT|SYMBOL|Gene|...` and
+        SnpEff writes `Functional annotations: 'Allele | Annotation | ...'`.
+        The column order varies per invocation, so it is never assumed.
+        """
+        description = None
+
+        getter = getattr(vcf, 'get_header_type', None)
+        if callable(getter):
+            try:
+                header = getter(key)
+            except (KeyError, TypeError, ValueError):
+                header = None
+            if isinstance(header, dict):
+                description = header.get('Description')
+
+        if not isinstance(description, str):
+            raw = getattr(vcf, 'raw_header', None)
+            if isinstance(raw, str):
+                match = re.search(rf'^##INFO=<ID={re.escape(key)},.*$', raw, re.MULTILINE)
+                description = match.group(0) if match else None
+
+        if not isinstance(description, str):
+            return None
+
+        match = (re.search(r"Format:\s*([^\"'>]+)", description)
+                 or re.search(r"annotations:\s*'([^']+)'", description, re.IGNORECASE))
+        if not match:
+            return None
+
+        columns = [c.strip() for c in match.group(1).split('|')]
+        columns = [c for c in columns if c]
+        return columns or None
+
+    def _parse_annotation_entries(self, raw_value, columns: Optional[List[str]],
+                                  field_map: Dict[str, str], source: str,
+                                  ref: str, alt_allele: str,
+                                  alt_index: int, n_alts: int) -> List[Dict]:
+        """Map pipe-delimited annotation entries onto VariantAnnotation fields.
+
+        An entry is dropped — never guessed at — when the column layout is
+        unknown, when it carries more fields than the layout declares (which
+        would shift every value onto the wrong column), or when it cannot be
+        attributed to this ALT allele at a multi-allelic site. A wrong gene
+        symbol is worse than a missing one.
+        """
+        entries = self._split_annotation_entries(raw_value)
+        if not entries:
+            return []
+
+        if not columns:
+            self.stats['annotations_skipped'] += len(entries)
+            if source not in self._unparseable_sources:
+                self._unparseable_sources.add(source)
+                self.logger.warning(
+                    f"{source} annotations present but no column format declared in "
+                    f"the VCF header — they are left unparsed rather than guessed at"
+                )
+            return []
+
+        slugs = [self._slugify_column(c) for c in columns]
+        candidates = self._allele_candidates(ref, alt_allele)
         annotations = []
-        # VEP CSQ format parsing would go here
-        # This is a simplified version
-        if isinstance(csq_data, list):
-            for csq in csq_data:
-                annotations.append({
-                    'source': 'VEP',
-                    'consequence': str(csq)
-                })
+
+        for entry in entries:
+            parts = entry.split('|')
+            if len(parts) > len(slugs):
+                self.stats['annotations_skipped'] += 1
+                continue
+
+            values = dict(zip(slugs, [p.strip() for p in parts]))
+            if not self._entry_applies(values, candidates, alt_index, n_alts):
+                self.stats['annotations_skipped'] += 1
+                continue
+
+            annotation = {}
+            extra = {'source': source}
+            for slug, value in values.items():
+                if not value:
+                    continue
+                target = field_map.get(slug)
+                if target:
+                    annotation[target] = value
+                else:
+                    extra[slug] = value
+
+            if not any(annotation.get(f) for f in self._ANNOTATION_CORE_FIELDS):
+                self.stats['annotations_skipped'] += 1
+                continue
+
+            annotation['additional_annotations'] = extra
+            annotations.append(annotation)
+
         return annotations
 
-    def _parse_snpeff_annotations(self, ann_data) -> List[Dict]:
-        """Parse SnpEff ANN annotations."""
-        annotations = []
-        # SnpEff ANN format parsing would go here
-        # This is a simplified version
-        if isinstance(ann_data, list):
-            for ann in ann_data:
-                annotations.append({
-                    'source': 'SnpEff',
-                    'annotation': str(ann)
-                })
-        return annotations
+    @staticmethod
+    def _allele_candidates(ref: str, alt_allele: str) -> Set[str]:
+        """Forms an annotator may use to name this ALT allele.
+
+        VEP writes the minimal representation: with REF=`CA` ALT=`C` the CSQ
+        allele is `-`, and with REF=`C` ALT=`CA` it is `A`.
+        """
+        if not alt_allele:
+            return set()
+        candidates = {alt_allele.upper()}
+        if ref and alt_allele[0].upper() == ref[0].upper() and (len(ref) > 1 or len(alt_allele) > 1):
+            candidates.add(alt_allele[1:].upper() or '-')
+        symbolic = alt_allele[1:-1] if alt_allele.startswith('<') and alt_allele.endswith('>') else None
+        if symbolic:
+            candidates.add(symbolic.upper())
+        return candidates
+
+    @staticmethod
+    def _entry_applies(values: Dict[str, str], candidates: Set[str],
+                       alt_index: int, n_alts: int) -> bool:
+        """Decide whether one annotation entry describes the ALT being emitted.
+
+        On a bi-allelic site there is only one ALT to attribute to. On a
+        multi-allelic site the entry must say which allele it means — via
+        VEP's ALLELE_NUM or a matching allele column — otherwise it is dropped.
+        """
+        if n_alts <= 1:
+            return True
+
+        allele_num = values.get('allele_num')
+        if allele_num:
+            try:
+                return int(allele_num) == alt_index + 1
+            except (TypeError, ValueError):
+                pass
+
+        allele = values.get('allele')
+        if allele:
+            return allele.upper() in candidates
+
+        return False
+
+    def _parse_vep_annotations(self, csq_data, ref: str = '', alt_allele: str = '',
+                               alt_index: int = 0, n_alts: int = 1) -> List[Dict]:
+        """Parse VEP CSQ annotations using the header-declared column order."""
+        return self._parse_annotation_entries(
+            csq_data, self._csq_columns, self._VEP_FIELD_MAP, 'VEP',
+            ref, alt_allele, alt_index, n_alts)
+
+    def _parse_snpeff_annotations(self, ann_data, ref: str = '', alt_allele: str = '',
+                                  alt_index: int = 0, n_alts: int = 1) -> List[Dict]:
+        """Parse SnpEff ANN annotations (header layout, else the documented one)."""
+        return self._parse_annotation_entries(
+            ann_data, self._ann_columns, self._SNPEFF_FIELD_MAP, 'SnpEff',
+            ref, alt_allele, alt_index, n_alts)
 
     def _extract_genotype_info(self, variant, sample_idx: int) -> Optional[Dict]:
         """Extract genotype information for a sample."""

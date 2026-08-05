@@ -7,6 +7,10 @@ from rest_framework.views import exception_handler
 from rest_framework.response import Response
 from rest_framework import status
 
+from .pagination import (
+    DEFAULT_LIMIT, DEFAULT_SKIP, InvalidPagination, parse_pagination,
+)
+
 logger = logging.getLogger('beacon_api')
 
 
@@ -138,19 +142,87 @@ def build_meta(returned_granularity='boolean', received_request=None, returned_s
     return meta
 
 
+MAX_ECHOED_SCHEMAS = 10
+MAX_ECHOED_SCHEMA_LENGTH = 256
+
+# Mirrors BeaconQuerySerializer.requestedGranularity's choices.
+VALID_GRANULARITIES = ('boolean', 'count', 'aggregated', 'record')
+
+
+def _echoed_schemas(validated_params):
+    """The client's requestedSchemas, echoed only if they are plainly safe.
+
+    `validated_params` can be an untouched POST body (individual_query_boolean
+    passes exactly that), so this value is attacker-controlled and of unknown
+    type. Only a list of short strings is reflected; anything else reports the
+    truth for a request that named no usable schema, which is `[]`.
+    """
+    raw = validated_params.get('requestedSchemas') if isinstance(validated_params, dict) else None
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [
+        item[:MAX_ECHOED_SCHEMA_LENGTH]
+        for item in list(raw)[:MAX_ECHOED_SCHEMAS]
+        if isinstance(item, str) and item.strip()
+    ]
+
+
+def _echoed_pagination(validated_params):
+    """The skip/limit that were actually applied to this request.
+
+    Falls back to `parse_pagination` when the caller passed a raw request
+    mapping rather than serializer output, and to the defaults when the value
+    cannot be parsed at all — a summary is never worth failing a response over,
+    and an unparseable value already produced a 400 on the query path.
+    """
+    if not isinstance(validated_params, dict):
+        return {'skip': DEFAULT_SKIP, 'limit': DEFAULT_LIMIT}
+
+    skip = validated_params.get('skip')
+    limit = validated_params.get('limit')
+    if isinstance(skip, int) and not isinstance(skip, bool) and \
+            isinstance(limit, int) and not isinstance(limit, bool):
+        # Already resolved by validate_query_request / parse_pagination.
+        return {'skip': skip, 'limit': limit}
+
+    try:
+        skip, limit = parse_pagination(validated_params)
+    except InvalidPagination:
+        return {'skip': DEFAULT_SKIP, 'limit': DEFAULT_LIMIT}
+    return {'skip': skip, 'limit': limit}
+
+
 def build_received_request_summary(validated_params=None, granularity='boolean'):
     """
     Beacon v2 spec receivedRequestSummary.
+
+    Every field here describes what the client actually asked for. That was
+    not previously true: `validated_params` was ignored outright and the
+    pagination block was the constant `{'skip': 0, 'limit': 10}`, so the
+    beacon reported a page it had never applied — to a client that had never
+    requested one. A summary that does not summarise the request is worse than
+    no summary, because a client has no way to tell it is being lied to.
 
     `requestParameters` is omitted intentionally: the spec types it as an
     object whose schema varies per entry type, and echoing the raw dict fails
     schema validation. Verifier-required fields are present below.
     """
+    params = validated_params if isinstance(validated_params, dict) else {}
+
+    # An explicit requestedGranularity in the request wins over the caller's
+    # default, so the echo reflects the client rather than our fallback. Only
+    # a spec-valid value is echoed: this can be a raw, unvalidated body (see
+    # individual_query_boolean), and reflecting an arbitrary attacker string
+    # back into the response is not something a summary needs to do.
+    requested = params.get('requestedGranularity')
+    if requested not in VALID_GRANULARITIES:
+        requested = granularity
+
     return {
         'apiVersion': 'v2.0.0',
-        'requestedGranularity': granularity,
-        'requestedSchemas': [],
-        'pagination': {'skip': 0, 'limit': 10},
+        'requestedGranularity': requested,
+        'requestedSchemas': _echoed_schemas(params),
+        'pagination': _echoed_pagination(params),
     }
 
 
@@ -274,22 +346,39 @@ def build_error_envelope(error_code, error_message):
     }
 
 
-def build_collection_envelope(items, set_type='dataset', set_id='public'):
+def build_collection_envelope(items, set_type='dataset', set_id='public',
+                              validated_params=None, num_total=None):
     """
-    Beacon v2 envelope for collection endpoints (/datasets, /cohorts, /filtering_terms).
+    Beacon v2 envelope for collection endpoints (/filtering_terms).
+
+    Delegates to :func:`build_query_envelope` so a collection endpoint is
+    byte-for-byte the same shape as /datasets and /cohorts. It previously
+    emitted only `{meta, response}` — no `responseSummary`, no
+    `beaconHandovers`, no `receivedRequestSummary` — which made
+    /filtering_terms structurally different from every sibling endpoint. The
+    GA4GH verifier checks envelope shape, so that drift is exactly what it
+    should have caught and did not; keeping one implementation removes the
+    place where the two can diverge again.
+
+    `num_total` is the size of the whole collection when `items` is one page
+    of it, so `responseSummary.numTotalResults` stays a total rather than
+    silently becoming a page size.
     """
-    return {
-        'meta': build_meta(),
-        'response': {
-            'resultSets': [{
-                'id': set_id,
-                'setType': set_type,
-                'exists': len(items) > 0,
-                'resultsCount': len(items),
-                'results': items,
-            }] if items else [],
-        },
-    }
+    result_sets = [{
+        'id': set_id,
+        'setType': set_type,
+        'exists': len(items) > 0,
+        'resultsCount': len(items),
+        'results': items,
+    }] if items else []
+
+    total = len(items) if num_total is None else num_total
+    return build_query_envelope(
+        exists=total > 0,
+        num_total=total,
+        result_sets=result_sets,
+        validated_params=validated_params,
+    )
 
 
 class BooleanResponseMixin:

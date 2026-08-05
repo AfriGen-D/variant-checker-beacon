@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -43,6 +43,7 @@ function ApiQueryBlock({ query }: { query: VariantQuery }) {
   const [open, setOpen] = useState(false);
   const url = buildApiUrl(query);
   const [copied, setCopied] = useState(false);
+  const panelId = useId();
 
   const copy = () => {
     navigator.clipboard.writeText(`curl "${url}"`);
@@ -53,21 +54,30 @@ function ApiQueryBlock({ query }: { query: VariantQuery }) {
   return (
     <div className="mt-2">
       <button
+        type="button"
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-controls={panelId}
         className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
       >
-        <svg className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+        <svg aria-hidden="true" className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
         </svg>
         API query
       </button>
       {open && (
-        <div className="mt-1.5 flex items-center gap-2 bg-muted/70 rounded-md px-3 py-2 border">
+        <div id={panelId} className="mt-1.5 flex items-center gap-2 bg-muted/70 rounded-md px-3 py-2 border">
           <code className="text-xs font-mono text-muted-foreground break-all flex-1 select-all">
             curl &quot;{url}&quot;
           </code>
-          <button onClick={copy} className="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors" title="Copy">
-            {copied ? '✓' : '⎘'}
+          <button
+            type="button"
+            onClick={copy}
+            className="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            title={copied ? 'Copied' : 'Copy'}
+            aria-label={copied ? 'Copied to clipboard' : 'Copy curl command'}
+          >
+            <span aria-hidden="true">{copied ? '✓' : '⎘'}</span>
           </button>
         </div>
       )}
@@ -95,31 +105,109 @@ function HandoverButton({ handover, size = 'md' }: { handover: Handover; size?: 
 
 function ExportButtons({ query, responses }: { query: VariantQuery; responses: DatasetAlleleResponse[] }) {
   const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Set only when the menu is opened from the keyboard, so a mouse user never
+  // sees focus jump into the list.
+  const focusFirstOnOpen = useRef(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (open && focusFirstOnOpen.current) {
+      focusFirstOnOpen.current = false;
+      itemRefs.current[0]?.focus();
+    }
+  }, [open]);
+
+  const close = (returnFocus: boolean) => {
+    setOpen(false);
+    if (returnFocus) triggerRef.current?.focus();
+  };
+
+  const onTriggerKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      close(false);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusFirstOnOpen.current = true;
+      setOpen(true);
+    }
+  };
+
+  const onItemKeyDown = (e: React.KeyboardEvent, index: number) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close(true);
+    } else if (e.key === 'Tab') {
+      setOpen(false);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const count = itemRefs.current.length;
+      const next = e.key === 'ArrowDown' ? (index + 1) % count : (index - 1 + count) % count;
+      itemRefs.current[next]?.focus();
+    }
+  };
+
+  const items = [
+    { label: 'CSV', rounding: 'rounded-t-md', run: () => exportCsv(query, responses) },
+    { label: 'JSON', rounding: 'rounded-b-md', run: () => exportJson(query, responses) },
+  ];
+
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <button
-        onClick={() => setOpen(o => !o)}
+        ref={triggerRef}
+        type="button"
+        onClick={e => {
+          // e.detail === 0 means the click came from Enter/Space, not a pointer.
+          focusFirstOnOpen.current = !open && e.detail === 0;
+          setOpen(o => !o);
+        }}
+        onKeyDown={onTriggerKeyDown}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border bg-background hover:bg-muted transition-colors"
       >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
         </svg>
         Export
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-32 rounded-md border bg-background shadow-lg z-10">
-          <button
-            className="block w-full text-left px-4 py-2 text-sm hover:bg-muted transition-colors rounded-t-md"
-            onClick={() => { exportCsv(query, responses); setOpen(false); }}
-          >
-            CSV
-          </button>
-          <button
-            className="block w-full text-left px-4 py-2 text-sm hover:bg-muted transition-colors rounded-b-md"
-            onClick={() => { exportJson(query, responses); setOpen(false); }}
-          >
-            JSON
-          </button>
+        <div
+          id={menuId}
+          role="menu"
+          aria-label="Export results"
+          className="absolute right-0 mt-1 w-32 rounded-md border bg-background shadow-lg z-10"
+        >
+          {items.map((item, i) => (
+            <button
+              key={item.label}
+              ref={el => {
+                itemRefs.current[i] = el;
+              }}
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className={`block w-full text-left px-4 py-2 text-sm hover:bg-muted focus:bg-muted focus:outline-none transition-colors ${item.rounding}`}
+              onKeyDown={e => onItemKeyDown(e, i)}
+              onClick={() => { item.run(); close(true); }}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -169,6 +257,7 @@ function JsonResponseBlock({ data }: { data: unknown }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const json = JSON.stringify(data, null, 2);
+  const panelId = useId();
 
   const copy = () => {
     navigator.clipboard.writeText(json);
@@ -179,22 +268,27 @@ function JsonResponseBlock({ data }: { data: unknown }) {
   return (
     <div className="mt-2">
       <button
+        type="button"
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-controls={panelId}
         className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
       >
-        <svg className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+        <svg aria-hidden="true" className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
         </svg>
         JSON response
       </button>
       {open && (
-        <div className="mt-1.5 relative bg-muted/70 rounded-md border">
+        <div id={panelId} className="mt-1.5 relative bg-muted/70 rounded-md border">
           <button
+            type="button"
             onClick={copy}
             className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            title="Copy JSON"
+            title={copied ? 'Copied' : 'Copy JSON'}
+            aria-label={copied ? 'Copied to clipboard' : 'Copy JSON response'}
           >
-            {copied ? '✓' : '⎘'}
+            <span aria-hidden="true">{copied ? '✓' : '⎘'}</span>
           </button>
           <pre className="text-xs font-mono text-muted-foreground p-3 overflow-x-auto max-h-80 overflow-y-auto select-all">
             {json}
@@ -205,7 +299,7 @@ function JsonResponseBlock({ data }: { data: unknown }) {
   );
 }
 
-type QueryStatus = 'idle' | 'loading' | 'error' | 'success';
+export type QueryStatus = 'idle' | 'loading' | 'error' | 'success';
 
 interface DatasetResultsProps {
   datasetAlleleResponses?: DatasetAlleleResponse[];
@@ -339,7 +433,12 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
                 >
                   <p className="font-medium text-sm">{ds.name}</p>
                   <Badge variant={hasQuery ? 'destructive' : 'secondary'} size="sm">
-                    {hasQuery ? 'NO' : '—'}
+                    {hasQuery ? 'NO' : (
+                      <>
+                        <span aria-hidden="true">—</span>
+                        <span className="sr-only">Not queried yet</span>
+                      </>
+                    )}
                   </Badge>
                 </div>
               ))}

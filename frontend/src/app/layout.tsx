@@ -8,7 +8,7 @@ import { Footer } from '@/components/layout/Footer';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Variant Checker — AfriGen-D Beacon',
+  title: 'Variant Checker — Beacon',
   description: 'Check any genomic variant against African reference panels, then jump to allele frequencies, annotations and clinical detail in gnomAD, Ensembl, ClinVar, dbSNP and UCSC.',
 };
 
