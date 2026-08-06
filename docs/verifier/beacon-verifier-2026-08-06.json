@@ -1,0 +1,131 @@
+{
+  "entities": {
+    "BeaconMap": [
+      {
+        "error": null,
+        "name": "GA4GH Beacon v2 - Public Discovery",
+        "url": "https://beacon.afrigen-d.org/api/map",
+        "valid": true
+      }
+    ],
+    "Bioinformatics analysis": [
+      {
+        "error": null,
+        "name": "Bioinformatics analysis all entries",
+        "url": "https://beacon.afrigen-d.org/api/analyses",
+        "valid": true
+      }
+    ],
+    "Biological Sample": [
+      {
+        "error": null,
+        "name": "Biological Sample all entries",
+        "url": "https://beacon.afrigen-d.org/api/biosamples",
+        "valid": true
+      }
+    ],
+    "Cohort": [
+      {
+        "error": null,
+        "name": "Cohort all entries",
+        "url": "https://beacon.afrigen-d.org/api/cohorts",
+        "valid": true
+      }
+    ],
+    "Configuration": [
+      {
+        "error": null,
+        "name": "GA4GH Beacon v2 - Public Discovery",
+        "url": "https://beacon.afrigen-d.org/api/configuration",
+        "valid": true
+      }
+    ],
+    "Dataset": [
+      {
+        "error": null,
+        "name": "Bioinformatics analysis related with a Dataset",
+        "url": "https://beacon.afrigen-d.org/api/datasets/H3A_V6_AFR/analyses",
+        "valid": true
+      },
+      {
+        "error": null,
+        "name": "Biological Sample related with a Dataset",
+        "url": "https://beacon.afrigen-d.org/api/datasets/H3A_V6_AFR/biosamples",
+        "valid": true
+      },
+      {
+        "error": null,
+        "name": "Dataset all entries",
+        "url": "https://beacon.afrigen-d.org/api/datasets",
+        "valid": true
+      },
+      {
+        "error": null,
+        "name": "Dataset single entry",
+        "url": "https://beacon.afrigen-d.org/api/datasets/H3A_V6_AFR",
+        "valid": true
+      },
+      {
+        "error": null,
+        "name": "Genomic Variants related with a Dataset",
+        "url": "https://beacon.afrigen-d.org/api/datasets/H3A_V6_AFR/g_variants",
+        "valid": true
+      },
+      {
+        "error": null,
+        "name": "Individual related with a Dataset",
+        "url": "https://beacon.afrigen-d.org/api/datasets/H3A_V6_AFR/individuals",
+        "valid": true
+      },
+      {
+        "error": null,
+        "name": "Sequencing run related with a Dataset",
+        "url": "https://beacon.afrigen-d.org/api/datasets/H3A_V6_AFR/runs",
+        "valid": true
+      }
+    ],
+    "EntryTypes": [
+      {
+        "error": null,
+        "name": "GA4GH Beacon v2 - Public Discovery",
+        "url": "https://beacon.afrigen-d.org/api/entry_types",
+        "valid": true
+      }
+    ],
+    "Genomic Variants": [
+      {
+        "error": null,
+        "name": "Genomic Variants all entries",
+        "url": "https://beacon.afrigen-d.org/api/g_variants",
+        "valid": true
+      }
+    ],
+    "Individual": [
+      {
+        "error": null,
+        "name": "Individual all entries",
+        "url": "https://beacon.afrigen-d.org/api/individuals",
+        "valid": true
+      }
+    ],
+    "Info": [
+      {
+        "error": null,
+        "name": "GA4GH Beacon v2 - Public Discovery",
+        "url": "https://beacon.afrigen-d.org/api/info",
+        "valid": true
+      }
+    ],
+    "Sequencing run": [
+      {
+        "error": null,
+        "name": "Sequencing run all entries",
+        "url": "https://beacon.afrigen-d.org/api/runs",
+        "valid": true
+      }
+    ]
+  },
+  "last_updated": "2026-08-06T15:47:48.419012",
+  "name": "GA4GH Beacon v2 - Public Discovery",
+  "url": "https://beacon.afrigen-d.org/api/"
+}

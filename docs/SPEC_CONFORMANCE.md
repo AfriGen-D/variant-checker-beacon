@@ -4,8 +4,10 @@ This document tracks the conformance of the AfriGen-D Beacon v2 (boolean
 public profile) against the [official GA4GH Beacon v2 specification](https://github.com/ga4gh-beacon/beacon-v2),
 verified using the official EGA tooling.
 
-**Last verified:** 2026-05-02
-**Endpoint tested:** `https://api-beacon.afrigen-d.dev/api/`
+**Last verified:** 2026-08-06
+**Endpoint tested:** `https://beacon.afrigen-d.org/api/` (the user-facing
+production node; the `api-beacon.afrigen-d.dev` sidecar is equivalent but was
+offline 2026-05-07 → 2026-08-06)
 **Verifier:** [`EGA-archive/beacon-verifier`](https://github.com/EGA-archive/beacon-verifier)
 v0.3.3 (Rust CLI · last upstream update Sep 2025)
 **Verdict:** ✅ **17 PASS / 0 FAIL / 0 NO-RESP** (full conformance)
@@ -18,7 +20,7 @@ Docker image (Rust toolchain not required on the host).
 ### Quick run
 
 ```bash
-docker run --rm beacon-verifier:latest https://api-beacon.afrigen-d.dev/api/ > result.json
+docker run --rm beacon-verifier:latest https://beacon.afrigen-d.org/api/ > result.json
 ```
 
 ### Re-build the image (one-time, ~3 min)
@@ -141,10 +143,30 @@ dataset-scoped query support is a future enhancement.
 
 ## Saved baselines
 
-- `screenshots/beacon-verifier-result-2026-05-02.json` — pre-fix verdict (3/11)
-- `screenshots/beacon-verifier-log-2026-05-02.txt` — pre-fix verifier stderr
+- `docs/verifier/beacon-verifier-2026-08-06.json` — **17/17 PASS**, the full
+  machine-readable verdict against `https://beacon.afrigen-d.org/api/`.
 
-After future fixes, re-run and diff against these baselines.
+After future fixes, re-run and diff against this baseline.
+
+> Two earlier entries here pointed at `screenshots/beacon-verifier-result-2026-05-02.json`
+> and `...-log-2026-05-02.txt`. **Neither file was ever committed**, so the
+> original 17/17 claim could not be reproduced from the repository. That is why
+> the run above is stored in-tree.
+
+## What the verifier does *not* check
+
+It validates **envelope shape only** — never query semantics. It returned a
+clean bill of health throughout the period when this beacon was answering
+positional queries off by one base and could not match multi-allelic sites at
+all. Treat a green run as "the responses are well-formed", never as "the
+answers are correct".
+
+It is also sensitive to latency rather than correctness in one place: between
+2026-05 and 2026-08-06 the score was really **16/17**, because an
+unparameterized `GET /api/g_variants` scanned all ~42M variants and timed out
+(HTTP 504 after ~30s). The check reported `operation timed out`, not a schema
+failure. That was fixed by bounding unselective queries; the same request now
+returns a valid response in well under a second.
 
 ## Related
 
