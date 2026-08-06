@@ -5,6 +5,8 @@ Simplified configuration for public YES/NO discovery only
 
 import os
 from pathlib import Path
+from urllib.parse import quote_plus
+
 import mongoengine
 from decouple import config, Csv
 
@@ -127,17 +129,41 @@ DATABASES = {
     }
 }
 
-# MongoDB - No authentication for read-only boolean responses
+# MongoDB
+#
+# Credentials are OPTIONAL so one settings file serves both hosts: the
+# production beacon runs Mongo with authentication enabled, the API sidecar
+# does not. Hard-coding the unauthenticated URI meant an image built from this
+# repo connected fine to prod's Mongo and then failed every read with
+# "command aggregate requires authentication" — a container that reports
+# healthy while answering nothing.
 MONGODB_HOST = config('MONGODB_HOST', default='localhost')
 MONGODB_PORT = config('MONGODB_PORT', default=27017, cast=int)
 MONGODB_NAME = config('MONGODB_NAME', default='beacon_db')
+MONGODB_USERNAME = config('MONGODB_USERNAME', default='')
+MONGODB_PASSWORD = config('MONGODB_PASSWORD', default='')
+
+if MONGODB_USERNAME:
+    # Percent-encode the credentials: a password containing @ : / or ? would
+    # otherwise be parsed as URI structure and produce a confusing auth error.
+    _user = quote_plus(MONGODB_USERNAME)
+    _password = quote_plus(MONGODB_PASSWORD)
+    MONGODB_URI = (
+        f'mongodb://{_user}:{_password}@{MONGODB_HOST}:{MONGODB_PORT}/'
+        f'{MONGODB_NAME}?authSource={MONGODB_NAME}'
+    )
+else:
+    MONGODB_URI = f'mongodb://{MONGODB_HOST}:{MONGODB_PORT}/{MONGODB_NAME}'
 
 mongoengine.connect(
     db=MONGODB_NAME,
-    host=f'mongodb://{MONGODB_HOST}:{MONGODB_PORT}/',
+    host=MONGODB_URI,
     alias='default',
     connect=False,
     serverSelectionTimeoutMS=5000,
+    # This beacon is read-only; retryable writes need a replica set and error
+    # on a standalone mongod.
+    retryWrites=False,
 )
 
 # ============================================================================
