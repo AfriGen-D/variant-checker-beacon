@@ -347,24 +347,33 @@ jobs:
             # it with condition: service_healthy), and under `set -e` that
             # killed the script before the rollback below could run — which is
             # exactly how a bad image once left production down.
+            # Bring the API up ALONE. Starting it together with the frontend
+            # is what broke the previous attempts: beacon-frontend declares
+            # `depends_on: condition: service_healthy`, that gate trips before
+            # the API's healthcheck (interval 30s, no start_period) has fired
+            # even once, and compose then TEARS DOWN the API it just started:
+            #
+            #   Container beacon-api-boolean  Started
+            #   Container beacon-api-boolean  Error
+            #   dependency failed to start: container beacon-api-boolean is unhealthy
+            #
+            # `--no-deps` does not suppress that condition check. Ordering does.
             UP_OK=true
-            $COMPOSE up -d --no-deps beacon-api beacon-frontend || UP_OK=false
-            echo "compose up ok: ${UP_OK}"
+            $COMPOSE up -d --no-deps beacon-api || UP_OK=false
+            echo "compose up (api) ok: ${UP_OK}"
 
-            # Poll REGARDLESS of what `up` returned. A non-zero exit does not
-            # mean the API is unhealthy: the frontend declares
-            # `depends_on: condition: service_healthy`, and that gate gives up
-            # long before the API's healthcheck (interval 30s, no start_period)
-            # has fired even once. Treating it as fatal rolled back a
-            # container that had already logged "Booting worker" and answered
-            # /api/health with 200. The endpoint is the authority, not the
-            # dependency gate — the sidecar job takes the same approach.
+            # Poll the container DIRECTLY, not through nginx on :80. nginx
+            # resolved the previous container's IP at startup and keeps using
+            # it until reloaded, so a public-path probe returns 502 no matter
+            # how healthy the new container is — that alone failed a poll for
+            # 196s while the API was fine.
             HEALTHY=false
             echo "Waiting for API to become healthy..."
             for i in $(seq 1 24); do
-              if curl -fsS --max-time 5 http://localhost/api/health > /dev/null 2>&1; then
+              if docker exec beacon-api-boolean curl -fsS --max-time 5 \
+                   http://localhost:8000/api/health > /dev/null 2>&1; then
                 HEALTHY=true
-                echo "Healthy after ${i} attempt(s)."
+                echo "API healthy after ${i} attempt(s)."
                 break
               fi
               sleep 5
@@ -392,9 +401,35 @@ jobs:
               exit 1
             fi
 
-            # Same reason as the rollback path: recreated containers get new
-            # IPs and nginx caches the old ones.
+            # The API is healthy, so the frontend's `service_healthy` gate will
+            # now pass. Starting it only at this point is the whole reason the
+            # gate no longer tears the API down.
+            $COMPOSE up -d --no-deps beacon-frontend || echo "frontend up returned non-zero"
+
+            # Recreated containers get new IPs and nginx caches the old ones,
+            # so the public path 502s until it re-reads them.
             docker exec beacon-nginx nginx -s reload || true
+
+            # Only now is the user-facing path meaningful to check.
+            PUBLIC_OK=false
+            for i in $(seq 1 12); do
+              if curl -fsS --max-time 5 http://localhost/api/health > /dev/null 2>&1; then
+                PUBLIC_OK=true
+                echo "Public path healthy after ${i} attempt(s)."
+                break
+              fi
+              sleep 5
+            done
+            if [ "$PUBLIC_OK" != true ]; then
+              echo "FAILED: API is healthy but nginx is not serving it. Rolling back."
+              if [ -n "$PREV_API" ]; then
+                export API_IMAGE="$PREV_API" FRONTEND_IMAGE="${PREV_FRONTEND:-$FRONTEND}"
+                printf 'API_IMAGE=%s\nFRONTEND_IMAGE=%s\n' "$API_IMAGE" "$FRONTEND_IMAGE" > .env.deploy
+                $COMPOSE up -d --no-deps --force-recreate beacon-api beacon-frontend || true
+                docker exec beacon-nginx nginx -s reload || true
+              fi
+              exit 1
+            fi
 
             printf '%s %s %s -> %s\n' "$DEPLOY_VERSION" "$(date -u '+%Y-%m-%d %H:%M:%S')" "${PREV_API:-none}" "$API" >> deployment.log
             echo "Deployment successful."
