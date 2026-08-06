@@ -351,18 +351,24 @@ jobs:
             $COMPOSE up -d --no-deps beacon-api beacon-frontend || UP_OK=false
             echo "compose up ok: ${UP_OK}"
 
+            # Poll REGARDLESS of what `up` returned. A non-zero exit does not
+            # mean the API is unhealthy: the frontend declares
+            # `depends_on: condition: service_healthy`, and that gate gives up
+            # long before the API's healthcheck (interval 30s, no start_period)
+            # has fired even once. Treating it as fatal rolled back a
+            # container that had already logged "Booting worker" and answered
+            # /api/health with 200. The endpoint is the authority, not the
+            # dependency gate — the sidecar job takes the same approach.
             HEALTHY=false
-            if [ "$UP_OK" = true ]; then
-              echo "Waiting for API to become healthy..."
-              for i in $(seq 1 24); do
-                if curl -fsS --max-time 5 http://localhost/api/health > /dev/null 2>&1; then
-                  HEALTHY=true
-                  echo "Healthy after ${i} attempt(s)."
-                  break
-                fi
-                sleep 5
-              done
-            fi
+            echo "Waiting for API to become healthy..."
+            for i in $(seq 1 24); do
+              if curl -fsS --max-time 5 http://localhost/api/health > /dev/null 2>&1; then
+                HEALTHY=true
+                echo "Healthy after ${i} attempt(s)."
+                break
+              fi
+              sleep 5
+            done
 
             if [ "$HEALTHY" != true ]; then
               echo "FAILED: API did not become healthy. Rolling back."
