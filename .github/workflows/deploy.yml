@@ -222,6 +222,11 @@ jobs:
           proxy_host: ${{ secrets.JUMPHOST_HOST }}
           proxy_username: ${{ secrets.JUMPHOST_USERNAME }}
           proxy_key: ${{ secrets.SIDECAR_SSH_KEY }}
+          # Without this the job's `env:` block never reaches the remote shell,
+          # and `set -u` aborts on the first reference with
+          # "REPO: unbound variable" (exit 127). The prod deploy job below
+          # already passes the same list.
+          envs: DEPLOY_VERSION,GHCR_TOKEN,GH_ACTOR,REPO
           command_timeout: 10m
           # No `set -e`: every failure below needs to be reported, not to
           # silently abort the script mid-way. Same reasoning as the prod job.
