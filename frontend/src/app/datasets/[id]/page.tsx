@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Container } from '@/components/layout/Container';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -18,8 +18,10 @@ function formatDate(dateStr?: string | null): string {
   });
 }
 
-export default function DatasetDetailPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default function DatasetDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // Next 15 made route params a Promise, including in client components,
+  // which cannot be async — React's use() unwraps it.
+  const { id } = use(params);
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

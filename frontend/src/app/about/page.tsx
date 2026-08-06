@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Container } from '@/components/layout/Container';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 
@@ -82,9 +83,9 @@ export default function AboutPage() {
               <a href="https://afrigen-d.org/services/#imputation-service" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                 Imputation Service
               </a>, the{' '}
-              <a href="/" className="text-primary hover:underline">
+              <Link href="/" className="text-primary hover:underline">
                 AfriGen-D Genomic Beacon
-              </a>, and the{' '}
+              </Link>, and the{' '}
               <a href="https://beacon-network-dev.afrigen-d.dev" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                 African Beacon Network
               </a>.

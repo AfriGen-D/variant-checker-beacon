@@ -22,8 +22,11 @@ function HomePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   // Parse initial query (+ mode) from URL params
-  const initialParsed = useRef(queryFromSearchParams(searchParams));
-  const [mode, setMode] = useState<QueryMode>(initialParsed.current?.mode ?? 'variant');
+  // Captured once on mount. Lazy useState rather than useRef: reading a ref
+  // during render is what react-hooks/refs flags, and useRef(expr) also
+  // re-evaluates expr on every render where the initialiser is only used once.
+  const [initialParsed] = useState(() => queryFromSearchParams(searchParams));
+  const [mode, setMode] = useState<QueryMode>(initialParsed?.mode ?? 'variant');
   const [submittedQuery, setSubmittedQuery] = useState<VariantQuery | null>(null);
   const [filters, setFilters] = useState<string[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
@@ -57,7 +60,7 @@ function HomePageInner() {
 
   // Auto-submit on mount if URL has valid params
   useEffect(() => {
-    const parsed = initialParsed.current;
+    const parsed = initialParsed;
     if (parsed && !autoSubmitted.current) {
       autoSubmitted.current = true;
       const data = parsed.variant ?? parsed.region;
@@ -147,8 +150,8 @@ function HomePageInner() {
           datasets={datasets}
           selectedDatasetIds={selectedDatasetIds}
           onSelectedDatasetsChange={setSelectedDatasetIds}
-          initialVariant={initialParsed.current?.variant ?? null}
-          initialRegion={initialParsed.current?.region ?? null}
+          initialVariant={initialParsed?.variant ?? null}
+          initialRegion={initialParsed?.region ?? null}
         />
 
         {/* Announces the query outcome. Kept outside the aria-busy region
