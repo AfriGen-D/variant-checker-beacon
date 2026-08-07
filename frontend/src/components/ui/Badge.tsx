@@ -10,6 +10,12 @@ const badgeVariants = cva(
         default: 'border-transparent bg-primary text-primary-foreground',
         secondary: 'border-transparent bg-secondary/20 text-secondary',
         destructive: 'border-transparent bg-destructive text-destructive-foreground',
+        // A negative *answer*, not a failure. In a discovery beacon "not
+        // present" is the most common and entirely correct result, so it keeps
+        // the red family — YES/NO still read as a pair — but tinted rather
+        // than filled. `destructive` stays reserved for the beacon failing to
+        // answer at all, which must stay visually louder.
+        negative: 'border-transparent bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200',
         outline: 'text-foreground',
         success: 'border-transparent bg-success text-success-foreground',
         warning: 'border-transparent bg-amber-500 text-white',
