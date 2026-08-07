@@ -36,6 +36,20 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-affirm: var(--affirm);
+  --color-affirm-bg: var(--affirm-bg);
+  --color-quiet: var(--quiet);
+  --color-quiet-bg: var(--quiet-bg);
+  --color-signal: var(--signal);
+  --color-signal-bg: var(--signal-bg);
+  --color-halt: var(--halt);
+  --color-halt-bg: var(--halt-bg);
+  --color-inert: var(--inert);
+  --color-inert-bg: var(--inert-bg);
+  --color-base-a: var(--base-a);
+  --color-base-c: var(--base-c);
+  --color-base-g: var(--base-g);
+  --color-base-t: var(--base-t);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -67,6 +81,27 @@
     --destructive: oklch(0.577 0.245 27.325);
     --destructive-foreground: oklch(0.985 0.002 247.858);
     --success: oklch(0.696 0.17 162.48);
+
+    /* Verdict tones, shared with the aggregator so the two products read as
+       one system. Each is a text-safe colour with a tint for chip
+       backgrounds; semantic colour stays separate from --primary, which means
+       "interactive" and never "good" or "bad". */
+    --affirm: oklch(0.52 0.11 165);
+    --affirm-bg: oklch(0.95 0.03 165);
+    --quiet: oklch(0.45 0.015 264);
+    --quiet-bg: oklch(0.955 0.004 264);
+    --signal: oklch(0.55 0.11 75);
+    --signal-bg: oklch(0.96 0.045 85);
+    --halt: oklch(0.505 0.16 27);
+    --halt-bg: oklch(0.955 0.03 25);
+    --inert: oklch(0.63 0.012 264);
+    --inert-bg: oklch(0.97 0.003 264);
+
+    /* Canonical base colours, as every genome browser renders them. */
+    --base-a: oklch(0.52 0.11 165);
+    --base-c: oklch(0.546 0.245 262.881);
+    --base-g: oklch(0.55 0.11 75);
+    --base-t: oklch(0.505 0.16 27);
     --success-foreground: oklch(0.985 0.002 247.858);
     --border: oklch(0.922 0.004 264.542);
     --input: oklch(0.922 0.004 264.542);
@@ -93,6 +128,24 @@
     --destructive: oklch(0.577 0.245 27.325);
     --destructive-foreground: oklch(0.985 0.002 247.858);
     --success: oklch(0.696 0.17 162.48);
+
+    /* Lifted for legibility on a dark ground; tints darkened to match. This
+       app actually applies .dark, so these are load-bearing here. */
+    --affirm: oklch(0.72 0.12 165);
+    --affirm-bg: oklch(0.26 0.05 165);
+    --quiet: oklch(0.72 0.015 264);
+    --quiet-bg: oklch(0.28 0.008 264);
+    --signal: oklch(0.78 0.12 80);
+    --signal-bg: oklch(0.29 0.06 75);
+    --halt: oklch(0.7 0.15 27);
+    --halt-bg: oklch(0.28 0.07 25);
+    --inert: oklch(0.55 0.012 264);
+    --inert-bg: oklch(0.24 0.006 264);
+
+    --base-a: oklch(0.72 0.12 165);
+    --base-c: oklch(0.623 0.214 259.815);
+    --base-g: oklch(0.78 0.12 80);
+    --base-t: oklch(0.7 0.15 27);
     --success-foreground: oklch(0.985 0.002 247.858);
     --border: oklch(0.35 0.007 264.364);
     --input: oklch(0.35 0.007 264.364);
