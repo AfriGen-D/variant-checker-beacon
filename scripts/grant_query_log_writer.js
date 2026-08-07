@@ -22,8 +22,16 @@
 //   scp scripts/grant_query_log_writer.js afrigend-beacon-prod:/tmp/
 //   ssh afrigend-beacon-prod \
 //     "docker cp /tmp/grant_query_log_writer.js beacon-mongodb:/tmp/ && \
-//      docker exec beacon-mongodb mongo -u beacon_admin -p '\$PW' \
-//        --authenticationDatabase admin --quiet /tmp/grant_query_log_writer.js"
+//      docker exec -e MONGO_PW='$PW' beacon-mongodb \
+//        sh -c 'mongo -u beacon_admin -p \"\$MONGO_PW\" \
+//          --authenticationDatabase admin --quiet /tmp/grant_query_log_writer.js'"
+//
+//   NOTE ON QUOTING. `$PW` must expand LOCALLY (it is a local variable), so it
+//   is NOT backslash-escaped. `\$MONGO_PW` IS escaped so it survives to the
+//   inner `sh -c` inside the container. Escaping the first one sends the
+//   literal string "$PW" to the remote shell, where it is undefined — mongo
+//   then receives an empty password and fails with "Authentication failed".
+//   Passing via -e also keeps the secret out of the mongo process's argv.
 //
 // Then restart the API so it reconnects with the new privileges:
 //   ssh afrigend-beacon-prod "cd ~/afrigend-beacon2 && \
