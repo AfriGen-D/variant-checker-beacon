@@ -41,6 +41,8 @@ export function VariantQueryForm({
 }: VariantQueryFormProps) {
   const [examplesOpen, setExamplesOpen] = useState(false);
   const examplesId = useId();
+  const [coordsOpen, setCoordsOpen] = useState(false);
+  const coordsId = useId();
   const {
     register,
     handleSubmit,
@@ -60,6 +62,10 @@ export function VariantQueryForm({
       alternateBases: '',
     },
   });
+
+  // A collapsed panel must never swallow a validation message, so any field
+  // error forces the coordinates open.
+  const hasErrors = Object.keys(errors).length > 0;
 
   // Live preview of the variant being assembled, so coordinate/allele mistakes
   // are visible before the query is sent (input is 1-based).
@@ -164,14 +170,38 @@ export function VariantQueryForm({
         )}
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-border" />
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">Or enter coordinates</span>
-        <div className="h-px flex-1 bg-border" />
-      </div>
+      {/* Collapsed by default. The paste box above covers the common case, and
+          six labelled fields were the busiest thing on the page — they pushed
+          the query preview and submit below the fold. Same disclosure pattern
+          as "Or try an example" directly above. */}
+      <button
+        type="button"
+        onClick={() => setCoordsOpen((open) => !open)}
+        aria-expanded={coordsOpen || hasErrors}
+        aria-controls={coordsId}
+        className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+      >
+        <svg
+          aria-hidden="true"
+          className={`h-3 w-3 transition-transform ${coordsOpen || hasErrors ? 'rotate-90' : ''}`}
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
+          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+        </svg>
+        Or enter coordinates
+      </button>
 
       <form onSubmit={handleSubmit(submit)} className="space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* `hidden`, not conditional rendering: the inputs stay registered with
+            react-hook-form and keep whatever the paste box wrote, and
+            aria-controls resolves to a real element. Forced open on any
+            validation error so a message can never hide behind it. */}
+        <div
+          id={coordsId}
+          hidden={!coordsOpen && !hasErrors}
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3"
+        >
           <Select
             label="Assembly"
             tooltip={FIELD_HINTS.assembly}

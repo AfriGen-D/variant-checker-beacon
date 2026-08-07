@@ -8,18 +8,18 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: 'border-transparent bg-primary text-primary-foreground',
-        secondary: 'border-transparent bg-secondary/20 text-secondary',
-        destructive: 'border-transparent bg-destructive text-destructive-foreground',
-        // A negative *answer*, not a failure. In a discovery beacon "not
-        // present" is the most common and entirely correct result, so it keeps
-        // the red family — YES/NO still read as a pair — but tinted rather
-        // than filled. `destructive` stays reserved for the beacon failing to
-        // answer at all, which must stay visually louder.
-        negative: 'border-transparent bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200',
+        // Verdict tones from the shared token set, so a chip cannot be styled
+        // with a one-off literal that drifts from its siblings.
+        secondary: 'border-transparent bg-quiet-bg text-quiet',
+        destructive: 'border-transparent bg-halt text-background',
+        // A negative *answer*, not a failure: tinted rather than filled, so
+        // YES/NO read as a pair while a real failure stays louder.
+        negative: 'border-transparent bg-halt-bg text-halt',
+        success: 'border-transparent bg-affirm-bg text-affirm',
+        warning: 'border-transparent bg-signal-bg text-signal',
+        inert: 'border-transparent bg-inert-bg text-inert',
+        info: 'border-transparent bg-primary/15 text-primary',
         outline: 'text-foreground',
-        success: 'border-transparent bg-success text-success-foreground',
-        warning: 'border-transparent bg-amber-500 text-white',
-        info: 'border-transparent bg-primary/20 text-primary',
       },
       size: {
         sm: 'px-2 py-0.5 text-xs',
