@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { RecordHead } from './RecordHead';
 import { Button } from '@/components/ui/Button';
 import type { DatasetAlleleResponse, Dataset, VariantQuery, Handover } from '@/lib/api/types';
 import { exportCsv, exportJson } from '@/lib/utils/exportResults';
@@ -342,12 +343,7 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">
-            <div>
-              <CardTitle className="text-2xl font-bold">Results</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Found in <span className={matched > 0 ? 'text-emerald-600 font-semibold' : 'text-foreground font-semibold'}>{matched}</span> of {total} dataset{total !== 1 ? 's' : ''}
-              </p>
-            </div>
+            <RecordHead matched={matched} total={total} hasQuery />
             <div className="flex items-center gap-2">
               {query && <ExportButtons query={query} responses={filteredResponses} />}
             </div>
@@ -409,17 +405,16 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
   return (
     <Card>
       <CardHeader>
-        <CardTitle className={hasQuery ? 'text-2xl font-bold' : 'text-lg text-muted-foreground'}>
-          {hasQuery ? 'Results' : (total > 0 ? `${total} dataset${total !== 1 ? 's' : ''} available` : 'Datasets')}
-        </CardTitle>
-        {hasQuery && (
+        {hasQuery ? (
           <>
-            <p className="text-sm text-muted-foreground mt-1">
-              Found in <span className="text-foreground font-semibold">0</span> of {total} dataset{total !== 1 ? 's' : ''}
-            </p>
-            <p className="text-sm text-muted-foreground font-mono mt-1">Query: {formatQuery(query)}</p>
+            <RecordHead matched={0} total={total} hasQuery />
+            <p className="text-sm text-muted-foreground font-mono mt-3">Query: {formatQuery(query)}</p>
             <ApiQueryBlock query={query} />
           </>
+        ) : (
+          <CardTitle className="text-lg text-muted-foreground">
+            {total > 0 ? `${total} dataset${total !== 1 ? 's' : ''} available` : 'Datasets'}
+          </CardTitle>
         )}
       </CardHeader>
       <CardContent>
