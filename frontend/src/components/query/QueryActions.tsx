@@ -12,6 +12,15 @@ interface QueryActionsProps {
   submitLabel: string;
   loadingLabel: string;
   onReset: () => void;
+  /**
+   * Whether to show the submit/reset row.
+   *
+   * Defaults to true, and that default is load-bearing: Region mode has no
+   * paste box, so this button is the only way to run a region query. Only a
+   * mode that offers another primary action (Variant mode's "Look up") may
+   * pass false, and only while that action is the visible one.
+   */
+  showSubmit?: boolean;
   datasets?: Dataset[];
   selectedDatasetIds?: string[];
   onSelectedDatasetsChange?: (ids: string[]) => void;
@@ -30,6 +39,7 @@ export function QueryActions({
   submitLabel,
   loadingLabel,
   onReset,
+  showSubmit = true,
   datasets,
   selectedDatasetIds,
   onSelectedDatasetsChange,
@@ -58,7 +68,10 @@ export function QueryActions({
         </div>
       )}
 
-      <div className="flex gap-3">
+      {/* `hidden` rather than conditional rendering, matching the coordinate
+          panel above it: the submit button stays in the DOM so pressing Enter
+          in any field still submits the form. */}
+      <div className="flex gap-3" hidden={!showSubmit}>
         <Button type="submit" className="flex-1" disabled={isLoading}>
           {isLoading ? loadingLabel : submitLabel}
         </Button>
