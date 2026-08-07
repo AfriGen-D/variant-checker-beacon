@@ -23,14 +23,32 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          <Link href="/" className="flex items-center">
+          {/* Two variants rather than a CSS filter: the artwork is ~60% black
+              ink (the wordmark) plus saturated brand red/yellow/green. An
+              invert would turn the red cyan, and a brightness filter would wash
+              out the brand colours. The dark asset re-inks only the neutral
+              dark pixels, leaving the brand palette untouched.
+              Swapped by CSS class so there is no hydration flash. */}
+          {/* The accessible name lives on the link, not the images: whichever
+              variant is hidden is display:none and therefore absent from the
+              accessibility tree, so putting alt text on the images would leave
+              the link unnamed in one theme. Both images are decorative. */}
+          <Link href="/" className="flex items-center" aria-label="Variant Checker — Beacon, home">
             <Image
               src="/afrigen-d-beacon.png"
-              alt="Variant Checker — Beacon"
+              alt=""
               width={200}
               height={48}
               priority
-              className="h-16 w-auto"
+              className="h-16 w-auto dark:hidden"
+            />
+            <Image
+              src="/afrigen-d-beacon-dark.png"
+              alt=""
+              width={200}
+              height={48}
+              priority
+              className="h-16 w-auto hidden dark:block"
             />
           </Link>
 

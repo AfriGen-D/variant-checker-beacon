@@ -109,6 +109,15 @@ data/runs/
 *.png
 *.jpeg
 
+# ...but not the frontend's static assets. This blanket *.png rule was aimed at
+# the loose screenshots in the repo root, and it silently swallowed the site
+# logo too. That went unnoticed while images were built on the production host
+# from a hand-managed tree that happened to contain the file; once CI started
+# building from a git checkout the asset was simply absent and the logo 404'd
+# in production.
+!frontend/public/**/*.png
+!frontend/public/*.png
+
 # Playwright MCP
 .playwright-mcp/
 
