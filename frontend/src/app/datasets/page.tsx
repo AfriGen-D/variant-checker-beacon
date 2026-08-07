@@ -6,14 +6,14 @@ import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { Container } from '@/components/layout/Container';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
+import { Panel, PanelBar, PanelBody } from '@/components/ui/Panel';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { beaconApi } from '@/lib/api/beacon';
 import type { Dataset } from '@/lib/api/types';
-import { Database, Calendar, Dna, Users, Search, X } from 'lucide-react';
+import { Database, Calendar, Users, Search, X } from 'lucide-react';
 
 const ChromosomeDistribution = dynamic(
   () => import('@/components/charts/ChromosomeDistribution').then(m => ({ default: m.ChromosomeDistribution })),
@@ -241,47 +241,48 @@ export default function DatasetsPage() {
         <>
           <div className="grid gap-4 md:grid-cols-2">
             {paged.map((ds) => (
-              <Link key={ds.id} href={`/datasets/${ds.id}`} className="block">
-                <Card className="flex flex-col h-full transition-colors hover:border-primary/40 hover:bg-muted/30">
-                  <CardContent className="pt-6 flex-1">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
+              <Link key={ds.id} href={`/datasets/${ds.id}`} className="block h-full">
+                {/* Panel, not Card: a dataset row is a record, and the raised-card
+                    idiom makes a grid of them read as a content feed. The bar
+                    carries the machine facts — assembly and counts — so they stay
+                    scannable down the column instead of being buried in prose. */}
+                <Panel className="flex flex-col h-full transition-colors hover:border-primary/40 hover:bg-muted/30">
+                  <PanelBar
+                    meta={
+                      ds.variantCount !== undefined
+                        ? `${ds.variantCount.toLocaleString()} variants`
+                        : undefined
+                    }
+                  >
+                    {ds.assemblyId ?? 'assembly unknown'}
+                  </PanelBar>
+                  <PanelBody className="flex-1 flex flex-col">
+                    <div className="flex items-center gap-2 mb-2">
                       <Database className="h-5 w-5 text-primary shrink-0" />
                       <h2 className="text-lg font-semibold leading-tight">{ds.name}</h2>
                     </div>
-                    {ds.assemblyId && (
-                      <Badge variant="info" size="sm">{ds.assemblyId}</Badge>
-                    )}
-                  </div>
 
-                  {ds.description && (
-                    <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{ds.description}</p>
-                  )}
+                    {ds.description && (
+                      <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{ds.description}</p>
+                    )}
 
-                  <div className="flex items-center gap-4 mt-auto pt-3 border-t">
-                    {ds.variantCount !== undefined && (
-                      <div className="flex items-center gap-1.5 text-sm">
-                        <Dna className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="font-semibold">{ds.variantCount.toLocaleString()}</span>
-                        <span className="text-muted-foreground">variants</span>
-                      </div>
-                    )}
-                    {ds.sampleCount !== undefined && (
-                      <div className="flex items-center gap-1.5 text-sm">
-                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="font-semibold">{ds.sampleCount.toLocaleString()}</span>
-                        <span className="text-muted-foreground">samples</span>
-                      </div>
-                    )}
-                    {ds.createDateTime && (
-                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Calendar className="h-3.5 w-3.5" />
-                        {formatDate(ds.createDateTime)}
-                      </div>
-                    )}
-                  </div>
-                  </CardContent>
-                </Card>
+                    <div className="flex items-center gap-4 mt-auto pt-3 border-t">
+                      {ds.sampleCount !== undefined && (
+                        <div className="flex items-center gap-1.5 text-sm">
+                          <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="font-semibold tabular-nums">{ds.sampleCount.toLocaleString()}</span>
+                          <span className="text-muted-foreground">samples</span>
+                        </div>
+                      )}
+                      {ds.createDateTime && (
+                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                          <Calendar className="h-3.5 w-3.5" />
+                          {formatDate(ds.createDateTime)}
+                        </div>
+                      )}
+                    </div>
+                  </PanelBody>
+                </Panel>
               </Link>
             ))}
           </div>
