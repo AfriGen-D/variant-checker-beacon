@@ -42,6 +42,11 @@ export function VariantQueryForm({
   const [examplesOpen, setExamplesOpen] = useState(false);
   const examplesId = useId();
   const [coordsOpen, setCoordsOpen] = useState(false);
+  // The paste box's text lives here so an example or recent chip can fill it.
+  // Without this the box is the one place that does NOT reflect what is being
+  // looked up — and now that the coordinate fields collapse by default, it is
+  // also the only place the user can see it.
+  const [searchText, setSearchText] = useState('');
   const coordsId = useId();
   const {
     register,
@@ -99,6 +104,20 @@ export function VariantQueryForm({
     handleSubmit(submit)();
   };
 
+  // Show a chip's variant in the paste box, in the same notation the box
+  // accepts, then run it. A chip is a shortcut to a result, not to a filled
+  // form — and the box is where the user reads back what was looked up.
+  const applyChip = (data: VariantQueryFormData) => {
+    const chr = String(data.referenceName).startsWith('chr')
+      ? String(data.referenceName)
+      : `chr${data.referenceName}`;
+    const alleles = data.referenceBases && data.alternateBases
+      ? ` ${data.referenceBases}>${data.alternateBases}`
+      : '';
+    setSearchText(`${chr}:${data.start}${alleles}`);
+    applyAndSubmit(data);
+  };
+
   // A pasted/typed variant fills the structured fields. If it's complete we run
   // it; if alleles are missing we just populate and focus the next gap so the
   // user can finish by hand. Current assembly is preserved (rarely in a paste).
@@ -128,9 +147,9 @@ export function VariantQueryForm({
       </p>
 
       {/* Universal "paste anything" search */}
-      <UniversalSearch onParsed={handleParsed} />
+      <UniversalSearch onParsed={handleParsed} value={searchText} onValueChange={setSearchText} />
 
-      <RecentSearches onSelect={applyAndSubmit} />
+      <RecentSearches onSelect={applyChip} />
 
       {/* Example query chips — collapsed by default. Six chips with parenthetical
           descriptions crowd out the search box, which is the primary action. */}
@@ -160,7 +179,7 @@ export function VariantQueryForm({
                 type="button"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-colors"
                 title={ex.description}
-                onClick={() => applyAndSubmit(ex.query as unknown as VariantQueryFormData)}
+                onClick={() => applyChip(ex.query as unknown as VariantQueryFormData)}
               >
                 {ex.label}
                 <span className="text-primary/60 text-xs">({ex.description})</span>
@@ -267,7 +286,23 @@ export function VariantQueryForm({
           showSubmit={coordsOpen || hasErrors}
           submitLabel="Check variant"
           loadingLabel="Checking…"
-          onReset={() => reset()}
+          onReset={() => {
+            // Explicit blanks, not a bare reset(). applyAndSubmit uses
+            // reset(data), and react-hook-form treats that as a NEW set of
+            // defaults — so a bare reset() afterwards restores the last chip's
+            // variant instead of clearing. Reset has to mean empty.
+            reset({
+              assemblyId: 'GRCh38',
+              referenceName: '',
+              start: undefined,
+              end: undefined,
+              referenceBases: '',
+              alternateBases: '',
+            });
+            // The box is part of the form's state now, so it clears too —
+            // otherwise it keeps showing a variant the fields no longer hold.
+            setSearchText('');
+          }}
           datasets={datasets}
           selectedDatasetIds={selectedDatasetIds}
           onSelectedDatasetsChange={onSelectedDatasetsChange}
