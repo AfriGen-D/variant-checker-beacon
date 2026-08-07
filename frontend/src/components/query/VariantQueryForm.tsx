@@ -259,6 +259,12 @@ export function VariantQueryForm({
         <QueryActions
           preview={queryPreview}
           isLoading={isLoading}
+          // Two identically-filled primary buttons on screen at once ("Look up"
+          // and "Check variant") give the reader no way to tell which action is
+          // theirs. While the coordinate fields are collapsed the paste box owns
+          // the submit, so this row appears only alongside the fields it submits
+          // — or whenever a validation error needs to be actionable.
+          showSubmit={coordsOpen || hasErrors}
           submitLabel="Check variant"
           loadingLabel="Checking…"
           onReset={() => reset()}
