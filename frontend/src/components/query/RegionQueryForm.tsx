@@ -1,5 +1,6 @@
 'use client';
 
+import { useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { regionQuerySchema, type RegionQueryFormData } from '@/lib/utils/validators';
@@ -35,6 +36,8 @@ export function RegionQueryForm({
   selectedDatasetIds,
   onSelectedDatasetsChange,
 }: RegionQueryFormProps) {
+  const [examplesOpen, setExamplesOpen] = useState(false);
+  const examplesId = useId();
   const {
     register,
     handleSubmit,
@@ -78,9 +81,28 @@ export function RegionQueryForm({
         Find every variant overlapping a coordinate range on one chromosome.
       </p>
 
+      {/* Collapsed by default, matching the Variant tab: the example chips
+          otherwise crowd out the coordinate fields, which are the primary input. */}
       <div>
-        <p className="text-sm text-muted-foreground mb-2">Try an example:</p>
-        <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setExamplesOpen(o => !o)}
+          aria-expanded={examplesOpen}
+          aria-controls={examplesId}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+        >
+          <svg
+            aria-hidden="true"
+            className={`h-3 w-3 transition-transform ${examplesOpen ? 'rotate-90' : ''}`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+          </svg>
+          Try an example
+        </button>
+        {examplesOpen && (
+        <div id={examplesId} className="flex flex-wrap gap-2 mt-2">
           {REGION_EXAMPLES.map((ex) => (
             <button
               key={ex.label}
@@ -94,6 +116,7 @@ export function RegionQueryForm({
             </button>
           ))}
         </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit(submit)} className="space-y-4">

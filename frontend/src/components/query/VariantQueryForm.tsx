@@ -1,5 +1,6 @@
 'use client';
 
+import { useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { variantQuerySchema, type VariantQueryFormData } from '@/lib/utils/validators';
@@ -38,6 +39,8 @@ export function VariantQueryForm({
   selectedDatasetIds,
   onSelectedDatasetsChange,
 }: VariantQueryFormProps) {
+  const [examplesOpen, setExamplesOpen] = useState(false);
+  const examplesId = useId();
   const {
     register,
     handleSubmit,
@@ -123,23 +126,42 @@ export function VariantQueryForm({
 
       <RecentSearches onSelect={applyAndSubmit} />
 
-      {/* Example query chips */}
+      {/* Example query chips — collapsed by default. Six chips with parenthetical
+          descriptions crowd out the search box, which is the primary action. */}
       <div>
-        <p className="text-sm text-muted-foreground mb-2">Or try an example:</p>
-        <div className="flex flex-wrap gap-2">
-          {EXAMPLE_QUERIES.map((ex) => (
-            <button
-              key={ex.label}
-              type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-colors"
-              title={ex.description}
-              onClick={() => applyAndSubmit(ex.query as unknown as VariantQueryFormData)}
-            >
-              {ex.label}
-              <span className="text-primary/60 text-xs">({ex.description})</span>
-            </button>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => setExamplesOpen(o => !o)}
+          aria-expanded={examplesOpen}
+          aria-controls={examplesId}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+        >
+          <svg
+            aria-hidden="true"
+            className={`h-3 w-3 transition-transform ${examplesOpen ? 'rotate-90' : ''}`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+          </svg>
+          Or try an example
+        </button>
+        {examplesOpen && (
+          <div id={examplesId} className="flex flex-wrap gap-2 mt-2">
+            {EXAMPLE_QUERIES.map((ex) => (
+              <button
+                key={ex.label}
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-colors"
+                title={ex.description}
+                onClick={() => applyAndSubmit(ex.query as unknown as VariantQueryFormData)}
+              >
+                {ex.label}
+                <span className="text-primary/60 text-xs">({ex.description})</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-3">
