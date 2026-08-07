@@ -345,7 +345,7 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
             <div>
               <CardTitle className="text-2xl font-bold">Results</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Found in <span className={matched > 0 ? 'text-emerald-600 font-semibold' : 'text-destructive font-semibold'}>{matched}</span> of {total} dataset{total !== 1 ? 's' : ''}
+                Found in <span className={matched > 0 ? 'text-emerald-600 font-semibold' : 'text-foreground font-semibold'}>{matched}</span> of {total} dataset{total !== 1 ? 's' : ''}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -378,7 +378,7 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
                     {dar.exists && rowHandovers?.map((h) => (
                       <HandoverButton key={h.handoverType.id + h.url} handover={h} size="sm" />
                     ))}
-                    <Badge variant={dar.exists ? 'success' : 'destructive'} size="sm">
+                    <Badge variant={dar.exists ? 'success' : 'negative'} size="sm">
                       {dar.exists ? 'YES' : 'NO'}
                     </Badge>
                   </div>
@@ -415,7 +415,7 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
         {hasQuery && (
           <>
             <p className="text-sm text-muted-foreground mt-1">
-              Found in <span className="text-destructive font-semibold">0</span> of {total} dataset{total !== 1 ? 's' : ''}
+              Found in <span className="text-foreground font-semibold">0</span> of {total} dataset{total !== 1 ? 's' : ''}
             </p>
             <p className="text-sm text-muted-foreground font-mono mt-1">Query: {formatQuery(query)}</p>
             <ApiQueryBlock query={query} />
@@ -432,7 +432,7 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
                   className="flex items-center justify-between p-3 rounded-lg border bg-muted/50"
                 >
                   <p className="font-medium text-sm">{ds.name}</p>
-                  <Badge variant={hasQuery ? 'destructive' : 'secondary'} size="sm">
+                  <Badge variant={hasQuery ? 'negative' : 'secondary'} size="sm">
                     {hasQuery ? 'NO' : (
                       <>
                         <span aria-hidden="true">—</span>

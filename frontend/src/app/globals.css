@@ -38,7 +38,10 @@
     --popover-foreground: oklch(0.145 0.017 285.823);
     --primary: oklch(0.546 0.245 262.881);
     --primary-foreground: oklch(0.985 0.002 247.858);
-    --secondary: oklch(0.696 0.17 162.48);
+    /* Neutral, and distinct from --success. Mid-slate rather than a pale
+       tint because Badge renders it as TEXT over bg-secondary/20, where a
+       near-white value would be invisible. */
+    --secondary: oklch(0.55 0.012 264.364);
     --secondary-foreground: oklch(0.985 0.002 247.858);
     --muted: oklch(0.967 0.003 264.542);
     --muted-foreground: oklch(0.553 0.013 264.364);
@@ -63,8 +66,9 @@
     --popover-foreground: oklch(0.985 0.002 247.858);
     --primary: oklch(0.623 0.214 259.815);
     --primary-foreground: oklch(0.985 0.002 247.858);
-    --secondary: oklch(0.696 0.17 162.48);
-    --secondary-foreground: oklch(0.985 0.002 247.858);
+    /* Lighter mid-slate so it still reads as text on a dark ground. */
+    --secondary: oklch(0.68 0.011 264.364);
+    --secondary-foreground: oklch(0.145 0.017 285.823);
     --muted: oklch(0.269 0.007 264.364);
     --muted-foreground: oklch(0.705 0.008 264.364);
     --accent: oklch(0.269 0.007 264.364);
