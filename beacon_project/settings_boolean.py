@@ -291,6 +291,22 @@ BEACON_QUERY_MAX_TIME_MS = config(
     'BEACON_QUERY_MAX_TIME_MS', default=5000, cast=int
 )
 
+# How far before the queried position a stored variant may begin and still be
+# considered, in bases. This exists for the {reference_name, start} index:
+# without a lower bound, `start < query_end` is walked from the first variant on
+# the chromosome, so query cost grows with genomic coordinate. Measured on the
+# 42M-variant panel, an unbounded lookup at chr2:178.5M took 3.6s warm (22s
+# cold); bounded to a 1kb window it took 2ms.
+#
+# The trade-off is explicit: a variant LONGER than this that overlaps the
+# queried position from below will not be found. 10kb is comfortably above the
+# longest variant a short-read SNV/indel reference panel produces, while still
+# keeping the index range narrow. Raise it if structural variants are loaded —
+# scan cost grows roughly in proportion.
+BEACON_MAX_VARIANT_SPAN = config(
+    'BEACON_MAX_VARIANT_SPAN', default=10000, cast=int
+)
+
 # ============================================================================
 # API DOCUMENTATION
 # ============================================================================

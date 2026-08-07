@@ -12,7 +12,9 @@ from django.views.decorators.cache import cache_page
 from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
-from .query_semantics import build_position_filter, POSITION_FILTER_KEYS
+from .query_semantics import (
+    DEFAULT_MAX_VARIANT_SPAN, build_position_filter, POSITION_FILTER_KEYS,
+)
 from .query_sanitizers import (
     UnsafeQueryValue, reject_operator_keys, scalar_query_value,
 )
@@ -130,7 +132,11 @@ def variant_query_boolean(request):
         # over millions of variants — observed as 30s requests.
         position_start = validated_params.get('start', validated_params.get('position'))
         mongo_query.update(build_position_filter(
-            position_start, validated_params.get('end')
+            position_start,
+            validated_params.get('end'),
+            max_variant_span=getattr(
+                settings, 'BEACON_MAX_VARIANT_SPAN', DEFAULT_MAX_VARIANT_SPAN
+            ),
         ))
 
         if validated_params.get('referenceBases'):

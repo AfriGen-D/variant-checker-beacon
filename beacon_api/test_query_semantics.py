@@ -163,8 +163,44 @@ class FilterShapeTests(unittest.TestCase):
         # views_boolean uses POSITION_FILTER_KEYS to decide whether a query is
         # positional (and therefore requires referenceName). If the emitted
         # keys and the constant drift apart, that guard silently stops firing.
-        f = build_position_filter(100)
-        self.assertEqual(set(f), set(POSITION_FILTER_KEYS))
+        # start__gte is only emitted when a span bound is supplied, so the
+        # unbounded form is a subset — but every key emitted in either form has
+        # to appear in the constant.
+        self.assertTrue(set(build_position_filter(100)) <= set(POSITION_FILTER_KEYS))
+        self.assertEqual(
+            set(build_position_filter(100, max_variant_span=1000)),
+            set(POSITION_FILTER_KEYS),
+        )
+
+    def test_span_bound_narrows_the_start_range(self):
+        # The whole point: without a lower bound MongoDB walks the
+        # {reference_name, start} index from the first variant on the
+        # chromosome, so cost grows with genomic coordinate.
+        f = build_position_filter(178545626, max_variant_span=10000)
+        self.assertEqual(f['start__gte'], 178545626 - 10000)
+        self.assertEqual(f['start__lt'], 178545627)
+
+    def test_span_bound_never_goes_negative(self):
+        # Near the start of a contig the bound would underflow; MongoDB would
+        # accept a negative, but 0 keeps the emitted query honest.
+        f = build_position_filter(50, max_variant_span=10000)
+        self.assertEqual(f['start__gte'], 0)
+
+    def test_span_bound_still_finds_a_deletion_starting_before_the_query(self):
+        # A deletion may begin well before the queried base and still overlap
+        # it. Anything within the span must still match.
+        f = build_position_filter(1000, max_variant_span=10000)
+        spanning = {'start': 900, 'end': 1500}
+        self.assertTrue(matches(spanning, f))
+
+    def test_span_bound_misses_a_variant_longer_than_the_span(self):
+        # The documented trade-off, pinned so it cannot change unnoticed: a
+        # variant longer than max_variant_span that overlaps from below is not
+        # found. This is why the bound is configurable rather than hardcoded.
+        f = build_position_filter(50000, max_variant_span=1000)
+        huge = {'start': 10, 'end': 60000}
+        self.assertTrue(matches(huge, build_position_filter(50000)))
+        self.assertFalse(matches(huge, f))
 
     def test_end_equal_to_start_is_treated_as_a_point_query(self):
         # The serializer permits start == end; taken literally that is an
