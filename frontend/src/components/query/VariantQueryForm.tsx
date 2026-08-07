@@ -42,6 +42,11 @@ export function VariantQueryForm({
   const [examplesOpen, setExamplesOpen] = useState(false);
   const examplesId = useId();
   const [coordsOpen, setCoordsOpen] = useState(false);
+  // The paste box's text lives here so an example or recent chip can fill it.
+  // Without this the box is the one place that does NOT reflect what is being
+  // looked up — and now that the coordinate fields collapse by default, it is
+  // also the only place the user can see it.
+  const [searchText, setSearchText] = useState('');
   const coordsId = useId();
   const {
     register,
@@ -99,6 +104,20 @@ export function VariantQueryForm({
     handleSubmit(submit)();
   };
 
+  // Show a chip's variant in the paste box, in the same notation the box
+  // accepts, then run it. A chip is a shortcut to a result, not to a filled
+  // form — and the box is where the user reads back what was looked up.
+  const applyChip = (data: VariantQueryFormData) => {
+    const chr = String(data.referenceName).startsWith('chr')
+      ? String(data.referenceName)
+      : `chr${data.referenceName}`;
+    const alleles = data.referenceBases && data.alternateBases
+      ? ` ${data.referenceBases}>${data.alternateBases}`
+      : '';
+    setSearchText(`${chr}:${data.start}${alleles}`);
+    applyAndSubmit(data);
+  };
+
   // A pasted/typed variant fills the structured fields. If it's complete we run
   // it; if alleles are missing we just populate and focus the next gap so the
   // user can finish by hand. Current assembly is preserved (rarely in a paste).
@@ -128,13 +147,16 @@ export function VariantQueryForm({
       </p>
 
       {/* Universal "paste anything" search */}
-      <UniversalSearch onParsed={handleParsed} />
+      <UniversalSearch onParsed={handleParsed} value={searchText} onValueChange={setSearchText} />
 
-      <RecentSearches onSelect={applyAndSubmit} />
+      <RecentSearches onSelect={applyChip} />
 
-      {/* Example query chips — collapsed by default. Six chips with parenthetical
-          descriptions crowd out the search box, which is the primary action. */}
-      <div>
+      {/* Both disclosures on one row. They are peers — two alternative ways to
+          fill the same query — and stacked they read as a list of unrelated
+          links, each looking like it opens a different part of the page. Side
+          by side it is legible as one choice with two branches, and it costs a
+          line of vertical space above the fold. Matches the aggregator's #20. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <button
           type="button"
           onClick={() => setExamplesOpen(o => !o)}
@@ -152,45 +174,47 @@ export function VariantQueryForm({
           </svg>
           Or try an example
         </button>
-        {examplesOpen && (
-          <div id={examplesId} className="flex flex-wrap gap-2 mt-2">
-            {EXAMPLE_QUERIES.map((ex) => (
-              <button
-                key={ex.label}
-                type="button"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-colors"
-                title={ex.description}
-                onClick={() => applyAndSubmit(ex.query as unknown as VariantQueryFormData)}
-              >
-                {ex.label}
-                <span className="text-primary/60 text-xs">({ex.description})</span>
-              </button>
-            ))}
-          </div>
-        )}
+
+        {/* The paste box above covers the common case, and six labelled fields
+            were the busiest thing on the page — they pushed the query preview
+            and submit below the fold. Forced open on any validation error. */}
+        <button
+          type="button"
+          onClick={() => setCoordsOpen((open) => !open)}
+          aria-expanded={coordsOpen || hasErrors}
+          aria-controls={coordsId}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+        >
+          <svg
+            aria-hidden="true"
+            className={`h-3 w-3 transition-transform ${(coordsOpen || hasErrors) ? 'rotate-90' : ''}`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+          </svg>
+          Or enter coordinates
+        </button>
       </div>
 
-      {/* Collapsed by default. The paste box above covers the common case, and
-          six labelled fields were the busiest thing on the page — they pushed
-          the query preview and submit below the fold. Same disclosure pattern
-          as "Or try an example" directly above. */}
-      <button
-        type="button"
-        onClick={() => setCoordsOpen((open) => !open)}
-        aria-expanded={coordsOpen || hasErrors}
-        aria-controls={coordsId}
-        className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-      >
-        <svg
-          aria-hidden="true"
-          className={`h-3 w-3 transition-transform ${coordsOpen || hasErrors ? 'rotate-90' : ''}`}
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-        </svg>
-        Or enter coordinates
-      </button>
+      {/* Panels render below the row, so opening either one pushes content down
+          rather than reflowing the row itself. */}
+      {examplesOpen && (
+        <div id={examplesId} className="flex flex-wrap gap-2">
+          {EXAMPLE_QUERIES.map((ex) => (
+            <button
+              key={ex.label}
+              type="button"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-colors"
+              title={ex.description}
+              onClick={() => applyChip(ex.query as unknown as VariantQueryFormData)}
+            >
+              {ex.label}
+              <span className="text-primary/60 text-xs">({ex.description})</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit(submit)} className="space-y-4">
         {/* `hidden`, not conditional rendering: the inputs stay registered with
@@ -267,7 +291,23 @@ export function VariantQueryForm({
           showSubmit={coordsOpen || hasErrors}
           submitLabel="Check variant"
           loadingLabel="Checking…"
-          onReset={() => reset()}
+          onReset={() => {
+            // Explicit blanks, not a bare reset(). applyAndSubmit uses
+            // reset(data), and react-hook-form treats that as a NEW set of
+            // defaults — so a bare reset() afterwards restores the last chip's
+            // variant instead of clearing. Reset has to mean empty.
+            reset({
+              assemblyId: 'GRCh38',
+              referenceName: '',
+              start: undefined,
+              end: undefined,
+              referenceBases: '',
+              alternateBases: '',
+            });
+            // The box is part of the form's state now, so it clears too —
+            // otherwise it keeps showing a variant the fields no longer hold.
+            setSearchText('');
+          }}
           datasets={datasets}
           selectedDatasetIds={selectedDatasetIds}
           onSelectedDatasetsChange={onSelectedDatasetsChange}

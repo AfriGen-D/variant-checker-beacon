@@ -7,6 +7,14 @@ import { parseVariantString, type ParsedVariant } from '@/lib/utils/parseVariant
 interface UniversalSearchProps {
   /** Called with parsed fields when the input resolves to a valid variant. */
   onParsed: (parsed: ParsedVariant) => void;
+  /**
+   * Optionally control the text. Supply both to let a caller write into the box
+   * — an example chip, say — so the box always reflects what is being looked
+   * up. Omit both and it keeps its own state, which is what a standalone use
+   * wants.
+   */
+  value?: string;
+  onValueChange?: (next: string) => void;
 }
 
 const FORMAT_HINTS = ['chr11:5225059 G>A', '11-5225059-G-A', '7:117559591', 'X:154360382 G>A'];
@@ -17,8 +25,18 @@ const FORMAT_HINTS = ['chr11:5225059 G>A', '11-5225059-G-A', '7:117559591', 'X:1
  * Parsing happens entirely client-side (see parseVariantString) so there is no
  * round trip just to interpret what the user typed.
  */
-export function UniversalSearch({ onParsed }: UniversalSearchProps) {
-  const [value, setValue] = useState('');
+export function UniversalSearch({
+  onParsed,
+  value: controlledValue,
+  onValueChange,
+}: UniversalSearchProps) {
+  const [uncontrolledValue, setUncontrolledValue] = useState('');
+  const isControlled = controlledValue !== undefined;
+  const value = isControlled ? controlledValue : uncontrolledValue;
+  const setValue = (next: string) => {
+    if (!isControlled) setUncontrolledValue(next);
+    onValueChange?.(next);
+  };
   const [error, setError] = useState<string | null>(null);
 
   const run = () => {
