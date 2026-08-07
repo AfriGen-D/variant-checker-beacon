@@ -1,5 +1,22 @@
 @import "tailwindcss";
 
+/* Make `dark:` utilities follow the .dark class, not the OS setting.
+ *
+ * next-themes is configured with attribute="class", and the design tokens below
+ * are defined under `.dark { ... }` — so colours already follow the in-app
+ * theme toggle. Tailwind v4's `dark:` variant, however, defaults to
+ * `@media (prefers-color-scheme: dark)`, which follows the OPERATING SYSTEM.
+ *
+ * Left as-is the two disagree: a user whose OS is dark but who selects Light in
+ * the app gets light backgrounds from the tokens and dark-variant utilities on
+ * top of them. That is how the header logo ended up rendering its white
+ * wordmark against a light background.
+ *
+ * This went unnoticed because the codebase had no `dark:` utilities at all
+ * until the logo swap added the first ones.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
