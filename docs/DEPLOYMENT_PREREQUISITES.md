@@ -37,7 +37,10 @@ collection-scoped role in `scripts/grant_query_log_writer.js`.
 
 ```bash
 docker exec <api-container> python -c "
-import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE','beacon_project.settings_boolean'); django.setup()
+import os, django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE',
+                      'beacon_project.settings_boolean')
+django.setup()
 from mongoengine.connection import get_db; db=get_db()
 print(db.command('connectionStatus')['authInfo']['authenticatedUserRoles'])
 print('query_logs:', db.query_logs.estimated_document_count())
@@ -56,7 +59,10 @@ already existed while the timeouts were being blamed on its absence:
 
 ```bash
 docker exec <api-container> python -c "
-import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE','beacon_project.settings_boolean'); django.setup()
+import os, django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE',
+                      'beacon_project.settings_boolean')
+django.setup()
 from mongoengine.connection import get_db
 for n, s in get_db().variants.index_information().items(): print(n, s.get('key'))
 "
@@ -85,12 +91,20 @@ not.
 All have working defaults; these are the ones whose *correct* value depends on
 the data:
 
-| Setting | Default | Review when |
-| --- | --- | --- |
-| `BEACON_MAX_VARIANT_SPAN` | 10000 | **Structural variants are loaded.** A variant longer than this that overlaps the queried position from below will not be found. |
-| `BEACON_QUERY_MAX_TIME_MS` | 5000 | Queries legitimately exceed it — but first check the query is index-bounded rather than raising this. |
-| `BEACON_AF_MIN_PUBLISHED` / `BEACON_AF_DECIMALS` | 0.01 / 3 | Cohort size differs. Defaults are sized for ~1,895 samples; a smaller cohort needs coarser publishing to avoid disclosing carrier counts. |
-| `BEACON_QUERYLOG_RETENTION_DAYS` | 90 | Local data-governance rules differ. |
+**`BEACON_MAX_VARIANT_SPAN`** (default 10000)
+Review when **structural variants are loaded**. A variant longer than this
+that overlaps the queried position from below will not be found.
+
+**`BEACON_QUERY_MAX_TIME_MS`** (default 5000)
+Review when queries legitimately exceed it — but first check the query is
+index-bounded, rather than raising this.
+
+**`BEACON_AF_MIN_PUBLISHED`** / **`BEACON_AF_DECIMALS`** (0.01 / 3)
+Review when cohort size differs. The defaults are sized for ~1,895 samples;
+a smaller cohort needs coarser publishing to avoid disclosing carrier counts.
+
+**`BEACON_QUERYLOG_RETENTION_DAYS`** (default 90)
+Review when local data-governance rules differ.
 
 ## 5. Static assets
 
