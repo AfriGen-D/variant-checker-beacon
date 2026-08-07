@@ -19,7 +19,7 @@ from .query_sanitizers import (
 from .pagination import InvalidPagination, paginate, parse_pagination
 from .filters import UnsupportedFilters, reject_filters
 from .query_cost import (
-    DEFAULT_QUERY_MAX_TIME_MS, QUERY_UNBOUNDED,
+    DEFAULT_QUERY_MAX_TIME_MS, QUERY_LOCUS, QUERY_UNBOUNDED,
     allows_per_dataset_attribution, classify_variant_query,
 )
 from pymongo.errors import ExecutionTimeout
@@ -81,6 +81,12 @@ def variant_query_boolean(request):
     """
     Returns YES/NO response with per-dataset allele responses (GA4GH Beacon v2 compliant)
     """
+    # Bound before the try so the ExecutionTimeout handler can always read it.
+    # Nothing between here and the classification touches MongoDB today, but a
+    # timeout raised before it would otherwise turn into a NameError inside the
+    # error path. None falls through to the conservative "too broad" branch.
+    query_class = None
+    max_time_ms = DEFAULT_QUERY_MAX_TIME_MS
     try:
         # Get query parameters
         if request.method == 'GET':
@@ -299,9 +305,33 @@ def variant_query_boolean(request):
 
     except ExecutionTimeout:
         # The server-side budget fired, so MongoDB killed the operation and the
-        # worker is free — the point of max_time_ms. Report it as a client-side
-        # problem with an actionable fix rather than a 500: the cause is query
-        # breadth, and retrying the same query will fail the same way.
+        # worker is free — the point of max_time_ms. But WHY it fired decides
+        # whose problem it is, and the two cases need opposite answers.
+        if query_class == QUERY_LOCUS:
+            # Already as narrow as a beacon query gets: a chromosome plus a
+            # position. If that cannot be served inside the budget the index it
+            # relies on is missing or the server is overloaded — nothing the
+            # caller can change. Telling them to "narrow the query" would be
+            # false, and a 400 would blame a request that was correct.
+            #
+            # This is not hypothetical: shipping the budget before running
+            # `manage.py create_indexes` on the 42M-document collection made
+            # single-variant lookups fail across much of the genome, each after
+            # exactly the budget, with a message advising the caller to supply
+            # parameters they had already supplied.
+            logger.error(
+                'Locus query exceeded the %sms budget — the {reference_name, '
+                'start, end} index is probably missing on this deployment; '
+                'run manage.py create_indexes',
+                max_time_ms,
+            )
+            return _error_response(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                'This beacon could not answer in time. The query is valid — '
+                'the server is unable to serve it right now. Please retry, and '
+                'report it if it persists.',
+            )
+
         logger.warning('Variant query exceeded the server-side time budget; refused')
         return _error_response(
             status.HTTP_400_BAD_REQUEST,
@@ -393,10 +423,21 @@ def individual_query_boolean(request):
                     individual_max_time_ms
                 ).first() is not None
         except ExecutionTimeout:
-            logger.warning('Individual query exceeded the server-side time budget; refused')
+            # Unlike the variant endpoint there is no breadth for the caller to
+            # reduce here: the only inputs are an exact sex and disease code, so
+            # a timeout means the server cannot serve a well-formed request —
+            # most likely a missing index on diseases.diseaseCode. Returning 400
+            # with no actionable advice would blame a correct request.
+            logger.error(
+                'Individual query exceeded the %sms budget — check the indexes '
+                'on the individuals collection; run manage.py create_indexes',
+                individual_max_time_ms,
+            )
             return _error_response(
-                status.HTTP_400_BAD_REQUEST,
-                'Query too broad to answer within the beacon time budget.',
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                'This beacon could not answer in time. The query is valid — '
+                'the server is unable to serve it right now. Please retry, and '
+                'report it if it persists.',
             )
 
         logger.info(f"Individual query: exists={exists}")
