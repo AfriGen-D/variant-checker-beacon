@@ -45,7 +45,8 @@ jobs:
           python -m unittest \
             beacon_api.test_query_semantics \
             beacon_api.test_query_injection \
-            beacon_api.test_pagination_filters
+            beacon_api.test_pagination_filters \
+            beacon_api.test_assembly
 
       - name: Install runtime + test dependencies
         working-directory: afrigend-beacon2-tools
