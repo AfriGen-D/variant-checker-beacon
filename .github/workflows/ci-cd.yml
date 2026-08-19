@@ -23,6 +23,30 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+
+      # Backend query-correctness suites — 127 tests, ~0.01s.
+      #
+      # These are deliberately Django-free: no settings module, no database,
+      # no network. They run on a bare interpreter before anything is
+      # installed, so a query-correctness regression fails the PR in seconds
+      # instead of after the tools install.
+      #
+      # They exist because this is the one bug class the GA4GH spec verifier
+      # cannot see. beacon-verifier checks envelope shape, and it passed
+      # throughout the period when position queries were off by one base.
+      # A false negative — answering "no" for a variant we hold — is
+      # indistinguishable from a true one to every caller.
+      #
+      # test_query_semantics carries LegacyContrastTests written so that
+      # reverting the half-open overlap to closed-interval goes red;
+      # verified by mutation (start__lt -> start__lte gives 4F/2E).
+      - name: Run backend query-correctness tests
+        run: |
+          python -m unittest \
+            beacon_api.test_query_semantics \
+            beacon_api.test_query_injection \
+            beacon_api.test_pagination_filters
+
       - name: Install runtime + test dependencies
         working-directory: afrigend-beacon2-tools
         # Install only the runtime libs that test modules import at
