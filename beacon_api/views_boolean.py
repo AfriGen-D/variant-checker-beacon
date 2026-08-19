@@ -13,8 +13,10 @@ from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
 from .assembly import assembly_filter
+from .query_vocabulary import UnknownSex, canonical_sex, variant_type_filter
 from .query_semantics import (
-    DEFAULT_MAX_VARIANT_SPAN, build_position_filter, POSITION_FILTER_KEYS,
+    DEFAULT_MAX_VARIANT_SPAN, IncompleteRange, build_position_filter,
+    POSITION_FILTER_KEYS, require_complete_range,
 )
 from .query_sanitizers import (
     UnsafeQueryValue, reject_operator_keys, scalar_query_value,
@@ -132,6 +134,14 @@ def variant_query_boolean(request):
         # through with no position constraint, forcing a full-chromosome scan
         # over millions of variants — observed as 30s requests.
         position_start = validated_params.get('start', validated_params.get('position'))
+
+        # `end` with no `start` yields an empty position filter, which would
+        # silently widen the query to the whole chromosome. Refuse instead.
+        try:
+            require_complete_range(position_start, validated_params.get('end'))
+        except IncompleteRange as exc:
+            return _error_response(status.HTTP_400_BAD_REQUEST, str(exc))
+
         mongo_query.update(build_position_filter(
             position_start,
             validated_params.get('end'),
@@ -152,6 +162,16 @@ def variant_query_boolean(request):
             # equality match here answered "exists: false" for variants the
             # panel holds. See beacon_api/assembly.py.
             mongo_query.update(assembly_filter(validated_params['assemblyId']))
+
+        # variantType and datasetIds were both declared, validated, and then
+        # never applied — the beacon answered a broader question than it was
+        # asked. Apply them. (validators has already canonicalised the type.)
+        if validated_params.get('variantType'):
+            mongo_query.update(variant_type_filter(validated_params['variantType']))
+
+        requested_datasets = validated_params.get('datasetIds')
+        if requested_datasets:
+            mongo_query['dataset_ids__in'] = list(requested_datasets)
 
         # A positional query without a chromosome cannot use the
         # {reference_name, start} index and would scan the entire collection
@@ -407,9 +427,12 @@ def individual_query_boolean(request):
         mongo_query = {}
 
         if sex:
-            sex = sex.upper()
-            if sex in ('MALE', 'FEMALE', 'OTHER', 'UNKNOWN'):
-                mongo_query['sex'] = sex
+            # An unrecognised value used to be dropped, turning this into
+            # "do you have anyone at all". Refuse it instead.
+            try:
+                mongo_query['sex'] = canonical_sex(sex)
+            except UnknownSex as exc:
+                return _error_response(status.HTTP_400_BAD_REQUEST, str(exc))
 
         if disease_code:
             mongo_query['diseases.diseaseCode'] = disease_code

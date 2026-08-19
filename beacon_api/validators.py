@@ -5,6 +5,9 @@ Prevents injection attacks and validates genomic coordinates
 import re
 
 from .assembly import UnknownAssembly, canonical_assembly
+from .query_vocabulary import (
+    UnknownVariantType, canonical_variant_type, dataset_id_list,
+)
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
@@ -192,10 +195,19 @@ class BeaconQuerySerializer(serializers.Serializer):
     assemblyId = serializers.CharField(required=False, default='GRCh38')
     
     # Dataset
+    # A GET query string collapses to one value per key, so the list form can
+    # only arrive on POST. Accept the comma-separated spelling too, or the
+    # parameter is unusable from a URL — see query_vocabulary.dataset_id_list.
     datasetIds = serializers.ListField(
         child=serializers.CharField(),
         required=False
     )
+
+    def to_internal_value(self, data):
+        if 'datasetIds' in data:
+            data = dict(data)
+            data['datasetIds'] = dataset_id_list(data['datasetIds'])
+        return super().to_internal_value(data)
 
     # Granularity (Beacon v2). Default 'boolean'; 'aggregated' returns allele
     # frequencies. 'count'/'record' are accepted but not distinct in this
@@ -257,9 +269,14 @@ class BeaconQuerySerializer(serializers.Serializer):
                 data['alternateBases'], 'alternateBases'
             )
         
-        # Validate variant type
+        # Validate variant type. Canonicalised, not whitelisted: the old list
+        # contained SNP while ingest writes SNV, so the correct term was
+        # rejected while DEL was accepted and then silently discarded.
         if 'variantType' in data:
-            data['variantType'] = VariantQueryValidator.validate_variant_type(data['variantType'])
+            try:
+                data['variantType'] = canonical_variant_type(data['variantType'])
+            except UnknownVariantType as exc:
+                raise ValidationError(str(exc))
         
         # Validate assembly. Canonicalise rather than whitelist: the old flat
         # list accepted hg38 and GRCh38 as equally valid and then let the query
