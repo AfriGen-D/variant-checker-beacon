@@ -1,0 +1,7 @@
+{
+  // Prose here is hard-wrapped near 80 but tables, URLs and sample output
+  // legitimately exceed it; wrapping those would corrupt copy-paste blocks.
+  "config": {
+    "MD013": false
+  }
+}
