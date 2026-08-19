@@ -3,6 +3,8 @@ Input validators for Beacon API query endpoints
 Prevents injection attacks and validates genomic coordinates
 """
 import re
+
+from .assembly import UnknownAssembly, canonical_assembly
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
@@ -259,10 +261,14 @@ class BeaconQuerySerializer(serializers.Serializer):
         if 'variantType' in data:
             data['variantType'] = VariantQueryValidator.validate_variant_type(data['variantType'])
         
-        # Validate assembly
-        valid_assemblies = ['GRCh37', 'GRCh38', 'hg19', 'hg38']
-        if data.get('assemblyId') not in valid_assemblies:
-            raise ValidationError(f"Invalid assembly: {data.get('assemblyId')}")
+        # Validate assembly. Canonicalise rather than whitelist: the old flat
+        # list accepted hg38 and GRCh38 as equally valid and then let the query
+        # path compare the caller's literal spelling against stored data, so a
+        # UCSC-vocabulary caller was told the variant does not exist.
+        try:
+            data['assemblyId'] = canonical_assembly(data.get('assemblyId'))
+        except UnknownAssembly as exc:
+            raise ValidationError(str(exc))
         
         return data
 

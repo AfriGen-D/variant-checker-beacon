@@ -12,6 +12,7 @@ from django.views.decorators.cache import cache_page
 from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
+from .assembly import assembly_filter
 from .query_semantics import (
     DEFAULT_MAX_VARIANT_SPAN, build_position_filter, POSITION_FILTER_KEYS,
 )
@@ -145,7 +146,12 @@ def variant_query_boolean(request):
             mongo_query['alternate_bases'] = validated_params['alternateBases']
 
         if validated_params.get('assemblyId'):
-            mongo_query['assembly_id'] = validated_params['assemblyId']
+            # hg38 and GRCh38 name the same build, and which spelling is
+            # stored depends on the ingest run. Match every spelling of the
+            # requested build rather than the caller's literal string — an
+            # equality match here answered "exists: false" for variants the
+            # panel holds. See beacon_api/assembly.py.
+            mongo_query.update(assembly_filter(validated_params['assemblyId']))
 
         # A positional query without a chromosome cannot use the
         # {reference_name, start} index and would scan the entire collection
