@@ -53,7 +53,8 @@ Every confirmed correctness defect in this codebase is in step 3 or 4, and all
 have the same shape: **a parameter is accepted, validated, and then not
 applied.** The query runs anyway and returns 200.
 
-Known instances: assembly spellings not canonicalised (PR #44), `variantType`
+Fixed instance: assembly spellings, now canonicalised in `assembly.py`.
+Still open: `variantType`
 and `datasetIds` dropped, `end` without `start` widening to chromosome-wide, an
 unrecognised `sex` dropped.
 
@@ -71,7 +72,7 @@ judgement to anything you add.
 | `filters.py` | The refuse-don't-widen principle, argued in prose. |
 | `query_cost.py` | Query budgets, with the incident that caused them. |
 | `privacy.py` | AF suppression and IP truncation, with the re-identification reasoning. |
-| `assembly.py` | Vocabulary canonicalisation (on PR #44). |
+| `assembly.py` | Assembly vocabulary canonicalisation. |
 | `validators.py` | Input validation. Also where the POST sanitiser bug lives. |
 
 These carry real post-mortems in their comments. They are the fastest way to

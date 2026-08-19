@@ -26,18 +26,22 @@ OK
 | `test_query_semantics` | 24 | Half-open coordinate overlap, span bounds |
 | `test_query_injection` | 53 | NoSQL operator injection, AF privacy, IP anonymisation |
 | `test_pagination_filters` | 50 | Skip/limit, filter rejection |
-| `test_assembly` | 17 | Assembly canonicalisation (on PR #44) |
+| `test_assembly` | 17 | Assembly canonicalisation |
 
 `test_middleware` is the exception — it imports Django, so it needs Python 3.9
 to 3.12. Django 4.0 imports `cgi`, removed in Python 3.13.
 
 ## What gates a merge
 
-Until **PR #43** lands, the answer is: none of the above. `ci-cd.yml` runs
-pytest scoped to `afrigend-beacon2-tools`, and the one backend module that runs
-(`test_middleware`) runs in `deploy.yml` at deploy time, not as a merge gate.
-PR #43 adds the four suites to the PR job; it costs 5 milliseconds and needs no
-install.
+All four suites, as of 2026-08-19. The `test` job in `ci-cd.yml` runs them
+before installing anything, so a query-correctness regression fails a PR in
+seconds. It costs about 5 milliseconds.
+
+That gate is new. Until it landed, **none** of these ran on a pull request:
+`ci-cd.yml` ran pytest scoped to `afrigend-beacon2-tools`, and the single
+backend module that did run (`test_middleware`) ran in `deploy.yml` at deploy
+time — after the merge it should have blocked. If you add a suite, add it to
+that step in the same PR, or it sits in the repository ungated.
 
 The frontend gates are `npm run type-check` and `npm run lint`. **`npm run
 test:ci` runs Jest against zero test files** — Jest is a declared dependency and

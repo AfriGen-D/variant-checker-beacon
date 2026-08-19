@@ -247,53 +247,51 @@ curl -s 'http://localhost:8000/api/g_variants?assemblyId=GRCh38&referenceName=1&
 A negative control is not optional here. A beacon that answers `true` to
 everything looks identical to a working one until someone checks.
 
-## Step 9 — See the vocabulary bug (and how to tell you hit it)
+## Step 9 — See the vocabulary handling
 
 `hg38` and `GRCh38` are the **same genome build** in different vocabularies —
-UCSC and GRC. A beacon must answer both identically. Try it:
+UCSC and GRC. A beacon must answer both identically:
 
 ```bash
-for a in GRCh38 hg38; do
+for a in GRCh38 hg38 HG38; do
   printf '%-8s ' "$a"
   curl -s "http://localhost:8000/api/g_variants?assemblyId=$a&referenceName=1&start=42497823" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["responseSummary"]["exists"])'
 done
 ```
 
-On `main` today you get:
-
 ```text
 GRCh38   True
-hg38     False
+hg38     True
+HG38     True
 ```
 
-**That is a bug, and it is the most important one in this codebase to
-understand.** Same variant, same build, different spelling — and the beacon
-returns a confident "no" for data it is holding. The query path compares the
-caller's literal string against what is stored, so a caller using UCSC
-vocabulary matches nothing.
+And an assembly the beacon cannot answer for is refused rather than answered:
 
-Nobody reports this, because nothing looks broken. A researcher concludes the
-variant is absent from African reference data and moves on. It is also two
-clicks away in the UI: GRCh37 is one of only two options in the assembly
-dropdown.
-
-A fix is open in **PR #44**, which canonicalises the spelling and matches every
-known form of the build. With that branch checked out the same loop returns
-`True` for both, and an unknown assembly is refused rather than answered:
+```bash
+curl -s 'http://localhost:8000/api/g_variants?assemblyId=GRCh99&referenceName=1&start=42497823'
+```
 
 ```json
 {"error": {"errorCode": 400,
   "errorMessage": "Unknown assembly: GRCh99. This beacon answers for GRCh37, GRCh38."}}
 ```
 
-On `main` the refusal is less helpful (`Invalid assembly: GRCh99.`) but is at
-least still a refusal.
+### Why this step exists
 
-**The lesson to carry into your own changes:** when the beacon cannot answer the
-question you asked, it must refuse — never answer a different question and
-return 200. `beacon_api/filters.py` is the reference implementation of that
-judgement and its docstring explains the reasoning.
+Until 2026-08-19 the middle line read `hg38   False`. The query path compared
+the caller's literal spelling against what was stored, so a caller using UCSC
+vocabulary got a confident "no" for a variant the panel was holding. Nobody
+reported it, because nothing looked broken — a researcher simply concluded the
+variant was absent from African reference data. It was two clicks away in the
+UI, since GRCh37 is one of only two options in the assembly dropdown.
+
+That is the failure mode this project guards hardest against, and the rule it
+produced is the one to carry into your own changes: **when the beacon cannot
+answer the question you asked, it must refuse — never answer a different
+question and return 200.** `beacon_api/filters.py` is the reference
+implementation of that judgement and its docstring explains the reasoning;
+`beacon_api/assembly.py` is the fix that came out of it.
 
 ### One more thing to notice
 

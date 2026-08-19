@@ -87,10 +87,11 @@ without subtracting one, you will get a confident, wrong `false`.
 
 ## Chromosome and assembly vocabulary
 
-Chromosomes may be stored as `1` or `chr1` depending on the ingest run; the
-query path matches both. Assembly spellings are **not** normalised on `main` —
-`hg38` returns `false` for data stored as `GRCh38`. PR #44 fixes this. See Step 9
-of [tutorial-zero-to-beacon.md](tutorial-zero-to-beacon.md).
+Chromosomes may be stored as `1` or `chr1` depending on the ingest run, and
+the query path matches both. Assembly spellings are canonicalised the same way
+(`beacon_api/assembly.py`), so `hg38` and `GRCh38` return the same answer and an
+unrecognised assembly is refused rather than answered. See Step 9 of
+[tutorial-zero-to-beacon.md](tutorial-zero-to-beacon.md) for why that matters.
 
 ## POST is currently broken
 
