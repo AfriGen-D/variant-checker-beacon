@@ -105,3 +105,24 @@ def build_position_filter(start, end=None, max_variant_span=None):
         filters['start__gte'] = lower if lower > 0 else 0
 
     return filters
+
+
+class IncompleteRange(ValueError):
+    """Raised for a range query that supplies ``end`` without ``start``."""
+
+
+def require_complete_range(start, end):
+    """Refuse a range query that has an upper bound but no lower one.
+
+    ``build_position_filter`` returns an empty filter when ``start`` is None,
+    so ``end`` on its own left the query with nothing but the chromosome
+    constraint — it silently became "is there anything on this chromosome at
+    all" while still being reported as the answer to a range question.
+
+    Refusing is the same judgement ``beacon_api/filters.py`` applies: a query
+    the beacon cannot answer as asked must fail, not widen.
+    """
+    if start is None and end is not None:
+        raise IncompleteRange(
+            'end requires start: a range query must supply both bounds.'
+        )
