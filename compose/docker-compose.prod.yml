@@ -2,6 +2,26 @@ services:
   # MongoDB - Internal only (no exposed ports)
   mongodb:
     image: mongo:5.0
+    # Deliberately UNAUTHENTICATED, same call as
+    # docker-compose-boolean-ssl.yml. Access is restricted by exposing no
+    # ports: this service is reachable only from the internal bridge network.
+    #
+    # Do NOT "fix" this by adding MONGO_INITDB_ROOT_USERNAME/PASSWORD alone.
+    # Those provision a root user in the `admin` database, while this stack's
+    # API runs settings_boolean (see DJANGO_SETTINGS_MODULE below), which
+    # authenticates with `authSource={MONGODB_NAME}` — i.e. beacon_db.
+    # Mongo would come up with auth enabled and every app connection would
+    # fail against an authSource holding no such user. Adding auth means
+    # adding credentials in BOTH places at once.
+    #
+    # Consequence worth knowing: MONGODB_USERNAME / MONGODB_PASSWORD in the
+    # env file are INERT for this stack. They are not protecting anything, and
+    # a reader should not infer otherwise from their presence.
+    #
+    # If this stack is ever actually deployed and does need auth, provision an
+    # application user in beacon_db (an init script), rather than pointing the
+    # app at an admin-scoped root user — that is how the live production host
+    # does it, with a collection-scoped role.
     container_name: beacon-mongodb
     volumes:
       - beacon_mongodb_data:/data/db
