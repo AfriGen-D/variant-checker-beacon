@@ -98,8 +98,8 @@ srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=4 \
 cd /cbio/users/mamana
 
 # Clone if not already present
-git clone https://github.com/your-org/afrigen-beacon-v2.git
-cd afrigen-beacon-v2/afrigend-beacon2-tools
+git clone https://github.com/AfriGen-D/variant-checker-beacon.git
+cd variant-checker-beacon/afrigend-beacon2-tools
 
 # Create virtual environment
 python3 -m venv .venv

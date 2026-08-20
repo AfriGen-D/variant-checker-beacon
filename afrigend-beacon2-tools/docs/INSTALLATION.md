@@ -39,7 +39,7 @@ The toolkit requires several specialized bioinformatics and data processing libr
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-org/afrigend-beacon2.git
+   git clone https://github.com/AfriGen-D/variant-checker-beacon.git
    cd afrigend-beacon2/afrigend-beacon2-tools
    ```
 

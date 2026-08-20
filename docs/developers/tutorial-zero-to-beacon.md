@@ -41,7 +41,7 @@ to run the test suites, but not for this tutorial.
 ## Step 1 — Get the code
 
 ```bash
-git clone git@github.com:mamanambiya/afrigen-beacon-v2.git
+git clone git@github.com:AfriGen-D/variant-checker-beacon.git
 cd afrigen-beacon-v2
 ```
 

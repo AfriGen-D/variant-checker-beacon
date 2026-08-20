@@ -91,8 +91,8 @@ nginx with TLS termination.
 
 ```bash
 # Clone repository
-git clone git@github.com:mamanambiya/afrigen-beacon-v2.git
-cd afrigen-beacon-v2
+git clone git@github.com:AfriGen-D/variant-checker-beacon.git
+cd variant-checker-beacon
 
 # Copy and edit env file (set DJANGO_SECRET_KEY, etc.)
 cp .env.example .env.boolean
@@ -222,7 +222,7 @@ python scripts/load_mongo_data.py
 ## Project Structure
 
 ```
-afrigen-beacon-v2/
+variant-checker-beacon/
 ├── beacon_api/              # Core API implementation
 │   ├── models.py           # MongoEngine models
 │   ├── views.py            # Full API views

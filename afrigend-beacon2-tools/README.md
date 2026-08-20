@@ -830,7 +830,7 @@ done
 
 ## Support
 
-**Issues**: [GitHub Issues](https://github.com/afrigen/afrigen-beacon-v2/issues)
+**Issues**: [GitHub Issues](https://github.com/AfriGen-D/variant-checker-beacon/issues)
 
 **Documentation**: [Project Documentation](../docs/)
 

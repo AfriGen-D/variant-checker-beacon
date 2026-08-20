@@ -39,11 +39,11 @@ We welcome contributions to the AfriGend Beacon v2 Tools project! This document 
 
 ```bash
 # Fork the repository on GitHub, then clone your fork
-git clone https://github.com/YOUR-USERNAME/afrigend-beacon2.git
+git clone https://github.com/YOUR-USERNAME/variant-checker-beacon.git
 cd afrigend-beacon2/afrigend-beacon2-tools
 
 # Add upstream remote
-git remote add upstream https://github.com/ORIGINAL-OWNER/afrigend-beacon2.git
+git remote add upstream https://github.com/AfriGen-D/variant-checker-beacon.git
 ```
 
 ### 2. Set Up Development Environment

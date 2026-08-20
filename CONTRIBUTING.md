@@ -89,11 +89,11 @@ Violations may result in temporary or permanent ban from the project. Report vio
 ```bash
 # Fork the repository on GitHub
 # Then clone your fork
-git clone https://github.com/YOUR_USERNAME/afrigen-beacon-v2.git
-cd afrigen-beacon-v2
+git clone https://github.com/YOUR_USERNAME/variant-checker-beacon.git
+cd variant-checker-beacon
 
 # Add upstream remote
-git remote add upstream https://github.com/afrigen/afrigen-beacon-v2.git
+git remote add upstream https://github.com/AfriGen-D/variant-checker-beacon.git
 ```
 
 ### 2. Create a Branch

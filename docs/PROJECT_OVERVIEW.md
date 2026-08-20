@@ -1541,7 +1541,7 @@ tqdm==4.65.0
 #### 1. Clone Repository
 
 ```bash
-git clone https://github.com/afrigen/afrigen-beacon-v2.git
+git clone https://github.com/AfriGen-D/variant-checker-beacon.git
 cd afrigen-beacon-v2
 ```
 
@@ -2001,7 +2001,7 @@ tar -czf backup-$(date +%Y%m%d).tar.gz --exclude='.git' .
 > **Heads up — this VM's working tree has no `origin` remote configured**, so `git pull` won't work. Sync from a known-good local clone instead:
 >
 > ```bash
-> # On your laptop, from a fresh clone of mamanambiya/afrigen-beacon-v2:
+> # On your laptop, from a fresh clone of AfriGen-D/variant-checker-beacon:
 > rsync -av --delete --exclude='.git' --exclude='node_modules' --exclude='__pycache__' \
 >   ./ afrigend-beacon-prod:~/afrigend-beacon2/
 > ```
@@ -3069,7 +3069,7 @@ See [GA4GH_AAI_IMPLEMENTATION_PLAN.md](GA4GH_AAI_IMPLEMENTATION_PLAN.md) for det
 **Organization**: AfriGEND
 **Project**: GA4GH Beacon v2 Implementation
 **Production**: [beacon.afrigen-d.org](https://beacon.afrigen-d.org/) (UI) · [api-beacon.afrigen-d.dev](https://api-beacon.afrigen-d.dev/api/) (API)
-**Repository**: https://github.com/mamanambiya/afrigen-beacon-v2
+**Repository**: https://github.com/AfriGen-D/variant-checker-beacon
 **Issues**: GitHub Issues
 
 For questions, bug reports, or feature requests, please open an issue on GitHub.
