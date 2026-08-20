@@ -33,6 +33,12 @@ RUN useradd --create-home --no-log-init --shell /usr/sbin/nologin beacon
 # Create necessary directories and set ownership
 RUN mkdir -p logs staticfiles && chown -R beacon:beacon /app
 
+# Stamped by CI from the git tag being built; read by beacon_api/release.py and
+# reported as `release` on /api/health. Declared HERE, not near the top: above
+# the pip layer it would invalidate the dependency cache on every release.
+ARG BEACON_RELEASE=""
+ENV BEACON_RELEASE=${BEACON_RELEASE}
+
 # Collect static files
 RUN python manage.py collectstatic --noinput --settings=beacon_project.settings_boolean || true
 

@@ -159,6 +159,8 @@ jobs:
             ${{ env.API_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            BEACON_RELEASE=${{ needs.preflight.outputs.version }}
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
