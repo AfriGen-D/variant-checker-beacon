@@ -27,34 +27,72 @@ def _make_importer(**cfg_overrides) -> MongoImporter:
 # TestLoadJsonFile
 # ===================================================================
 
-class TestLoadJsonFile:
+class TestIterJsonFile:
+    """
+    The .json branch used json.load(), reading the whole array before a
+    single record was inserted — the same cliff the .jsonl branch was already
+    fixed for. These preserve the previous BEHAVIOURS while requiring that
+    nothing is materialised.
+    """
+
     def setup_method(self):
         self.imp = _make_importer()
 
     def test_load_array(self, tmp_path):
         fp = tmp_path / "data.json"
         fp.write_text(json.dumps([{"id": "1"}, {"id": "2"}]))
-        data = self.imp._load_json_file(str(fp))
-        assert len(data) == 2
+        assert len(list(self.imp._iter_json_file(str(fp)))) == 2
 
     def test_load_single_object_wrapped(self, tmp_path):
         fp = tmp_path / "data.json"
         fp.write_text(json.dumps({"id": "1"}))
-        data = self.imp._load_json_file(str(fp))
+        data = list(self.imp._iter_json_file(str(fp)))
         assert len(data) == 1
         assert data[0]["id"] == "1"
 
-    def test_invalid_json_returns_empty(self, tmp_path):
+    def test_invalid_json_yields_nothing(self, tmp_path):
+        # Preserves the old contract: the importer logs and imports nothing
+        # rather than raising. (The VALIDATOR is the component that fails
+        # hard on malformed input; that is its job, not the importer's.)
         fp = tmp_path / "bad.json"
         fp.write_text("not valid json {{{")
-        data = self.imp._load_json_file(str(fp))
-        assert data == []
+        assert list(self.imp._iter_json_file(str(fp))) == []
 
-    def test_non_dict_non_list_returns_empty(self, tmp_path):
+    def test_non_dict_non_list_yields_nothing(self, tmp_path):
         fp = tmp_path / "num.json"
         fp.write_text("42")
-        data = self.imp._load_json_file(str(fp))
-        assert data == []
+        assert list(self.imp._iter_json_file(str(fp))) == []
+
+    def test_is_a_generator_not_a_list(self, tmp_path):
+        """The anti-regression for this whole issue."""
+        import inspect
+        assert inspect.isgeneratorfunction(MongoImporter._iter_json_file)
+
+    def test_is_lazy(self, tmp_path):
+        """Yields the first record without having read the whole array."""
+        fp = tmp_path / "data.json"
+        fp.write_text(json.dumps([{"id": str(i)} for i in range(500)]))
+        it = self.imp._iter_json_file(str(fp))
+        assert next(it) == {"id": "0"}
+        assert iter(it) is it
+
+    def test_does_not_materialise_the_array(self, tmp_path):
+        """
+        Detects INTERNAL buffering, which the generator-function check cannot.
+
+        A malformed element at the END of the array is the probe: streaming
+        hands back the records before it, while any internal `list(...)` — the
+        exact regression this issue is about — consumes the whole array first,
+        hits the parse error, and yields nothing at all.
+
+        Written after a mutation test showed that wrapping ijson.items() in
+        list() passed every other test in this class.
+        """
+        fp = tmp_path / "late_bad.json"
+        fp.write_text('[{"id": "0"}, {"id": "1"}, {oops not json}]')
+        it = self.imp._iter_json_file(str(fp))
+        assert next(it) == {"id": "0"}, "materialised: nothing was yielded before the bad element"
+        assert next(it) == {"id": "1"}
 
 
 # ===================================================================

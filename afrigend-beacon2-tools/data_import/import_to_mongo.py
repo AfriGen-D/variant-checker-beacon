@@ -119,7 +119,7 @@ class MongoImporter:
             if json_file.endswith('.jsonl'):
                 records = self._iter_jsonl_file(json_file)
             else:
-                records = iter(self._load_json_file(json_file))
+                records = self._iter_json_file(json_file)
 
             self.logger.info(f"Importing records to {db_name}.{collection_name}")
 
@@ -219,27 +219,54 @@ class MongoImporter:
             self.stats['errors'] += len(operations)
             return False
 
-    def _load_json_file(self, json_file: str) -> List[Dict]:
-        """Load data from JSON file."""
+    def _iter_json_file(self, json_file: str) -> Iterator[Dict]:
+        """Yield records from a .json file holding an array (or one object).
+
+        Streams. json.load() here read the entire array before a single
+        record was inserted — the same cliff the .jsonl branch below was
+        already fixed for, and the reason an 8.4 GB input needed 30+ GB of
+        Python objects and was silently OOM-killed.
+
+        Behaviour on bad input is unchanged: log and yield nothing, rather
+        than raise. The VALIDATOR is the component that fails hard on
+        malformed data; the importer's contract is to import what it can and
+        report the rest through self.stats.
+        """
         try:
-            with open(json_file, 'r') as f:
-                data = json.load(f)
-            
-            # Ensure data is a list
-            if isinstance(data, dict):
-                data = [data]
-            elif not isinstance(data, list):
-                self.logger.error(f"Invalid JSON format in {json_file}")
-                return []
-                
-            return data
-            
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON in {json_file}: {e}")
-            return []
+            import ijson
+        except ImportError:
+            self.logger.error(
+                f"Cannot stream {json_file}: ijson is not installed "
+                f"(see requirements.txt). Convert the input to .jsonl, which "
+                f"streams without it."
+            )
+            return
+
+        try:
+            with open(json_file, 'rb') as f:
+                # A bare object is valid input and ijson's 'item' prefix does
+                # not match one, so read it directly. Such a file is a single
+                # record and cannot be large.
+                first = f.read(1)
+                while first and first.isspace():
+                    first = f.read(1)
+                f.seek(0)
+
+                if first == b'{':
+                    yield json.load(f)
+                    return
+                if first != b'[':
+                    # Was: "Invalid JSON format" for anything not dict/list.
+                    self.logger.error(f"Invalid JSON format in {json_file}")
+                    return
+
+                for record in ijson.items(f, 'item'):
+                    yield record
+
         except Exception as e:
-            self.logger.error(f"Error loading {json_file}: {e}")
-            return []
+            self.logger.error(f"Invalid JSON in {json_file}: {e}")
+            return
+
 
     def _iter_jsonl_file(self, jsonl_file: str) -> Iterator[Dict]:
         """Yield records from a JSONL file (one JSON object per line).
