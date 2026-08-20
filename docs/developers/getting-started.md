@@ -8,7 +8,7 @@ condensed version plus what you need on day two.
 ## The short version
 
 ```bash
-git clone git@github.com:mamanambiya/afrigen-beacon-v2.git
+git clone git@github.com:AfriGen-D/variant-checker-beacon.git
 cd afrigen-beacon-v2      # somewhere Docker shares; not /tmp on macOS
 cp .env.example .env.boolean
 sed -i '' 's/^SECURE_SSL_REDIRECT=True/SECURE_SSL_REDIRECT=False/' .env.boolean

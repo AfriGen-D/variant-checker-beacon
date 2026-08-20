@@ -86,7 +86,7 @@ and trains readers to ignore reds.
 
 Four phases in dependency order. Phase 1 is the precondition for 2 and 3.
 
-### Phase 0 — Move to the AfriGen-D org (prerequisite, owner action)
+### Phase 0 — Move to the AfriGen-D org — DONE 2026-08-20
 
 Transfer `mamanambiya/afrigen-beacon-v2` to `AfriGen-D/variant-checker-beacon`,
 and the aggregator to `AfriGen-D/variant-checker-beacon-network`.
@@ -114,15 +114,43 @@ Migration concerns, in order of risk:
    while old tags remain in the personal namespace. Mitigation: keep the old
    package readable, and have the first org-namespace release re-publish the
    current version so a rollback target exists on the new path.
-2. **Actions secrets** — all eight (`DEPLOY_*`, `SIDECAR_*`, `JUMPHOST_*`) must
-   be confirmed present after transfer, or re-added.
+2. **Actions secrets** — CONFIRMED SURVIVED. All eight (`DEPLOY_*`,
+   `SIDECAR_*`, `JUMPHOST_*`) were present at the new location immediately
+   after the transfer; nothing needed re-adding.
 3. **Visibility** — this repo is public, the aggregator is private. Siblings
    should be a deliberate choice; public is an asset for an implementation
    others adopt.
 
-Low risk: git remotes redirect, open PRs and issues transfer, and the
-`afrigend-beacon2` strings in the tree are a subdirectory name and a host path,
-not the repository name.
+Low risk, and confirmed by doing it: git remotes redirect, and 12 tags, 7
+issues, 4 open PRs and the unmerged `fix/sanitizer-nested-post-body` branch all
+transferred. The `afrigend-beacon2` strings in the tree are a subdirectory name
+and an ILIFU host path, not the repository name, and were deliberately left
+alone — `/cbio/users/mamana/afrigen-beacon-v2` on ILIFU was not renamed.
+
+One thing not anticipated: **repo-admin permission does not carry**. The
+transferring user is an org *member*, so `permissions.admin` drops from true to
+false at the new location. Settings and branch protection now need an org owner.
+
+#### Rollback during the post-move window — read this first in an incident
+
+Images built before the move live at the OLD namespace and did not move.
+`deploy.yml` computes `API_IMAGE` from `${{ github.repository }}`, which is now
+the org path, so an automated rollback to any pre-move tag resolves to an image
+that does not exist. The bytes are fine; the mechanism is what breaks.
+
+Until a post-move release has been published to the org namespace, roll back by
+pinning the old path explicitly:
+
+```text
+ghcr.io/mamanambiya/afrigen-beacon-v2/beacon-api:v1.1.6       # current prod
+ghcr.io/mamanambiya/afrigen-beacon-v2/beacon-frontend:v1.1.6
+ghcr.io/mamanambiya/afrigen-beacon-v2/beacon-api:v1.1.5       # previous
+```
+
+Set `API_IMAGE` / `FRONTEND_IMAGE` to those before `docker compose up -d` on the
+production host. This note is here rather than in a chat log because a rollback
+that requires reconstructing a special path is the kind that fails under
+incident pressure.
 
 ### Phase 1 — Release marker (build now, no dependency on Phase 0)
 
@@ -207,8 +235,8 @@ successful deploy cannot be reported as a failure.
 
 ## Open questions
 
-1. Whether the eight Actions secrets survive the org transfer, or need re-adding.
-2. Whether the aggregator repo is renamed in the same change or separately.
+1. Whether the aggregator repo (`african-beacon-network`) is renamed to
+   `variant-checker-beacon-network` in the same change or separately. Still open.
 
 Resolved 2026-08-20: the GHCR question above. Packages do not move and do not
 redirect, so re-publishing the current release into the org namespace is

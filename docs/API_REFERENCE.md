@@ -38,7 +38,7 @@ This document provides complete API documentation for the Afrigen Beacon v2 impl
 
 - **Interactive Documentation**: [http://localhost:8000/api/docs/](http://localhost:8000/api/docs/) (Swagger UI)
 - **OpenAPI Schema**: [http://localhost:8000/api/schema/](http://localhost:8000/api/schema/)
-- **GitHub Issues**: [Repository Issues](https://github.com/afrigen/afrigen-beacon-v2/issues)
+- **GitHub Issues**: [Repository Issues](https://github.com/AfriGen-D/variant-checker-beacon/issues)
 
 ---
 

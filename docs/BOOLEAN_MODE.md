@@ -601,7 +601,7 @@ See [API Reference](docs/API_REFERENCE.md#authentication) for details.
 
 **Questions?** Contact: beacon-support@h3abionet.org
 
-**Issues?** Report: https://github.com/afrigen/afrigen-beacon-v2/issues
+**Issues?** Report: https://github.com/AfriGen-D/variant-checker-beacon/issues
 
 **H3ABioNet**: https://h3abionet.org/
 
