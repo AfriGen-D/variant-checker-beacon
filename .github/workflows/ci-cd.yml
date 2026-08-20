@@ -47,7 +47,20 @@ jobs:
             beacon_api.test_assembly \
             beacon_api.test_query_vocabulary \
             beacon_api.test_capabilities \
-            beacon_api.test_release
+            beacon_api.test_release \
+            beacon_api.test_request_body
+
+      # These two need Django + DRF, because validators.py and middleware.py
+      # import them. The suites above are deliberately Django-free and run
+      # before any install, which is why they cost ~5ms. test_middleware
+      # previously ran only in deploy.yml — i.e. after the merge it should
+      # have blocked, the same gap #43 closed for the others.
+      - name: Run Django-dependent backend tests
+        run: |
+          pip install --quiet 'django==4.0.10' 'djangorestframework==3.14.0'
+          python -m unittest \
+            beacon_api.test_sanitizer_nested \
+            beacon_api.test_middleware
 
       - name: Install runtime + test dependencies
         working-directory: afrigend-beacon2-tools
