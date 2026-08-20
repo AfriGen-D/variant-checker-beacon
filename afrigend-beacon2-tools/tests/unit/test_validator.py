@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from validation.validate_json import BeaconValidator, ValidationResult
+from validation.validate_json import BeaconValidator, MalformedRecord, ValidationResult
 
 
 # ---------------------------------------------------------------------------
@@ -302,3 +302,99 @@ class TestValidationResult:
         )
         assert r.file_path == "test.json"
         assert r.record_count == 5
+
+
+# ===================================================================
+# TestStreamingRecords
+#
+# The validator materialised every record before validating: json.load()
+# for .json, and an accumulating `data = []` for .jsonl. Measured at roughly
+# 65 GB at production scale inside a 2 GB Nextflow allocation, so the
+# pipeline aborted in validation and never reached import.
+#
+# Validation is purely per-record — validate(instance=record, schema=schema)
+# with no cross-record checks — so it can stream. These tests pin that.
+# ===================================================================
+
+class TestStreamingRecords:
+    def test_iter_records_is_lazy_not_a_list(self, json_fixtures_dir):
+        """The whole point: never materialise. A list here is the bug."""
+        v = _make_validator()
+        it = v._iter_records(str(json_fixtures_dir / "valid_variants.jsonl"))
+        assert not isinstance(it, list)
+        assert iter(it) is it, "must be a one-shot iterator, not a re-iterable"
+
+    def test_yields_records_before_reaching_a_malformed_line(self, tmp_path):
+        """
+        Proves laziness behaviourally rather than by type.
+
+        With eager loading nothing is returned at all when a later line is
+        bad. Streaming must hand back the good records it has already read
+        before it meets the bad one.
+        """
+        f = tmp_path / "partly_bad.jsonl"
+        f.write_text('{"id": "a"}\n{"id": "b"}\n{ not json\n{"id": "d"}\n')
+        v = _make_validator()
+        it = v._iter_records(str(f))
+        assert next(it) == {"id": "a"}
+        assert next(it) == {"id": "b"}
+        with pytest.raises(MalformedRecord):
+            next(it)
+
+    def test_malformed_line_still_fails_validation(self, tmp_path):
+        """
+        The safety net must survive the refactor. A malformed line is a
+        validation failure, never something silently skipped — streaming
+        must not turn a hard failure into a partial success.
+        """
+        f = tmp_path / "bad_variants.jsonl"
+        f.write_text('{"variantInternalId": "x", "referenceName": "1"}\n{ not json\n')
+        v = _make_validator()
+        result = v._validate_json_file(str(f), schema={"type": "object"})
+        assert result.is_valid is False
+        assert any("line 2" in e.lower() or "line 2" in e for e in result.errors)
+
+    def test_streams_a_json_array_too(self, json_fixtures_dir):
+        """.json arrays were the other cliff — json.load() read the lot."""
+        v = _make_validator()
+        it = v._iter_records(str(json_fixtures_dir / "valid_variants.json"))
+        assert not isinstance(it, list)
+        first = next(it)
+        assert isinstance(first, dict)
+
+    def test_record_count_is_correct_while_streaming(self, json_fixtures_dir):
+        """Counting must not require a second pass or a materialised list."""
+        v = _make_validator()
+        expected = len(json.loads((json_fixtures_dir / "valid_variants.json").read_text()))
+        result = v._validate_json_file(
+            str(json_fixtures_dir / "valid_variants.json"), schema={"type": "object"})
+        assert result.record_count == expected
+
+    def test_empty_file_still_reports_failure(self, tmp_path):
+        f = tmp_path / "empty.jsonl"
+        f.write_text("")
+        v = _make_validator()
+        result = v._validate_json_file(str(f), schema={"type": "object"})
+        assert result.is_valid is False
+
+    def test_blank_lines_are_skipped_not_errors(self, tmp_path):
+        f = tmp_path / "blanks.jsonl"
+        f.write_text('{"id": "a"}\n\n\n{"id": "b"}\n')
+        v = _make_validator()
+        assert list(v._iter_records(str(f))) == [{"id": "a"}, {"id": "b"}]
+
+    def test_json_array_is_not_materialised(self, tmp_path):
+        """
+        Detects INTERNAL buffering in the .json path, which a type check
+        cannot. A malformed element at the END is the probe: streaming hands
+        back the records before it, while any internal list(...) consumes the
+        whole array first and yields nothing.
+        """
+        f = tmp_path / "late_bad.json"
+        f.write_text('[{"id": "0"}, {"id": "1"}, {oops not json}]')
+        v = _make_validator()
+        it = v._iter_records(str(f))
+        assert next(it) == {"id": "0"}, "materialised: nothing yielded before the bad element"
+        assert next(it) == {"id": "1"}
+        with pytest.raises(MalformedRecord):
+            next(it)

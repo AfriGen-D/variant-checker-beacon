@@ -11,7 +11,7 @@ import logging
 import argparse
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any
+from typing import Any, Dict, Iterator, List, Optional, Union
 from dataclasses import dataclass
 
 import yaml
@@ -31,6 +31,17 @@ class ValidationResult:
     warnings: List[str]
     record_count: int
     validation_time: float
+
+
+class MalformedRecord(Exception):
+    """Unparseable content in an input file.
+
+    Raised rather than returning an empty list, so that streaming preserves
+    the pre-existing rule that a malformed record fails validation instead of
+    being silently skipped. A generator cannot signal "stop, this file is
+    bad" by returning a sentinel — the consumer would simply see fewer
+    records and report success.
+    """
 
 
 class BeaconValidator:
@@ -185,17 +196,11 @@ class BeaconValidator:
         warnings = []
         
         try:
-            # Load JSON data
-            data = self._load_json_file(json_file)
-            if not data:
-                return ValidationResult(
-                    file_path=json_file,
-                    is_valid=False,
-                    errors=["Failed to load JSON data"],
-                    warnings=[],
-                    record_count=0,
-                    validation_time=time.time() - start_time
-                )
+            # Resolve the schema BEFORE reading anything. The records are
+            # streamed exactly once, so the old order — load, then decide the
+            # schema, then loop — would have required either a second pass or
+            # holding the file, which is the whole thing being fixed.
+            record_count = 0
             
             # Get schema
             if schema is None:
@@ -209,7 +214,7 @@ class BeaconValidator:
                             is_valid=False,
                             errors=errors,
                             warnings=warnings,
-                            record_count=len(data),
+                            record_count=record_count,
                             validation_time=time.time() - start_time
                         )
                 else:
@@ -226,32 +231,52 @@ class BeaconValidator:
                     is_valid=True,
                     errors=errors,
                     warnings=warnings,
-                    record_count=len(data),
+                    record_count=record_count,
                     validation_time=time.time() - start_time
                 )
             
-            # Validate each record
-            for i, record in enumerate(data):
-                try:
-                    validate(instance=record, schema=schema)
-                except ValidationError as e:
-                    error_msg = f"Record {i+1}: {e.message}"
-                    if e.path:
-                        error_msg += f" at {'/'.join(str(p) for p in e.path)}"
-                    errors.append(error_msg)
-                    
-                    # Stop on first error in strict mode
-                    if self.config['validation']['strict_mode']:
-                        break
-            
+            # Validate each record as it arrives. Nothing is retained.
+            try:
+                for i, record in enumerate(self._iter_records(json_file)):
+                    record_count += 1
+                    try:
+                        validate(instance=record, schema=schema)
+                    except ValidationError as e:
+                        error_msg = f"Record {i+1}: {e.message}"
+                        if e.path:
+                            error_msg += f" at {'/'.join(str(p) for p in e.path)}"
+                        errors.append(error_msg)
+
+                        # Stop on first error in strict mode
+                        if self.config['validation']['strict_mode']:
+                            break
+            except MalformedRecord as e:
+                # Unparseable input fails the file outright, exactly as the
+                # eager loader did by returning []. Records already validated
+                # do not rescue it.
+                errors.append(str(e))
+                # And report zero records, as the eager loader did. Streaming
+                # happens to know how many were read before the bad one, but
+                # surfacing that here would change an asserted contract as a
+                # side effect of a memory fix, and a non-zero count on a failed
+                # file reads as "some records validated fine". The failing line
+                # number is already in the message, so nothing diagnostic is
+                # lost.
+                record_count = 0
+
+            if record_count == 0 and not errors:
+                # Previously "Failed to load JSON data", reached whenever the
+                # loader returned []. An empty file is still not valid input.
+                errors.append("Failed to load JSON data")
+
             is_valid = len(errors) == 0
-            
+
             return ValidationResult(
                 file_path=json_file,
                 is_valid=is_valid,
                 errors=errors,
                 warnings=warnings,
-                record_count=len(data),
+                record_count=record_count,
                 validation_time=time.time() - start_time
             )
             
@@ -266,56 +291,78 @@ class BeaconValidator:
                 validation_time=time.time() - start_time
             )
 
-    def _load_json_file(self, json_file: str) -> List[Dict]:
-        """Load data from a JSON or JSONL file."""
-        if str(json_file).endswith('.jsonl'):
-            return self._load_jsonl_file(json_file)
+    def _iter_records(self, json_file: str) -> Iterator[Dict]:
+        """Yield records from a JSON or JSONL file, one at a time.
 
-        try:
-            with open(json_file, 'r') as f:
-                data = json.load(f)
+        NEVER materialises the file. Validation is purely per-record —
+        ``validate(instance=record, schema=schema)`` with no cross-record
+        checks — so there is no reason to hold the dataset in memory, and
+        holding it was measured at roughly 65 GB at production scale inside a
+        2 GB Nextflow allocation. The pipeline aborted here and never reached
+        import.
 
-            # Ensure data is a list
-            if isinstance(data, dict):
-                data = [data]
-            elif not isinstance(data, list):
-                self.logger.error(f"Invalid JSON format in {json_file}")
-                return []
-                
-            return data
-            
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON in {json_file}: {e}")
-            return []
-        except Exception as e:
-            self.logger.error(f"Error loading {json_file}: {e}")
-            return []
-
-    def _load_jsonl_file(self, jsonl_file: str) -> List[Dict]:
-        """Load data from a JSONL file (one JSON object per line).
-
-        json.load() cannot read these — every multi-line .jsonl the pipeline
-        produced was previously reported as "Failed to load JSON data".
+        Raises :class:`MalformedRecord` on unparseable content rather than
+        returning an empty list. A malformed record is a validation FAILURE,
+        never something to skip — that safety net predates this change and
+        must survive it.
         """
-        data = []
-        try:
-            with open(jsonl_file, 'r') as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        data.append(json.loads(line))
-                    except json.JSONDecodeError as e:
-                        # A malformed line is a validation failure, not
-                        # something to skip — this is the safety net.
-                        self.logger.error(f"Invalid JSON on line {line_num} of {jsonl_file}: {e}")
-                        return []
-            return data
+        if str(json_file).endswith('.jsonl'):
+            yield from self._iter_jsonl_records(json_file)
+        else:
+            yield from self._iter_json_records(json_file)
 
+    def _iter_jsonl_records(self, jsonl_file: str) -> Iterator[Dict]:
+        """Yield records from a JSONL file (one JSON object per line)."""
+        with open(jsonl_file, 'r') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError as e:
+                    msg = f"Invalid JSON on line {line_num} of {jsonl_file}: {e}"
+                    self.logger.error(msg)
+                    raise MalformedRecord(msg) from e
+
+    def _iter_json_records(self, json_file: str) -> Iterator[Dict]:
+        """Yield records from a .json file holding an array (or one object).
+
+        Uses ijson so a large array is parsed incrementally. json.load() here
+        was the other half of the same cliff: it reads the entire array before
+        a single record is validated.
+        """
+        try:
+            import ijson
+        except ImportError as e:  # pragma: no cover - dependency is declared
+            raise MalformedRecord(
+                f"Cannot stream {json_file}: ijson is not installed. "
+                f"Install it (see requirements.txt) or convert the input to "
+                f".jsonl, which streams without it."
+            ) from e
+
+        try:
+            with open(json_file, 'rb') as f:
+                # A bare object rather than an array is still valid input;
+                # ijson reports that as a parse error against the 'item'
+                # prefix, so fall back to a single-record read for it.
+                first = f.read(1)
+                while first and first.isspace():
+                    first = f.read(1)
+                f.seek(0)
+
+                if first == b'{':
+                    yield json.load(f)
+                    return
+
+                for record in ijson.items(f, 'item'):
+                    yield record
+        except MalformedRecord:
+            raise
         except Exception as e:
-            self.logger.error(f"Error loading {jsonl_file}: {e}")
-            return []
+            msg = f"Invalid JSON in {json_file}: {e}"
+            self.logger.error(msg)
+            raise MalformedRecord(msg) from e
 
     def _infer_schema_type(self, file_path: str) -> Optional[str]:
         """Infer schema type from filename."""

@@ -17,6 +17,10 @@ mongoengine==0.27.0
 
 # Data Validation
 jsonschema==4.20.0
+# Incremental JSON array parsing. json.load() on a multi-GB export read
+# the whole array before a single record was validated or inserted —
+# ~65 GB at production scale inside a 2 GB Nextflow allocation.
+ijson==3.5.1
 cerberus==1.3.5
 
 # Genomics Libraries
