@@ -159,7 +159,7 @@ start=100000"
 
 | Parameter | Type | Description | Example |
 |-----------|------|-------------|---------|
-| `assemblyId` | String | Reference genome assembly | `GRCh38`, `GRCh37` |
+| `assemblyId` | String | Reference genome assembly. A recognised build with no data returns **501**. | `GRCh38` |
 | `referenceName` | String | Chromosome | `1`-`22`, `X`, `Y`, `MT` |
 | `start` | Integer | Start position (0-based, inclusive) | `100000` |
 
@@ -175,7 +175,7 @@ start=100000"
 
 **assemblyId**:
 - `GRCh38` (recommended, latest)
-- `GRCh37` (older, still supported)
+- `GRCh37` (recognised, and canonicalised from `hg19`) — but this deployment holds **no GRCh37 data**, so querying it returns `501 "cannot answer for that build"` rather than a false negative. Check `/api/datasets` for what is actually held.
 
 **referenceName** (chromosome):
 - Autosomes: `1`, `2`, ..., `22`
@@ -556,7 +556,7 @@ curl "https://beacon.afrigen-d.org/api/g_variants?referenceName=1&start=100000&r
 
 **A**: Possible reasons:
 - Variant not in this dataset
-- Wrong assembly (try GRCh37 instead of GRCh38)
+- Wrong assembly. Note that a recognised-but-unheld build now returns `501` rather than `exists: false`, so this is visible rather than silent — check the error body.
 - Wrong chromosome name format (use "1" not "chr1")
 - Position is 0-based (not 1-based)
 

@@ -693,7 +693,7 @@ curl http://localhost:8000/api/health
 
 | Parameter | Type | Required | Description | Example |
 |-----------|------|----------|-------------|---------|
-| `assemblyId` | String | Yes | Reference genome | `GRCh38`, `GRCh37` |
+| `assemblyId` | String | Yes | Reference genome. Recognised: `GRCh38`, `GRCh37`, and their UCSC synonyms `hg38`/`hg19`. A recognised build the beacon holds no data for returns **501**, not `exists: false`. | `GRCh38` |
 | `referenceName` | String | Yes | Chromosome | `1`-`22`, `X`, `Y`, `MT` |
 | `start` | Integer | Yes | Start position (0-based) | `100000` |
 | `end` | Integer | No | End position (0-based, exclusive) | `100001` |

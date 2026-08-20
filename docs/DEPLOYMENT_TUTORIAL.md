@@ -529,5 +529,5 @@ These three are why the old "Step 8 — apply known-required patches" is gone.
 
 - [#5](https://github.com/AfriGen-D/variant-checker-beacon/issues/5) — `compose/docker-compose.prod.yml` has no `MONGO_INITDB_ROOT_*`. Step 5 works without auth, but do not expose that Mongo.
 - [#6](https://github.com/AfriGen-D/variant-checker-beacon/issues/6) — memory accumulation. **Partly fixed**: the VCF transform streams now, and the importer streams `.jsonl`. Still buffering: `.json` inputs in both the importer and the validator, and the validator's `.jsonl` accumulator. At production scale this is the step most likely to fail — see the issue for the four exact sites.
-- [#50](https://github.com/AfriGen-D/variant-checker-beacon/issues/50) — `GRCh37` is selectable in the UI while the beacon holds only GRCh38 data, so it answers a confident "no". If you load GRCh37 data, this stops being a problem; if you do not, expect the question.
+- ~~[#50](https://github.com/AfriGen-D/variant-checker-beacon/issues/50)~~ — **fixed in v1.1.9.** A build the beacon holds no data for now returns `501` rather than a confident "no", and the UI offers only the assemblies actually held. If you deploy with GRCh37 data, update `ASSEMBLIES` in `frontend/src/lib/utils/constants.ts` — it is currently a hardcoded list, not derived from `/api/datasets`.
 

@@ -503,7 +503,7 @@ curl -X POST http://localhost:8000/api/biosamples \
 
 | Parameter | Type | Required | Description | Example |
 |-----------|------|----------|-------------|---------|
-| assemblyId | string | Yes | Reference genome assembly | GRCh38, GRCh37, hg38 |
+| assemblyId | string | Yes | Reference genome assembly. `hg38`/`hg19` canonicalise; a recognised build with no data returns 501. | GRCh38 |
 | referenceName | string | Yes | Chromosome identifier | 1, 17, X, Y, MT, NC_000017.11 |
 | start | integer/array | Yes | Start position(s) | 7577120, [5000000, 7676592] |
 | end | integer/array | No | End position(s) | 7578641, [7669607, 10000000] |

@@ -284,7 +284,25 @@ the caller's literal spelling against what was stored, so a caller using UCSC
 vocabulary got a confident "no" for a variant the panel was holding. Nobody
 reported it, because nothing looked broken — a researcher simply concluded the
 variant was absent from African reference data. It was two clicks away in the
-UI, since GRCh37 is one of only two options in the assembly dropdown.
+UI, because GRCh37 was then one of only two options in the assembly dropdown.
+
+Both halves of that are now closed. `hg38` canonicalises to `GRCh38`, and a
+build this beacon holds no data for is **refused rather than answered**:
+
+```bash
+curl -s 'http://localhost:8000/api/g_variants?assemblyId=GRCh37&referenceName=1&start=42497823'
+```
+
+```json
+{"error": {"errorCode": 501,
+  "errorMessage": "This beacon holds no data for assembly GRCh37, so it cannot
+   answer for that build. This is not a statement about whether the variant
+   exists. Data held: GRCh38."}}
+```
+
+A 501 is a signal a client can act on; `exists: false` is an answer it will
+believe. The assembly dropdown now offers only GRCh38, so a UI user cannot
+reach this — it is for API callers.
 
 That is the failure mode this project guards hardest against, and the rule it
 produced is the one to carry into your own changes: **when the beacon cannot
