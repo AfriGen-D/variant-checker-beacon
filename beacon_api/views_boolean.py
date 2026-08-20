@@ -972,22 +972,6 @@ def _empty_query():
 @api_view(['GET'])
 @permission_classes([AllowAny])
 @cache_page(60 * 60)
-def individuals_list_boolean(request):
-    """/individuals — delegates to the working individual query.
-
-    This was a constant empty envelope while /query/individuals, on the same
-    deployment, answered the same question correctly. The two contradicted
-    each other, and the frontend client points here — so anyone wiring up the
-    existing hook got a permanent silent zero.
-
-    Aliasing rather than duplicating, the same way /g_variants already is.
-    """
-    return individual_query_boolean(request)
-
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-@cache_page(60 * 60)
 def biosamples_list_boolean(request):
     """Stub /biosamples — boolean mode does not currently expose any."""
     return Response(_empty_query())
