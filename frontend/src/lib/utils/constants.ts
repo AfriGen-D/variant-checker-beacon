@@ -1,9 +1,18 @@
 import type { AssemblyId, Chromosome } from '../api/types';
 
-// Genome assemblies
+// Genome assemblies.
+//
+// Only builds this beacon actually holds. GRCh37 was offered here while the
+// panel held none, so a user reached it in two clicks and got an authoritative
+// "not in the African panel" for every query — indistinguishable from a true
+// negative. The API now refuses an unheld build with 501 rather than answering
+// "no" (see beacon_api/capabilities.py), and this list must not re-advertise
+// one ahead of the data.
+//
+// The API is the source of truth: it derives coverage from the dataset
+// catalogue. Add a build here only once a dataset declaring it is loaded.
 export const ASSEMBLIES: { value: AssemblyId; label: string }[] = [
   { value: 'GRCh38', label: 'GRCh38 (hg38)' },
-  { value: 'GRCh37', label: 'GRCh37 (hg19)' },
 ];
 
 // Chromosomes
@@ -66,7 +75,7 @@ export const QUERY_MODES: { value: QueryMode; label: string; description: string
 // Plain-language help shown via the ⓘ next to each field label. Centralized so
 // the wording (genomics domain copy) lives in one editable place.
 export const FIELD_HINTS = {
-  assembly: 'Reference genome build the coordinates refer to. GRCh38 (hg38) is current; GRCh37 (hg19) is for older datasets.',
+  assembly: 'Reference genome build the coordinates refer to. This beacon holds GRCh38 (hg38) data only.',
   chromosome: 'Chromosome the variant sits on (1–22, X, Y, or mitochondrial MT).',
   start: '1-based position, as shown in dbSNP, Ensembl and ClinVar — the exact base for a single-nucleotide variant.',
   end: 'Only needed for a range query. Leave blank for a single-position variant.',
