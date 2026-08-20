@@ -121,3 +121,39 @@ class RegressionContrast(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class UnknownAssemblyMessageTests(unittest.TestCase):
+    """
+    The 400 for an unrecognised assembly said "This beacon answers for GRCh37,
+    GRCh38" — the RECOGNISED set. Since #59, a recognised-but-unheld build
+    returns 501 "Data held: GRCh38". So a caller who mistyped was told to try
+    GRCh37, tried it, and was told it is not held: the first message sent them
+    into the second.
+
+    Recognising a build and holding data for it are different facts, and this
+    message must not conflate them.
+    """
+
+    def _message(self):
+        with self.assertRaises(UnknownAssembly) as ctx:
+            canonical_assembly('GRCh99')
+        return str(ctx.exception)
+
+    def test_names_the_offending_value(self):
+        self.assertIn('GRCh99', self._message())
+
+    def test_does_not_promise_to_answer_for_a_build(self):
+        # The exact misdirection: claiming the beacon *answers for* every
+        # recognised build, when coverage is decided by the data.
+        self.assertNotIn('answers for', self._message())
+
+    def test_still_lists_the_recognised_builds(self):
+        # The list is genuinely useful for a typo — it just must not be
+        # presented as a coverage promise.
+        msg = self._message()
+        self.assertIn('GRCh38', msg)
+        self.assertIn('GRCh37', msg)
+
+    def test_says_recognition_is_not_coverage(self):
+        self.assertIn('may not hold', self._message())

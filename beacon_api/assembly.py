@@ -69,9 +69,16 @@ def canonical_assembly(value):
     try:
         return _CANONICAL_BY_SPELLING[key]
     except KeyError:
+        # "answers for" promised coverage this module cannot know about.
+        # Recognising a build and HOLDING data for it are different facts:
+        # since #59 a recognised-but-unheld build returns 501 naming what is
+        # actually held. Saying "answers for GRCh37" here sent a caller who
+        # mistyped straight into that 501. List the recognised spellings —
+        # they are what helps with a typo — without claiming coverage.
         raise UnknownAssembly(
-            f'Unknown assembly: {value}. This beacon answers for '
-            f'{", ".join(sorted(ASSEMBLY_ALIASES))}.'
+            f'Unknown assembly: {value}. Recognised builds: '
+            f'{", ".join(sorted(ASSEMBLY_ALIASES))}. '
+            f'This beacon may not hold data for all of them.'
         ) from None
 
 
