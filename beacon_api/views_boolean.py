@@ -14,6 +14,7 @@ from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
 from .assembly import assembly_filter
 from .release import get_release
+from .request_body import flatten_beacon_request
 from .capabilities import (
     is_dataset_scope_supported, unsupported_dataset_scope_message,
 )
@@ -101,7 +102,11 @@ def variant_query_boolean(request):
         if request.method == 'GET':
             query_params = request.GET.dict()
         else:
-            query_params = request.data
+            # Beacon v2 nests parameters under query.requestParameters; the
+            # query below reads top-level keys. Without this the nested body
+            # produced an UNFILTERED query — an impossible locus answered
+            # exists:true. See beacon_api/request_body.py.
+            query_params = flatten_beacon_request(request.data)
 
         # Validate and sanitize input
         try:
@@ -394,7 +399,11 @@ def individual_query_boolean(request):
         if request.method == 'GET':
             query_params = request.GET.dict()
         else:
-            query_params = request.data
+            # Beacon v2 nests parameters under query.requestParameters; the
+            # query below reads top-level keys. Without this the nested body
+            # produced an UNFILTERED query — an impossible locus answered
+            # exists:true. See beacon_api/request_body.py.
+            query_params = flatten_beacon_request(request.data)
 
         # A POST body is arbitrary JSON, so a "value" may be a dict. Every
         # value below therefore has to be proven scalar BEFORE it is allowed
