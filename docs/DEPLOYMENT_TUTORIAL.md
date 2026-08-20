@@ -1,5 +1,20 @@
 # Deploying afrigen-beacon-v2 — Step-by-Step Tutorial
 
+> **Scope and status.** This is the *operator* path: standing up a NEW production
+> node on your own infrastructure — VM, tunnel, TLS, secrets, ingestion. If you
+> only want to run the beacon locally to develop against it, use
+> [docs/developers/tutorial-zero-to-beacon.md](developers/tutorial-zero-to-beacon.md)
+> instead; it is a 12-step local path that was walked end to end on 2026-08-20.
+>
+> **Written 2026-05-04 from a real deployment, refreshed 2026-08-21.** The
+> original "apply these patches first" step has been removed — both patches
+> (issues #3 and #4) are merged and those issues are closed. The Cloudflare
+> tunnel topology below is one valid shape and is what the API sidecar uses;
+> the main production node instead terminates TLS with nginx and runs
+> `docker-compose-boolean-ssl.yml` from its working-tree root. Read the compose
+> and env sections as *an* example, not as the only supported layout.
+
+
 A reproducible recipe for deploying this GA4GH Beacon v2 implementation as a public boolean-discovery service, end to end. Written from a real production deployment ([beacon.ardi.africa](https://beacon.ardi.africa), 2026-05-04) — every step, gotcha, and recovery is what actually happened.
 
 > **Generic version.** Use `<placeholders>` to substitute your own values (zone, IPs, account IDs, sample counts). For the original ARDI deployment with concrete values, see commit history of issues #3–#8.
@@ -194,10 +209,23 @@ Why `secrets.token_urlsafe`: same entropy as `openssl rand`, but URL-safe charse
 
 ## Step 5 — Clone repo, write `.env.production`, override compose
 
+> **What the repo actually ships.** There is no `.env.production` in the
+> repository — it ships `.env.example` (the documented template) and
+> `.env.boolean` is gitignored, so a fresh clone has neither populated. The
+> `.env.production` below is a file *you create* for this deployment; start
+> from `.env.example`, which is the authoritative list of variables the
+> settings modules read.
+>
+> Likewise the compose override below is specific to the tunnel topology. The
+> repo carries five compose files under `compose/`; production's own stack file
+> (`docker-compose-boolean-ssl.yml`) lives at the working-tree root on the host,
+> not under `compose/`. Do not assume a file you find under `compose/` is the
+> one a given host runs — check the host.
+
 ```bash
 ssh ubuntu@<vm-ip>
 sudo mkdir -p /opt/beacon && sudo chown ubuntu:ubuntu /opt/beacon
-git clone https://github.com/mamanambiya/afrigen-beacon-v2.git /opt/beacon
+git clone https://github.com/AfriGen-D/variant-checker-beacon.git /opt/beacon
 cd /opt/beacon
 
 # .env.production — referenced by env_file: ../.env.production in each service
@@ -336,70 +364,7 @@ If both 200, public infrastructure is live. Datasets still empty.
 
 ---
 
-## Step 8 — Apply known-required patches (until upstream merges)
-
-These two patches are required for the boolean stack to work end-to-end. Both are tracked in upstream issues:
-
-```bash
-cd /opt/beacon
-
-# Patch A — beacon_api/middleware.py: add stub QueryLogMiddleware (issue #3)
-cat | tee -a beacon_api/middleware.py >/dev/null <<'EOF'
-
-
-class QueryLogMiddleware:
-    """Pass-through stub. Settings reference this class but it was missing in the repo."""
-
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        return self.get_response(request)
-EOF
-
-# Patch B — vcf_transform/vcf_to_beacon.py:294 (issue #4)
-# variant.format() needs a tag arg per cyvcf2 API
-python3 <<'PY'
-from pathlib import Path
-p = Path('afrigend-beacon2-tools/vcf_transform/vcf_to_beacon.py')
-src = p.read_text()
-old = """            # Extract FORMAT fields
-            if hasattr(variant, 'format'):
-                format_data = variant.format()
-                if 'DP' in format_data:
-                    genotype_info['depth'] = format_data['DP'][sample_idx]
-                if 'GQ' in format_data:
-                    genotype_info['quality'] = format_data['GQ'][sample_idx]
-                if 'AD' in format_data:
-                    genotype_info['allelic_depths'] = format_data['AD'][sample_idx]"""
-new = """            # Extract FORMAT fields (cyvcf2: variant.format(tag) returns ndarray per sample)
-            for tag, key in (('DP', 'depth'), ('GQ', 'quality'), ('AD', 'allelic_depths')):
-                try:
-                    arr = variant.format(tag)
-                except KeyError:
-                    continue
-                if arr is None:
-                    continue
-                try:
-                    genotype_info[key] = arr[sample_idx].tolist() if hasattr(arr[sample_idx], 'tolist') else arr[sample_idx]
-                except (IndexError, AttributeError):
-                    pass"""
-p.write_text(src.replace(old, new))
-PY
-
-# Then rebuild the API image to pick up patch A
-sudo DOCKER_BUILDKIT=0 docker build --network=host \
-  -f Dockerfile.boolean -t beacon-api:latest .
-sudo docker stop beacon-api && sudo docker rm beacon-api
-cd /opt/beacon
-sudo docker compose -f compose/docker-compose.prod.yml -f docker-compose.override.yml up -d beacon-api
-```
-
-Once PR #7 is merged, this step goes away.
-
----
-
-## Step 9 — Data ingestion
+## Step 8 — Data ingestion
 
 ### Transfer your VCF
 
@@ -511,7 +476,7 @@ sudo docker exec beacon-mongodb mongo beacon_db --eval '
 
 ---
 
-## Step 10 — Verify
+## Step 9 — Verify
 
 ```bash
 # Test a known existing variant
@@ -548,14 +513,21 @@ Expected uncached latency: ~200 ms (3-hop laptop → CF edge → tunnel → inde
 
 ---
 
-## Known limitations / open issues at time of writing
+## Known limitations / open issues
 
-These are tracked upstream — when fixed, this tutorial gets simpler:
+Status verified 2026-08-21 against `main`, and live where the check was possible.
 
-- [#3](https://github.com/mamanambiya/afrigen-beacon-v2/issues/3) — `QueryLogMiddleware` missing → Step 8 patch A
-- [#4](https://github.com/mamanambiya/afrigen-beacon-v2/issues/4) — `vcf_to_beacon.py` `variant.format()` bug → Step 8 patch B
-- [#5](https://github.com/mamanambiya/afrigen-beacon-v2/issues/5) — mongo compose missing root creds → Step 5 still works without auth
-- [#6](https://github.com/mamanambiya/afrigen-beacon-v2/issues/6) — memory accumulation in transform + import → Step 9 uses mongoimport workaround
-- [#8](https://github.com/mamanambiya/afrigen-beacon-v2/issues/8) — `/api/datasets` empty resultSets → Step 9 service-info endpoint works correctly
+**Fixed since this tutorial was written — no longer anything to work around:**
 
-[#7](https://github.com/mamanambiya/afrigen-beacon-v2/pull/7) merges patches A and B from Step 8.
+- [#3](https://github.com/AfriGen-D/variant-checker-beacon/issues/3) — `QueryLogMiddleware` missing. Present and registered; production serves `/api/health` 200, which it could not do otherwise.
+- [#4](https://github.com/AfriGen-D/variant-checker-beacon/issues/4) — `variant.format()` called without a tag. All three calls now pass one.
+- [#8](https://github.com/AfriGen-D/variant-checker-beacon/issues/8) — `/api/datasets` empty. Live: one populated `resultSet`.
+
+These three are why the old "Step 8 — apply known-required patches" is gone.
+
+**Still open, and they affect this tutorial:**
+
+- [#5](https://github.com/AfriGen-D/variant-checker-beacon/issues/5) — `compose/docker-compose.prod.yml` has no `MONGO_INITDB_ROOT_*`. Step 5 works without auth, but do not expose that Mongo.
+- [#6](https://github.com/AfriGen-D/variant-checker-beacon/issues/6) — memory accumulation. **Partly fixed**: the VCF transform streams now, and the importer streams `.jsonl`. Still buffering: `.json` inputs in both the importer and the validator, and the validator's `.jsonl` accumulator. At production scale this is the step most likely to fail — see the issue for the four exact sites.
+- [#50](https://github.com/AfriGen-D/variant-checker-beacon/issues/50) — `GRCh37` is selectable in the UI while the beacon holds only GRCh38 data, so it answers a confident "no". If you load GRCh37 data, this stops being a problem; if you do not, expect the question.
+
