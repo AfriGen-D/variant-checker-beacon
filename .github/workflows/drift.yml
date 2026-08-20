@@ -1,0 +1,40 @@
+# Reports which beacon instances are running which release.
+#
+# Exists because on 2026-08-19 all three deployments were behind `main` and
+# nothing could say so: every instance reported only the GA4GH spec version, a
+# constant, so production and a deployment three months older returned the
+# identical string. The drift was found by hand, by accident. This makes it a
+# standing signal instead.
+name: Release drift
+
+on:
+  schedule:
+    # Daily. Drift accrues over days, not minutes — a tighter cadence would
+    # produce noise nobody reads, which is how a real alert becomes invisible.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags are needed to know what "latest" is, and a shallow clone has
+          # none of them.
+          fetch-depth: 0
+
+      - name: Unit-test the classifier before trusting its verdicts
+        run: python3 -m unittest scripts.test_drift_check
+
+      - name: Report drift
+        run: |
+          LATEST=$(git tag --sort=-creatordate | head -1)
+          if [ -z "$LATEST" ]; then
+            echo "No tags in the repository — nothing to compare against." >&2
+            exit 1
+          fi
+          python3 scripts/drift_check.py --latest "$LATEST" | tee "$GITHUB_STEP_SUMMARY"

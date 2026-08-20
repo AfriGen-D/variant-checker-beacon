@@ -1,0 +1,14 @@
+[
+  {
+    "name": "production",
+    "health_url": "https://beacon.afrigen-d.org/api/health"
+  },
+  {
+    "name": "api sidecar",
+    "health_url": "https://api-beacon.afrigen-d.dev/api/health"
+  },
+  {
+    "name": "ARDI (DDD-Africa DRC, third party)",
+    "health_url": "https://beacon.ardi.africa/api/health"
+  }
+]
