@@ -13,6 +13,7 @@ from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
 from .assembly import assembly_filter
+from .release import get_release
 from .capabilities import (
     is_dataset_scope_supported, unsupported_dataset_scope_message,
 )
@@ -838,6 +839,7 @@ def health_check(request):
     return Response({
         'status': overall,
         'version': settings.BEACON_API_VERSION,
+        'release': get_release(),
         'services': {
             'database': db_status,
             'cache': cache_status,
