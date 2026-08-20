@@ -120,6 +120,28 @@ Note the ports bind to `127.0.0.1`, not `0.0.0.0` — the stack is not reachable
 from your network. Redis is on **6380** locally to avoid colliding with any
 Redis you already run.
 
+### If Step 3 fails with "address pools have been fully subnetted"
+
+```text
+failed to create network walk_beacon-dev-network: Error response from daemon:
+all predefined address pools have been fully subnetted
+```
+
+Docker has run out of private subnets, not disk or memory. Each compose project
+claims one and they are not released until the network is removed. On a machine
+running several projects you will hit this before you hit any resource limit.
+
+Find an idle network belonging to something you own and remove it:
+
+```bash
+docker network ls
+docker network inspect <name> --format '{{.Name}}: {{len .Containers}} attached'
+docker network rm <name>          # only if 0 attached, and only if it is yours
+```
+
+Do **not** reach for `docker network prune`. It removes every unused network on
+the machine, including ones other people's stopped stacks will want back.
+
 ## Step 4 — Confirm the API is alive
 
 Give it about ten seconds after the container starts, then:
@@ -323,6 +345,38 @@ Look closely at a positive answer:
 counter reports matching *datasets* under some paths rather than matching
 variants. Do not build a client that infers absence from `numTotalResults`.
 
+## Step 9b — Ask the same question by POST
+
+Beacon v2's own request format nests the parameters. Every client that follows
+the spec sends this shape, so it is worth seeing it work:
+
+```bash
+curl -s -X POST http://localhost:8000/api/g_variants \
+  -H 'Content-Type: application/json' \
+  -d '{"query":{"requestParameters":{"assemblyId":"GRCh38","referenceName":"1","start":<POS>}}}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["responseSummary"])'
+```
+
+Substitute the `<POS>` you found in Step 7. It must return exactly what the GET
+in Step 8 returned — if POST and GET ever disagree, one of them is wrong.
+
+### Why this step exists, and what it nearly shipped
+
+Until 2026-08-20 this returned `400 Invalid characters detected in query`. The
+sanitizer stringified the nested dict before pattern-matching, and the Python
+repr's own quote matched its injection pattern — an injection verdict on
+punctuation the sanitizer introduced itself. GET was unaffected, because flat
+query strings never produce a repr, which is why nothing looked broken.
+
+Fixing that alone would have been worse than the bug. Nothing in the codebase
+read `query.requestParameters`, so once the body was let through the query
+carried no filters at all: an impossible locus returned `exists: true` with
+`numTotalResults: 100`, identical to an empty body. An honest error would have
+become a confident YES for a variant that cannot exist.
+
+Both halves shipped together. The lesson is worth more than the fix: **a change
+that unblocks a path is not safe until you check what is behind the path.**
+
 ## Step 10 — Look around the rest of the API
 
 ```bash
@@ -343,11 +397,15 @@ python3 -m unittest \
   beacon_api.test_query_semantics \
   beacon_api.test_query_injection \
   beacon_api.test_pagination_filters \
-  beacon_api.test_assembly
+  beacon_api.test_assembly \
+  beacon_api.test_query_vocabulary \
+  beacon_api.test_capabilities \
+  beacon_api.test_release \
+  beacon_api.test_request_body
 ```
 
 ```text
-Ran 144 tests in 0.001s
+Ran 200 tests in 0.002s
 
 OK
 ```

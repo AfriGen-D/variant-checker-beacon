@@ -27,6 +27,10 @@ OK
 | `test_query_injection` | 53 | NoSQL operator injection, AF privacy, IP anonymisation |
 | `test_pagination_filters` | 50 | Skip/limit, filter rejection |
 | `test_assembly` | 17 | Assembly canonicalisation |
+| `test_query_vocabulary` | 26 | variantType / datasetIds / sex — apply or refuse |
+| `test_capabilities` | 15 | Unimplemented endpoints answer 501, never "no" |
+| `test_release` | 6 | The release marker on `/api/health` |
+| `test_request_body` | 9 | Spec-shaped POST bodies reach the query |
 
 `test_middleware` is the exception — it imports Django, so it needs Python 3.9
 to 3.12. Django 4.0 imports `cgi`, removed in Python 3.13.
