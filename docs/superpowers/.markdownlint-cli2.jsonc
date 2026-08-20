@@ -1,0 +1,8 @@
+{
+  // Same rationale as docs/developers/: specs and plans carry shell commands,
+  // code blocks and a mandated plan header that cannot be hard-wrapped without
+  // corrupting copy-paste.
+  "config": {
+    "MD013": false
+  }
+}
