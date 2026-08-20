@@ -13,6 +13,9 @@ from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
 from .assembly import assembly_filter
+from .capabilities import (
+    is_dataset_scope_supported, unsupported_dataset_scope_message,
+)
 from .query_vocabulary import UnknownSex, canonical_sex, variant_type_filter
 from .query_semantics import (
     DEFAULT_MAX_VARIANT_SPAN, IncompleteRange, build_position_filter,
@@ -969,14 +972,6 @@ def _empty_query():
 @api_view(['GET'])
 @permission_classes([AllowAny])
 @cache_page(60 * 60)
-def individuals_list_boolean(request):
-    """Stub /individuals — boolean mode does not currently expose any."""
-    return Response(_empty_query())
-
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-@cache_page(60 * 60)
 def biosamples_list_boolean(request):
     """Stub /biosamples — boolean mode does not currently expose any."""
     return Response(_empty_query())
@@ -1039,7 +1034,20 @@ def dataset_detail_boolean(request, dataset_id):
 @permission_classes([AllowAny])
 @cache_page(60 * 60)
 def dataset_scoped_query_boolean(request, dataset_id, entry_type):
-    """Generic stub for /datasets/{id}/{entry_type}.
-    Returns an empty query envelope — boolean mode does not yet drill down
-    by dataset for individuals/biosamples/analyses/runs/g_variants."""
+    """/datasets/{id}/{entry_type} — 501 until per-dataset drill-down exists.
+
+    This used to return an empty query envelope: HTTP 200, exists: false, for
+    every input, cached for an hour. A dataset holding 42M variants answered
+    "not found" for a locus inside it.
+
+    "I cannot answer this" and "the answer is no" are different statements,
+    and only the first is true here — see beacon_api/capabilities.py, and the
+    comment on dataset_detail_boolean above, which records the same failure
+    reaching the Beacon Network aggregator during a MongoDB outage.
+    """
+    if not is_dataset_scope_supported(entry_type):
+        return _error_response(
+            status.HTTP_501_NOT_IMPLEMENTED,
+            unsupported_dataset_scope_message(dataset_id, entry_type),
+        )
     return Response(_empty_query())

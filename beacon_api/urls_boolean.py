@@ -29,7 +29,10 @@ urlpatterns = [
 
     # Beacon v2 entry-type list endpoints (currently empty stubs — see views_boolean.py).
     # Required by the spec verifier; clients see numTotalResults=0 until data is loaded.
-    path('individuals', views_boolean.individuals_list_boolean, name='individuals-list'),
+    # /individuals and /query/individuals are the SAME view, routed twice — not a
+    # wrapper that calls the other. A wrapper delegating to an @api_view-decorated
+    # function double-wraps the request and 500s; routing twice cannot.
+    path('individuals', views_boolean.individual_query_boolean, name='individuals-list'),
     path('biosamples', views_boolean.biosamples_list_boolean, name='biosamples-list'),
     path('analyses', views_boolean.analyses_list_boolean, name='analyses-list'),
     path('runs', views_boolean.runs_list_boolean, name='runs-list'),

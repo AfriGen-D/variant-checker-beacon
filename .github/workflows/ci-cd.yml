@@ -47,7 +47,8 @@ jobs:
             beacon_api.test_query_injection \
             beacon_api.test_pagination_filters \
             beacon_api.test_assembly \
-            beacon_api.test_query_vocabulary
+            beacon_api.test_query_vocabulary \
+            beacon_api.test_capabilities
 
       - name: Install runtime + test dependencies
         working-directory: afrigend-beacon2-tools
