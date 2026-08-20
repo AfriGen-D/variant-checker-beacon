@@ -16,7 +16,8 @@ from .assembly import assembly_filter
 from .release import get_release
 from .request_body import flatten_beacon_request
 from .capabilities import (
-    is_dataset_scope_supported, unsupported_dataset_scope_message,
+    is_assembly_served, is_dataset_scope_supported, served_assemblies,
+    unserved_assembly_message, unsupported_dataset_scope_message,
 )
 from .query_vocabulary import UnknownSex, canonical_sex, variant_type_filter
 from .query_semantics import (
@@ -165,6 +166,30 @@ def variant_query_boolean(request):
             mongo_query['alternate_bases'] = validated_params['alternateBases']
 
         if validated_params.get('assemblyId'):
+            # GRCh37 and hg19 are KNOWN assemblies: they pass validation,
+            # canonicalise correctly, and then match no stored data — so the
+            # beacon answered "exists: false" for a build it does not hold.
+            # A user reached that in two clicks from the assembly selector and
+            # got an authoritative "not in the African panel", indistinguishable
+            # from a true negative. Refuse instead. See capabilities.py.
+            #
+            # Coverage is derived from the catalogue, not hard-coded, so it
+            # stays true on its own once a GRCh37 dataset is loaded.
+            declared = Dataset.objects.distinct('assembly_id')
+            # An EMPTY catalogue is a different condition — an unconfigured or
+            # not-yet-loaded beacon, not a caller asking for the wrong build.
+            # Refusing every assembly there would swap one false signal for
+            # another, so only refuse when the beacon demonstrably holds
+            # something and this build is not it.
+            if declared:
+                served = served_assemblies(declared)
+                if not is_assembly_served(validated_params['assemblyId'], served):
+                    return _error_response(
+                        status.HTTP_501_NOT_IMPLEMENTED,
+                        unserved_assembly_message(
+                            validated_params['assemblyId'], served),
+                    )
+
             # hg38 and GRCh38 name the same build, and which spelling is
             # stored depends on the ingest run. Match every spelling of the
             # requested build rather than the caller's literal string — an

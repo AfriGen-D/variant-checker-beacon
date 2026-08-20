@@ -48,3 +48,60 @@ def unsupported_dataset_scope_message(dataset_id, entry_type):
         f'it is not a statement about whether the data is present. '
         f'Query /api/{entry_type} instead, and filter by datasetIds.'
     )
+
+# ── Assembly coverage ───────────────────────────────────────────────────────
+#
+# GRCh37 and hg19 are *known* assemblies: they pass validation, canonicalise
+# correctly, and then match no stored data — so the beacon answered
+# `exists: false` for a build it simply does not hold. A user reaches that in
+# two clicks from the UI's assembly selector and gets an authoritative
+# "not in the African panel" with no way to tell it from a true negative.
+#
+# Same defect as the dataset-scope stub above, one layer out.
+#
+# Coverage is DERIVED from the dataset catalogue rather than hard-coded, so it
+# stays true on its own: load a GRCh37 dataset and the beacon starts answering
+# for GRCh37 with no code change. Hard-coding it here would rot the first time
+# the data changed, which is exactly how the UI's selector came to offer a
+# build the beacon never held.
+
+
+def served_assemblies(declared):
+    """Canonical assemblies this beacon holds, from ``Dataset.assembly_id``."""
+    from .assembly import canonical_assembly
+
+    out = set()
+    for value in declared or ():
+        if not value:
+            continue
+        canonical = canonical_assembly(value)
+        if canonical:
+            out.add(canonical)
+    return frozenset(out)
+
+
+def is_assembly_served(assembly, served):
+    """Whether the beacon holds data for ``assembly``.
+
+    Compares canonically, so ``hg38`` is served by a dataset that spells its
+    build ``GRCh38``. An empty catalogue serves nothing — it must not
+    accidentally serve everything.
+    """
+    from .assembly import canonical_assembly
+
+    canonical = canonical_assembly(assembly)
+    return bool(canonical) and canonical in served
+
+
+def unserved_assembly_message(assembly, served):
+    """The 501 message for a build this beacon does not hold.
+
+    Says the beacon cannot answer and names what it CAN answer for. It must
+    never imply the variant is absent — that claim is the bug.
+    """
+    held = ", ".join(sorted(served)) if served else "no assemblies"
+    return (
+        f'This beacon holds no data for assembly {assembly}, so it cannot '
+        f'answer for that build. This is not a statement about whether the '
+        f'variant exists. Data held: {held}.'
+    )
