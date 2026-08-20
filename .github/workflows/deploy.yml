@@ -56,8 +56,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  API_IMAGE: ghcr.io/${{ github.repository }}/beacon-api
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/beacon-frontend
 
 jobs:
   # Validate the tag BEFORE anything checks it out or interpolates it. The tag
@@ -148,6 +146,18 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      - name: Resolve the image namespace in lowercase
+        id: img
+        # ghcr.io rejects an uppercase repository name. The org is `AfriGen-D`,
+        # and ${{ github.repository }} preserves its case, so interpolating it
+        # straight into an image tag fails with "repository name must be
+        # lowercase". Actions expressions have no lowercase function, so it is
+        # lowered here and consumed via steps.img.outputs.
+        run: |
+          NS=$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          echo "api=ghcr.io/${NS}/beacon-api" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${NS}/beacon-frontend" >> "$GITHUB_OUTPUT"
+
       - name: Build and push API image
         uses: docker/build-push-action@v5
         with:
@@ -155,8 +165,8 @@ jobs:
           file: ./Dockerfile.boolean
           push: true
           tags: |
-            ${{ env.API_IMAGE }}:${{ needs.preflight.outputs.version }}
-            ${{ env.API_IMAGE }}:latest
+            ${{ steps.img.outputs.api }}:${{ needs.preflight.outputs.version }}
+            ${{ steps.img.outputs.api }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -172,8 +182,8 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           tags: |
-            ${{ env.FRONTEND_IMAGE }}:${{ needs.preflight.outputs.version }}
-            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ steps.img.outputs.frontend }}:${{ needs.preflight.outputs.version }}
+            ${{ steps.img.outputs.frontend }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -238,7 +248,8 @@ jobs:
 
             COMPOSE="docker compose -f docker-compose.sidecar.yml"
             [ -f docker-compose.sidecar.yml ] || COMPOSE="docker compose -f docker-compose.dev.yml"
-            API="ghcr.io/${REPO}/beacon-api:${DEPLOY_VERSION}"
+            REPO_LC=$(printf '%s' "${REPO}" | tr '[:upper:]' '[:lower:]')
+            API="ghcr.io/${REPO_LC}/beacon-api:${DEPLOY_VERSION}"
 
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GH_ACTOR}" --password-stdin
             docker pull "$API" || { echo "pull failed"; exit 1; }
@@ -317,8 +328,9 @@ jobs:
             cd ~/afrigend-beacon2 || exit 1
 
             COMPOSE="docker compose -f docker-compose-boolean-ssl.yml"
-            API="ghcr.io/${REPO}/beacon-api:${DEPLOY_VERSION}"
-            FRONTEND="ghcr.io/${REPO}/beacon-frontend:${DEPLOY_VERSION}"
+            REPO_LC=$(printf '%s' "${REPO}" | tr '[:upper:]' '[:lower:]')
+            API="ghcr.io/${REPO_LC}/beacon-api:${DEPLOY_VERSION}"
+            FRONTEND="ghcr.io/${REPO_LC}/beacon-frontend:${DEPLOY_VERSION}"
 
             echo "Deploying ${DEPLOY_VERSION}"
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GH_ACTOR}" --password-stdin
