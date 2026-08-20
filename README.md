@@ -163,7 +163,7 @@ start=100000&\
 referenceBases=A&\
 alternateBases=T"
 
-# Response: {"exists": true}
+# Response: the v2 envelope; the answer is at responseSummary.exists
 ```
 
 ## Deployment Modes
