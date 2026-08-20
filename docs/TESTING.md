@@ -783,9 +783,9 @@ class TestBooleanVariantAPI(APITestCase):
 
         assert response.status_code == 200
         data = response.json()
-        assert 'response' in data
-        assert 'exists' in data['response']
-        assert isinstance(data['response']['exists'], bool)
+        assert 'responseSummary' in data
+        assert 'exists' in data['responseSummary']
+        assert isinstance(data['responseSummary']['exists'], bool)
 
         # Boolean mode should NOT return counts or records
         assert 'numTotalResults' not in data['response']
@@ -804,7 +804,7 @@ class TestBooleanVariantAPI(APITestCase):
 
         assert response.status_code == 200
         data = response.json()
-        assert data['response']['exists'] in [True, False]
+        assert data['responseSummary']['exists'] in [True, False]
 
     def test_query_with_invalid_chromosome_returns_400(self):
         response = self.client.get(
@@ -863,7 +863,7 @@ class TestSecureVariantAPI(APITestCase):
 
         assert response.status_code == 200
         data = response.json()
-        assert data['response']['exists'] == True
+        assert data['responseSummary']['exists'] == True
         assert 'numTotalResults' in data['response']
         assert 'resultSets' in data['response']
 

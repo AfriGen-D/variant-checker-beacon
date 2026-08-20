@@ -307,7 +307,12 @@ referenceBases=A&\
 alternateBases=T"
 
 # Response
-{"exists": true}
+{
+  "meta": { "beaconId": "org.afrigen-d.beacon", "apiVersion": "v2.0.0",
+            "returnedGranularity": "boolean" },
+  "responseSummary": { "exists": true, "numTotalResults": 1 },
+  "response": { "resultSets": [], "beaconHandovers": [ ... ] }
+}
 ```
 
 **Privacy Guarantees**:
@@ -1208,7 +1213,12 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 Cache-Control: public, max-age=300
 
-{"exists": true}
+{
+  "meta": { "beaconId": "org.afrigen-d.beacon", "apiVersion": "v2.0.0",
+            "returnedGranularity": "boolean" },
+  "responseSummary": { "exists": true, "numTotalResults": 1 },
+  "response": { "resultSets": [], "beaconHandovers": [ ... ] }
+}
 ```
 
 ### Performance Optimizations
@@ -2067,7 +2077,7 @@ docker exec beacon-redis redis-cli ping
 # Test variant query
 curl "http://localhost:8000/api/g_variants?referenceName=1&start=100000"
 
-# Expected: {"exists": true} or {"exists": false}
+# Expected: the v2 envelope, with responseSummary.exists true or false
 
 # Check container status
 docker ps

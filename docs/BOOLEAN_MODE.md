@@ -45,7 +45,12 @@ alternateBases=T"
 
 **Response**:
 ```json
-{"exists": true}
+{
+  "meta": { "beaconId": "org.afrigen-d.beacon", "apiVersion": "v2.0.0",
+            "returnedGranularity": "boolean" },
+  "responseSummary": { "exists": true, "numTotalResults": 1 },
+  "response": { "resultSets": [], "beaconHandovers": [ ... ] }
+}
 ```
 
 That's it! You've just queried the Beacon.
@@ -77,7 +82,12 @@ alternateBases=T"
 
 **Response**:
 ```json
-{"exists": true}
+{
+  "meta": { "beaconId": "org.afrigen-d.beacon", "apiVersion": "v2.0.0",
+            "returnedGranularity": "boolean" },
+  "responseSummary": { "exists": true, "numTotalResults": 1 },
+  "response": { "resultSets": [], "beaconHandovers": [ ... ] }
+}
 ```
 
 ### Example 2: Check Multiple Variants
@@ -87,15 +97,15 @@ Check multiple positions sequentially:
 ```bash
 # Variant 1
 curl "https://beacon.afrigen-d.org/api/g_variants?assemblyId=GRCh38&referenceName=1&start=100000"
-# Response: {"exists": true}
+# Response: responseSummary.exists == true
 
 # Variant 2
 curl "https://beacon.afrigen-d.org/api/g_variants?assemblyId=GRCh38&referenceName=1&start=200000"
-# Response: {"exists": false}
+# Response: responseSummary.exists == false
 
 # Variant 3
 curl "https://beacon.afrigen-d.org/api/g_variants?assemblyId=GRCh38&referenceName=2&start=300000"
-# Response: {"exists": true}
+# Response: responseSummary.exists == true
 ```
 
 ### Example 3: Query Chromosome X
@@ -206,7 +216,8 @@ def query_beacon(assembly, chrom, position, ref=None, alt=None):
         params["alternateBases"] = alt
 
     response = requests.get(url, params=params)
-    return response.json()["exists"]
+    # `exists` lives in responseSummary, not at the top level.
+    return response.json()["responseSummary"]["exists"]
 
 # Example usage
 if query_beacon("GRCh38", "1", 100000, "A", "T"):
@@ -244,7 +255,8 @@ async function queryBeacon(assembly, chrom, position, ref, alt) {
     const response = await fetch(url);
     const data = await response.json();
 
-    return data.exists;
+    // `exists` lives in responseSummary, not at the top level.
+    return data.responseSummary.exists;
 }
 
 // Example usage
@@ -343,7 +355,8 @@ start=${pos}&\
 referenceBases=${ref}&\
 alternateBases=${alt}")
 
-  exists=$(echo "$response" | jq -r '.exists')
+  # `exists` lives in responseSummary, not at the top level.
+  exists=$(echo "$response" | jq -r '.responseSummary.exists')
 
   if [ "$exists" == "true" ]; then
     echo "chr${chrom}:${pos} ${ref}>${alt}: FOUND"
@@ -539,7 +552,7 @@ curl "https://beacon.afrigen-d.org/api/g_variants?referenceName=1&start=100000&r
 
 **A**: Upgrade to [Secure Mode](docs/API_REFERENCE.md#authentication) for 1,000 requests/hour with authentication.
 
-### Q: Why am I getting {"exists": false} for known variants?
+### Q: Why am I getting `responseSummary.exists: false` for known variants?
 
 **A**: Possible reasons:
 - Variant not in this dataset
@@ -615,7 +628,7 @@ See [API Reference](docs/API_REFERENCE.md#authentication) for details.
 
 **Optional Parameters**: `referenceBases`, `alternateBases`, `end`
 
-**Response**: `{"exists": true}` or `{"exists": false}`
+**Response**: the Beacon v2 envelope, with the answer at `responseSummary.exists` (`true` or `false`). It is **not** a top-level `exists` key.
 
 **Rate Limit**: 50 requests/hour for queries, 1,000/hour for discovery endpoints
 

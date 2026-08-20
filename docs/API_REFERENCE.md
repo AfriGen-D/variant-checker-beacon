@@ -1655,7 +1655,12 @@ alternateBases=T"
 
 **Response**:
 ```json
-{"exists": true}
+{
+  "meta": { "beaconId": "org.afrigen-d.beacon", "apiVersion": "v2.0.0",
+            "returnedGranularity": "boolean" },
+  "responseSummary": { "exists": true, "numTotalResults": 1 },
+  "response": { "resultSets": [], "beaconHandovers": [ ... ] }
+}
 ```
 
 ---
@@ -1806,7 +1811,7 @@ result = client.query_variant(
     alternate_bases='T'
 )
 
-print(result['exists'])  # True or False
+print(result['responseSummary']['exists'])  # True or False
 
 # Secure mode with authentication
 secure_client = BeaconClient(
@@ -1890,7 +1895,7 @@ client.queryVariant({
   referenceBases: 'A',
   alternateBases: 'T'
 }).then(result => {
-  console.log(result.exists);
+  console.log(result.responseSummary.exists);
 });
 
 // Secure mode
