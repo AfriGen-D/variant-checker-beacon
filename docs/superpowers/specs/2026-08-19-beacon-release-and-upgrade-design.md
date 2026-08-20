@@ -99,9 +99,16 @@ adopters to depend on.
 
 Migration concerns, in order of risk:
 
-1. **GHCR packages may not follow a repository transfer** — unverified; the
-   packages API returned 403 (`read:packages` scope missing) so this was not
-   established and must be checked before the move. Prod currently runs
+1. **GHCR packages do NOT follow a repository transfer, and there is no
+   redirect.** Established 2026-08-20 from GitHub community discussions
+   [#57785](https://github.com/orgs/community/discussions/57785) and
+   [#176157](https://github.com/orgs/community/discussions/176157): a transfer
+   moves the repository and leaves existing images "in the individual account
+   without a repo attached to them". Pulls against the old namespace do not
+   redirect to the new one. Note the source: GitHub's own package
+   documentation does not address transfers at all, so this rests on
+   user-reported behaviour rather than an official statement — but it is
+   consistent across reports and no counter-example was found. Prod currently runs
    `ghcr.io/mamanambiya/afrigen-beacon-v2/beacon-api:v1.1.4`, and six older tags
    are cached on the host. After the transfer, new pushes go to the org path
    while old tags remain in the personal namespace. Mitigation: keep the old
@@ -201,9 +208,12 @@ successful deploy cannot be reported as a failure.
 ## Open questions
 
 1. Whether the eight Actions secrets survive the org transfer, or need re-adding.
-2. Whether existing GHCR packages can be made readable from the org namespace,
-   or whether the current version must be re-published to give rollback a target.
-3. Whether the aggregator repo is renamed in the same change or separately.
+2. Whether the aggregator repo is renamed in the same change or separately.
+
+Resolved 2026-08-20: the GHCR question above. Packages do not move and do not
+redirect, so re-publishing the current release into the org namespace is
+**required**, not optional — without it the first post-move rollback has no
+image to roll back to.
 
 ## Sequencing
 
