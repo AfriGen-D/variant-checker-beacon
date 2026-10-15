@@ -30,9 +30,11 @@ MONGO_DB="${MONGO_DB:-beacon_db}"
 ASSEMBLY="${ASSEMBLY:-GRCh38}"
 # Written into every variant's dataset_ids. The API filters per-dataset results
 # on this field, so a wrong or empty value makes every dataset answer "not
-# found" and suppresses allele frequencies entirely. Must match the id in the
-# datasets collection — production serves H3A_V6_AFR.
-DATASET_ID="${DATASET_ID:-H3A_V6_AFR}"
+# found" and suppresses allele frequencies entirely. It must match the id in the
+# datasets collection. There is deliberately NO default: this script used to
+# default to H3A_V6_AFR (the production H3Africa dataset), so a run that forgot
+# the flag silently filed someone else's data under it.
+DATASET_ID="${DATASET_ID:-}"
 TUNNEL_PORT="${TUNNEL_PORT:-27017}"
 
 # --- Parse arguments ---
@@ -56,9 +58,9 @@ Arguments:
 Options:
   --phenotypes <file>       Path to phenotype data (CSV/TSV/XLSX)
   --assembly <id>           Genome assembly (default: GRCh38)
-  --dataset-id <id>         Dataset to attribute variants to (default: H3A_V6_AFR).
-                            Must match an id in the datasets collection, or the
-                            API reports "not found" for every dataset.
+  --dataset-id <id>         REQUIRED. The dataset to attribute variants to. Must
+                            match an id in the datasets collection, or the API
+                            reports "not found" for every dataset.
   --output <dir>            Output directory (default: /cbio/users/$USER/beacon_output)
   --batch-size <n>          Processing batch size (default: 5000)
   --workers <n>             Parallel workers (default: 4)
@@ -100,6 +102,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$VCF_FILE" ]] && { echo "Error: VCF file is required"; usage; }
+[[ -z "$DATASET_ID" ]] && {
+    echo "Error: --dataset-id is required: the id the data is listed under in the" >&2
+    echo "datasets collection (for example --dataset-id MY_DATASET)." >&2
+    exit 1
+}
 
 # --- Helpers ---
 log()  { echo "[$(date '+%H:%M:%S')] $*"; }

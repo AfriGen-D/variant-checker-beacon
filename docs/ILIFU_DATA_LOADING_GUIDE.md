@@ -64,8 +64,13 @@ singularity pull beacon-tools.sif docker://ghcr.io/afrigen-d/variant-checker-bea
 # 4. Run the pipeline: the tools run from the container, so nothing is installed
 cd variant-checker-beacon
 ./scripts/run_ilifu_pipeline.sh /path/to/your_data.vcf.gz \
+    --dataset-id MY_DATASET \
     --container /cbio/users/$USER/beacon-tools.sif
 ```
+
+`--dataset-id` is required: it is the name your data is listed under (replace
+`MY_DATASET` with your own, for example `AIBST_EXOMES`). There is no default, so
+data is never filed under someone else's dataset by accident.
 
 `--container` takes a `.sif` file or a `docker://` URI (run with Singularity or
 Apptainer), or a plain Docker image name such as
@@ -78,22 +83,22 @@ first run (Step 2, Option B).
 
 ```bash
 # With phenotype data
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET \
     --phenotypes /path/to/phenotypes.csv
 
 # Transform + validate only (no MongoDB import)
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --skip-import
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET --skip-import
 
 # Custom assembly and output location
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET \
     --assembly GRCh37 \
     --output /scratch3/users/$USER/beacon_output
 
 # Preview what will happen (no execution)
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dry-run
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET --dry-run
 
 # Tune for large datasets
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET \
     --batch-size 10000 \
     --workers 4
 ```
@@ -314,14 +319,16 @@ beacon bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
 beacon python $TOOLS/vcf_transform/vcf_to_beacon.py /path/to/your_data.vcf.gz \
     --output /cbio/users/$USER/beacon_output/vcf_output \
     --assembly GRCh38 \
+    --dataset-id MY_DATASET \
     --config $TOOLS/config/settings.yaml \
     --verbose
 ```
 
-Add `--dataset-id <id>` to attribute the variants to a dataset. Without it the
-records carry an empty `dataset_ids`; `run_ilifu_pipeline.sh` instead defaults to
-`H3A_V6_AFR`, the production dataset, so pass `--dataset-id` there too whenever
-the data belongs to another dataset.
+`--dataset-id` attributes every variant to a dataset: use the name your data is
+listed under (replace `MY_DATASET`). Without it the records carry an empty
+`dataset_ids`, so no dataset lists them and dataset-scoped queries do not find
+them; the tool prints a warning if you leave it out. `run_ilifu_pipeline.sh`
+refuses to run without it.
 
 **What this produces:**
 
@@ -508,7 +515,7 @@ For large datasets that may take hours:
 tmux new -s beacon
 
 # Run pipeline inside tmux
-./scripts/run_ilifu_pipeline.sh /path/to/large.vcf.gz
+./scripts/run_ilifu_pipeline.sh /path/to/large.vcf.gz --dataset-id MY_DATASET
 
 # Detach: Ctrl+B then D
 # Re-attach later: tmux attach -t beacon
