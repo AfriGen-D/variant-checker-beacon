@@ -644,7 +644,7 @@ def beacon_info_boolean(request):
         'id': settings.BEACON_API_ID,
         'name': settings.BEACON_API_NAME,
         'apiVersion': 'v2.0.0',
-        'environment': 'prod',
+        'environment': settings.BEACON_ENVIRONMENT,
         'organization': {
             'id': settings.BEACON_ORGANIZATION_ID,
             'name': settings.BEACON_ORGANIZATION_NAME,

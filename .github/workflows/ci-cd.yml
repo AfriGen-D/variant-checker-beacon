@@ -57,6 +57,7 @@ jobs:
             beacon_api.test_query_vocabulary \
             beacon_api.test_capabilities \
             beacon_api.test_release \
+            beacon_api.test_environment \
             beacon_api.test_request_body \
             beacon_api.test_repo_hygiene \
             docs.developers.test_docs_json

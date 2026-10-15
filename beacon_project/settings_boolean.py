@@ -234,6 +234,10 @@ BEACON_ORGANIZATION_URL = config('BEACON_ORGANIZATION_URL', default='https://afr
 BEACON_CONTACT_URL = config('BEACON_CONTACT_URL', default='mailto:support@bioinformaticsinstitute.africa')
 BEACON_IMPUTATION_URL = config('BEACON_IMPUTATION_URL', default='https://fedimpute.afrigen-d.org')
 
+# Reported as `environment` by /api/info. Unset means prod; see beacon_api/environment.py.
+from beacon_api.environment import resolve_environment  # noqa: E402
+BEACON_ENVIRONMENT = resolve_environment(config('BEACON_ENVIRONMENT', default=''))
+
 # Rate limits for specific endpoints
 BEACON_RATE_LIMITS = {
     'query': config('RATELIMIT_QUERY_ENDPOINT', default='50/hour'),
