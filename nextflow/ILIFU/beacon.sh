@@ -71,8 +71,9 @@ trap cleanup EXIT
 
 # --- Load Nextflow ---
 module load nextflow 2>/dev/null || true
+: "${USER:?USER is not set; the ILIFU paths here are per-user}"
 export NXF_HOME="${HOME}/.nextflow"
-export NXF_WORK="/scratch3/users/mamana/nextflow_work/beacon"
+export NXF_WORK="/scratch3/users/${USER}/nextflow_work/beacon"
 
 # --- Run pipeline ---
 echo
@@ -89,4 +90,4 @@ nextflow run main.nf \
     "${NF_ARGS[@]}"
 
 echo
-echo "Pipeline complete. Check results at: /cbio/users/mamana/beacon_output/${DATASET}/"
+echo "Pipeline complete. Check results at: /cbio/users/${USER}/beacon_output/${DATASET}/"
