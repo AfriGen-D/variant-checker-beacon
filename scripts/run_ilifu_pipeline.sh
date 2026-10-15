@@ -19,8 +19,12 @@ set -euo pipefail
 # ──────────────────────────────────────────────────────────────────────────────
 
 # --- Configuration ---
-TOOLS_DIR="${TOOLS_DIR:-/cbio/users/mamana/afrigen-beacon-v2/afrigend-beacon2-tools}"
-OUTPUT_DIR="${OUTPUT_DIR:-/cbio/users/mamana/beacon_output}"
+# Neither default is tied to one person or one clone directory name: the tools
+# live next to this script's repository, and output goes under the caller's own
+# ILIFU home. Override either with TOOLS_DIR / OUTPUT_DIR / --output.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOLS_DIR="${TOOLS_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)/afrigend-beacon2-tools}"
+OUTPUT_DIR="${OUTPUT_DIR:-/cbio/users/${USER:-$(id -un)}/beacon_output}"
 BEACON_HOST="${BEACON_HOST:-<your-ssh-alias>}"
 MONGO_DB="${MONGO_DB:-beacon_db}"
 ASSEMBLY="${ASSEMBLY:-GRCh38}"
@@ -53,7 +57,7 @@ Options:
   --dataset-id <id>         Dataset to attribute variants to (default: H3A_V6_AFR).
                             Must match an id in the datasets collection, or the
                             API reports "not found" for every dataset.
-  --output <dir>            Output directory (default: /cbio/users/mamana/beacon_output)
+  --output <dir>            Output directory (default: /cbio/users/$USER/beacon_output)
   --batch-size <n>          Processing batch size (default: 5000)
   --workers <n>             Parallel workers (default: 4)
   --skip-import             Transform + validate only, don't import to MongoDB

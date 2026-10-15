@@ -31,7 +31,10 @@ This guide walks through transforming real H3Africa genomic data into GA4GH Beac
 
 ## Quick Start (Automated Pipeline)
 
-The fastest path — a single script handles everything:
+The fastest path — a single script handles everything. Paths in this guide use
+`$USER`, your ILIFU username, so the commands work for any user as written.
+The repository is assumed to be cloned as `variant-checker-beacon` in your
+`/cbio/users/$USER` directory (Step 2 below does this).
 
 ```bash
 # 1. SSH into ILIFU
@@ -42,7 +45,7 @@ srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=4 \
      --mem=32G --time=7-0:0:0 --nodelist=compute-[205,209] bash
 
 # 3. Run the pipeline
-cd /cbio/users/mamana/afrigen-beacon-v2
+cd /cbio/users/$USER/variant-checker-beacon
 ./scripts/run_ilifu_pipeline.sh /path/to/h3africa.vcf.gz
 ```
 
@@ -59,7 +62,7 @@ cd /cbio/users/mamana/afrigen-beacon-v2
 # Custom assembly and output location
 ./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
     --assembly GRCh37 \
-    --output /scratch3/users/mamana/beacon_output
+    --output /scratch3/users/$USER/beacon_output
 
 # Preview what will happen (no execution)
 ./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dry-run
@@ -95,7 +98,7 @@ srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=4 \
 ### Step 2: Install the Tools
 
 ```bash
-cd /cbio/users/mamana
+cd /cbio/users/$USER
 
 # Clone if not already present
 git clone https://github.com/AfriGen-D/variant-checker-beacon.git
@@ -146,7 +149,7 @@ Both methods need outbound internet from the node. If the node has none, create 
 # Common locations on ILIFU:
 ls /cbio/dbs/refpanels/          # Reference panels (H3AR3b, H3AR6x)
 ls /cbio/projects/               # Project data
-ls /cbio/users/mamana/           # Your workspace
+ls /cbio/users/$USER/           # Your workspace
 
 # Search for VCF files
 find /cbio/dbs/ -name "*.vcf.gz" -type f 2>/dev/null | head -20
@@ -161,11 +164,11 @@ bcftools query -l /path/to/file.vcf.gz | wc -l   # count samples
 ### Step 4: Transform VCF to Beacon JSON
 
 ```bash
-source /cbio/users/mamana/afrigen-beacon-v2/afrigend-beacon2-tools/.venv/bin/activate
-cd /cbio/users/mamana/afrigen-beacon-v2/afrigend-beacon2-tools
+source /cbio/users/$USER/variant-checker-beacon/afrigend-beacon2-tools/.venv/bin/activate
+cd /cbio/users/$USER/variant-checker-beacon/afrigend-beacon2-tools
 
 python vcf_transform/vcf_to_beacon.py /path/to/h3africa.vcf.gz \
-    --output /cbio/users/mamana/beacon_output/vcf_output \
+    --output /cbio/users/$USER/beacon_output/vcf_output \
     --assembly GRCh38 \
     --config config/settings.yaml \
     --verbose
@@ -200,8 +203,8 @@ If you have clinical/phenotype data (CSV/TSV/XLSX):
 
 ```bash
 python phenotype_transform/phenotype_to_beacon.py /path/to/phenotypes.csv \
-    --output /cbio/users/mamana/beacon_output/phenotype_output \
-    --individuals /cbio/users/mamana/beacon_output/vcf_output/individuals.json \
+    --output /cbio/users/$USER/beacon_output/phenotype_output \
+    --individuals /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --config config/settings.yaml \
     --verbose
 ```
@@ -224,17 +227,17 @@ The transformer auto-detects column names and normalizes them.
 ```bash
 # Validate variants (strict mode = stop on first error)
 python validation/validate_json.py \
-    /cbio/users/mamana/beacon_output/vcf_output/variants_batch.jsonl \
+    /cbio/users/$USER/beacon_output/vcf_output/variants_batch.jsonl \
     --schema-type variant --strict
 
 # Validate individuals
 python validation/validate_json.py \
-    /cbio/users/mamana/beacon_output/vcf_output/individuals.json \
+    /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --schema-type individual --strict
 
 # Validate phenotypes (if generated)
 python validation/validate_json.py \
-    /cbio/users/mamana/beacon_output/phenotype_output/phenotypes.json \
+    /cbio/users/$USER/beacon_output/phenotype_output/phenotypes.json \
     --schema-type phenotype --strict
 ```
 
@@ -261,19 +264,19 @@ MONGO_URI="mongodb://localhost:27017/"
 
 # Import variants
 python data_import/import_to_mongo.py \
-    /cbio/users/mamana/beacon_output/vcf_output/variants_batch.jsonl \
+    /cbio/users/$USER/beacon_output/vcf_output/variants_batch.jsonl \
     --db beacon_db --collection variants \
     --mongo-uri "$MONGO_URI" --verbose
 
 # Import individuals
 python data_import/import_to_mongo.py \
-    /cbio/users/mamana/beacon_output/vcf_output/individuals.json \
+    /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --db beacon_db --collection individuals \
     --mongo-uri "$MONGO_URI" --verbose
 
 # Import phenotypes (if available)
 python data_import/import_to_mongo.py \
-    /cbio/users/mamana/beacon_output/phenotype_output/phenotypes.json \
+    /cbio/users/$USER/beacon_output/phenotype_output/phenotypes.json \
     --db beacon_db --collection phenotypes \
     --mongo-uri "$MONGO_URI" --verbose
 ```
@@ -282,7 +285,7 @@ python data_import/import_to_mongo.py \
 
 ```bash
 # From ILIFU compute node:
-scp -r /cbio/users/mamana/beacon_output \
+scp -r /cbio/users/$USER/beacon_output \
     <your-ssh-alias>:~/
 
 # SSH to beacon server:
@@ -365,6 +368,31 @@ tmux new -s beacon
 ## Troubleshooting
 
 ### Common Issues
+
+**`File exists: .../afrigend-beacon2-tools/.venv` when creating the venv:**
+
+```text
+Error: [Errno 17] File exists: '.../afrigend-beacon2-tools/.venv'
+```
+
+Fix: clones made before this was fixed contain a stray `.venv` symlink that
+points at a path on a developer's laptop, so it dangles on the cluster. Check
+with `ls -l .venv`, then remove only the link with `rm .venv` (no trailing
+slash) and create the venv again. Clones made after the fix do not have it.
+
+**`ensurepip is not available` when creating the venv:**
+
+```text
+The virtual environment was not created successfully because ensurepip is not
+available.  On Debian/Ubuntu systems, you need to install the python3-venv
+package using the following command.
+
+    apt install python3.12-venv
+```
+
+Fix: `apt` is not available to you on the cluster. Remove the half-created
+`.venv` and use the `uv` or `--without-pip` method in
+[Step 2](#step-2-install-the-tools).
 
 **`cyvcf2` import error:**
 ```

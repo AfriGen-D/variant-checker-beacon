@@ -1,12 +1,20 @@
 # Python
-__pycache__/
+# No trailing slash on __pycache__, venv and .venv: a pattern ending in "/"
+# matches directories only, so a symlink with the same name (the macOS
+# ".nosync" convention) slipped past it and was committed. See
+# beacon_api/test_repo_hygiene.py.
+__pycache__
 *.py[cod]
 *$py.class
 *.so
 .Python
 env/
-venv/
+venv
+.venv
 ENV/
+
+# macOS/iCloud "keep out of sync" directories and their symlinks
+*.nosync
 build/
 develop-eggs/
 dist/
