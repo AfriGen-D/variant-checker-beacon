@@ -164,6 +164,19 @@ beacon bcftools --version | head -1
 beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
 ```
 
+**What the two "every shell session" lines do.** The tools are not installed on
+the cluster; `bcftools` and the Python scripts live inside the file
+`beacon-tools.sif`, and `singularity exec` runs a command inside it. The first
+line creates a shortcut named `beacon` so you do not type that out each time:
+`beacon bcftools --version` means `singularity exec --bind /cbio,/scratch3
+beacon-tools.sif bcftools --version` (`--bind` makes `/cbio` and `/scratch3`
+visible inside, so the tools can read your VCFs and write their output, and
+`"$@"` stands for whatever you type after `beacon`). The second line,
+`TOOLS=/opt/beacon-tools`, stores the folder inside the container where the
+scripts are, which keeps later commands short. Both are forgotten when you log
+out or start a new `srun`, so paste them again at the start of each session, or
+add them to your `~/.bashrc` to do it automatically.
+
 #### A2. Docker
 
 `DATA` is the directory that holds your VCFs and receives the output; it is
