@@ -7,6 +7,15 @@ on:
   pull_request:
     branches: [main]
 
+# Runs for one ref queue instead of overlapping. Without this, two merges to main
+# in quick succession ran side by side and the OLDER commit's run could finish
+# last and overwrite the `latest` image tags with older code (seen 2026-10-15:
+# a merged fix was not in `beacon-tools:latest`). A queued run is replaced by a
+# newer one, so the last run to push is always the newest commit.
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
 

@@ -183,6 +183,41 @@ beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
 The image is rebuilt and published from this repository's `main` branch. Pull it
 again (`singularity pull --force ...` or `docker pull ...`) to update.
 
+**A3. Build the image yourself.** Use this to change the tools, to work without
+access to `ghcr.io`, or to test a branch. You need Docker and a checkout of this
+repository. Build from the repository root, on a machine with the same CPU type
+as the machine that will run it (ILIFU is x86-64, as are most servers and Intel
+Macs):
+
+```bash
+cd variant-checker-beacon
+docker build -f nextflow/docker/Dockerfile.tools -t beacon-tools:local .
+```
+
+On an Apple Silicon Mac that plain build makes an ARM image, which will not run
+on ILIFU. Build for x86-64 instead (or build on an x86-64 Linux machine):
+
+```bash
+docker buildx build --platform linux/amd64 --load -f nextflow/docker/Dockerfile.tools -t beacon-tools:local .
+```
+
+With Docker, use `beacon-tools:local` in place of the `ghcr.io/...` name in A2, or
+pass `--container beacon-tools:local` to `run_ilifu_pipeline.sh`. ILIFU has no
+Docker, so save the image to a file, copy it across and convert it there:
+
+```bash
+# On your own machine: save the image and copy it to ILIFU.
+docker save -o beacon-tools.tar beacon-tools:local
+scp beacon-tools.tar <your-ilifu-username>@transfer.ilifu.ac.za:/cbio/users/<your-ilifu-username>/
+
+# On an ILIFU compute node: convert it to the single .sif file A1 uses.
+cd /cbio/users/$USER
+singularity build beacon-tools.sif docker-archive://beacon-tools.tar
+```
+
+Keep the archive a plain `.tar`: Singularity rejects a gzipped one with
+`invalid tar header`. From here the `beacon()` function in A1 works unchanged.
+
 **Option B: a Python environment.** Use this if you cannot run containers.
 
 ```bash
