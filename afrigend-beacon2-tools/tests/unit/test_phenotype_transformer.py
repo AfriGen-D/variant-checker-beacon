@@ -420,3 +420,92 @@ class TestDiseaseRecordDataclass:
                          disease_label="X", ontology="MONDO")
         assert r.family_history is False
         assert r.created is not None
+
+
+class TestOutputOmitsUnknownFields:
+    """Unknown optional fields are absent from the written records.
+
+    The phenotype schema types age_of_onset and severity as strings and evidence as
+    an object, none nullable, and a literal NaN is not valid JSON. A blank CSV cell
+    reaches the transformer as NaN, and a row with no evidence columns produced
+    evidence=None, so every phenotypes.json carried null and NaN until now.
+    """
+
+    def setup_method(self):
+        self.t = _make_transformer()
+
+    @staticmethod
+    def _strict(path):
+        def refuse(name):
+            raise ValueError("non-standard JSON constant %r in %s" % (name, path))
+        return json.loads(Path(path).read_text(), parse_constant=refuse)
+
+    @staticmethod
+    def _df_with_blanks():
+        return pd.DataFrame({
+            "individual_id": ["I1", "I2"],
+            "phenotype_id": ["HP:0001250", "HP:0000252"],
+            "phenotype_label": ["Seizures", "Microcephaly"],
+            "ontology": ["HPO", "HPO"],
+            "observed": [True, True],
+            "age_of_onset": ["5y", float("nan")],
+            "severity": [float("nan"), "Severe"],
+            # transform_phenotype_file reads df["disease_id"] unconditionally, so a
+            # file without that column fails; give it an all-blank one.
+            "disease_id": [float("nan"), float("nan")],
+        })
+
+    def test_phenotype_to_dict_omits_unknown_fields(self):
+        d = PhenotypeRecord(individual_id="I1", phenotype_id="HP:001",
+                            phenotype_label="X", ontology="HPO").to_dict()
+        assert None not in d.values()
+        assert d["observed"] is True and d["modifiers"] == []
+        for field in ("age_of_onset", "severity", "evidence"):
+            assert field not in d
+
+    def test_disease_to_dict_omits_unknown_fields_but_keeps_false(self):
+        d = DiseaseRecord(individual_id="I1", disease_id="MONDO:001",
+                          disease_label="X", ontology="MONDO").to_dict()
+        assert None not in d.values()
+        # False is a value, not an absence.
+        assert d["family_history"] is False
+        for field in ("age_of_onset", "stage", "notes"):
+            assert field not in d
+
+    def test_blank_cells_do_not_become_nan_in_records(self):
+        records = self.t.transform_phenotypes(self._df_with_blanks())
+        assert records[0].age_of_onset == "5y" and records[0].severity is None
+        assert records[1].age_of_onset is None and records[1].severity == "Severe"
+
+    def test_blank_disease_cells_do_not_become_nan_in_records(self):
+        df = pd.DataFrame({
+            "individual_id": ["I1"], "disease_id": ["MONDO:0005027"],
+            "disease_label": ["Epilepsy"], "ontology": ["MONDO"],
+            "age_of_onset": [float("nan")], "stage": [float("nan")],
+            "notes": [float("nan")],
+        })
+        r = self.t.transform_diseases(df)[0]
+        assert r.age_of_onset is None and r.stage is None and r.notes is None
+
+    def test_written_phenotypes_are_strict_json_without_nulls(self, tmp_path):
+        csv = tmp_path / "p.csv"
+        self._df_with_blanks().to_csv(csv, index=False)
+        self.t.transform_phenotype_file(str(csv), str(tmp_path / "out"))
+        recs = self._strict(tmp_path / "out" / "phenotypes.json")
+        assert len(recs) == 2
+        for rec in recs:
+            assert None not in rec.values(), rec
+        assert recs[0]["age_of_onset"] == "5y" and "severity" not in recs[0]
+        assert recs[1]["severity"] == "Severe" and "age_of_onset" not in recs[1]
+
+    def test_every_written_file_is_strict_json_for_the_standard_fixture(self, tmp_path):
+        fixtures = Path(__file__).resolve().parents[1] / "fixtures"
+        out = tmp_path / "out"
+        self.t.transform_phenotype_file(
+            str(fixtures / "phenotype" / "phenotypes_standard.csv"), str(out),
+            individuals_file=str(fixtures / "json" / "valid_individuals.json"))
+        for name in ("phenotypes.json", "diseases.json", "individuals_with_phenotypes.json"):
+            data = self._strict(out / name)
+            assert data, name
+        for rec in self._strict(out / "phenotypes.json") + self._strict(out / "diseases.json"):
+            assert None not in rec.values(), rec

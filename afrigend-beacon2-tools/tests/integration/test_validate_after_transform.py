@@ -64,8 +64,10 @@ class TestValidateAfterTransform:
         assert result.is_valid is True, f"Validation errors: {result.errors}"
 
     def test_phenotype_output_validates(self, tmp_path, phenotype_fixtures_dir):
-        """Phenotypes produced by phenotype transform should pass phenotype schema
-        after stripping None/NaN values (known serialization gap between transform and validator)."""
+        """The raw phenotypes.json the phenotype transform writes must pass the
+        phenotype schema as it is. (This test used to strip None/NaN itself, calling
+        it a known serialization gap, which let the transformer keep writing null
+        and the literal NaN into every phenotypes.json.)"""
         cfg = {
             "phenotypes": {"default_ontology": "HPO", "supported_formats": ["csv"]},
             "processing": {"batch_size": 100, "show_progress": False, "log_level": "WARNING"},
@@ -80,24 +82,18 @@ class TestValidateAfterTransform:
             str(tmp_path / "pheno_out"),
         )
 
-        # Strip None/NaN from output (import pipeline would do this)
-        raw = json.loads((tmp_path / "pheno_out" / "phenotypes.json").read_text())
-        cleaned = [
-            {k: v for k, v in rec.items() if v is not None and not (isinstance(v, float) and v != v)}
-            for rec in raw
-        ]
-        clean_path = tmp_path / "pheno_out" / "phenotypes_clean.json"
-        clean_path.write_text(json.dumps(cleaned))
-
         vcfg = {"validation": {"strict_mode": False}, "processing": {"log_level": "WARNING"}}
         with patch.object(BeaconValidator, "_load_config", return_value=vcfg):
             validator = BeaconValidator()
-        result = validator.validate_json_file(str(clean_path), schema_type="phenotype")
+        # The file exactly as written, with no cleaning in between.
+        result = validator.validate_json_file(str(tmp_path / "pheno_out" / "phenotypes.json"), schema_type="phenotype")
         assert result.is_valid is True, f"Validation errors: {result.errors}"
 
     def test_individuals_output_validates(self, tmp_path):
-        """Individual records should pass individual schema
-        after stripping None values from optional fields."""
+        """The raw individuals.json a run without --metadata writes must pass
+        the individual schema as it is. (This test used to strip the None values
+        itself before validating, which hid that the transformer wrote
+        sex/ethnicity/geographic_origin/age as null for every such run.)"""
         cfg = {
             "vcf": {"default_assembly": "GRCh38", "quality_filters": {"min_qual": 0, "min_depth": 0}},
             "processing": {"batch_size": 100, "show_progress": False, "log_level": "WARNING"},
@@ -112,14 +108,9 @@ class TestValidateAfterTransform:
         with patch("vcf_transform.vcf_to_beacon.cyvcf2.VCF", return_value=mock_vcf):
             t.transform_vcf_to_beacon("fake.vcf", str(out))
 
-        # Strip None values from output
-        raw = json.loads((out / "individuals.json").read_text())
-        cleaned = [{k: v for k, v in rec.items() if v is not None} for rec in raw]
-        clean_path = out / "individuals_clean.json"
-        clean_path.write_text(json.dumps(cleaned))
-
         vcfg = {"validation": {"strict_mode": False}, "processing": {"log_level": "WARNING"}}
         with patch.object(BeaconValidator, "_load_config", return_value=vcfg):
             validator = BeaconValidator()
-        result = validator.validate_json_file(str(clean_path), schema_type="individual")
+        # The file exactly as written, with no cleaning in between.
+        result = validator.validate_json_file(str(out / "individuals.json"), schema_type="individual")
         assert result.is_valid is True, f"Validation errors: {result.errors}"

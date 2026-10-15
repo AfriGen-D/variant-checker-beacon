@@ -79,6 +79,29 @@ class IndividualRecord:
         if self.phenotypic_features is None:
             self.phenotypic_features = {}
 
+    def to_dict(self) -> Dict:
+        """The record as written to individuals.json, without unknown fields.
+
+        The individual schema types sex, ethnicity and geographic_origin as
+        strings and age as an integer, none of them nullable, so an unknown
+        value has to be absent rather than null.
+        """
+        return {k: v for k, v in asdict(self).items() if v is not None}
+
+
+def _is_missing(value) -> bool:
+    """True for the values a metadata file uses to say "unknown".
+
+    None, NaN/NA (what pandas reads a blank CSV or XLSX cell as) and blank
+    strings. NaN would otherwise be written out as the literal ``NaN``, which is
+    not valid JSON.
+    """
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    return bool(pd.api.types.is_scalar(value) and pd.isna(value))
+
 
 class VCFTransformer:
     """Main class for transforming VCF files to Beacon v2format."""
@@ -766,12 +789,24 @@ class VCFTransformer:
             for sample_id in samples:
                 individual_data = metadata.get(sample_id, {})
                 
+                def known(field):
+                    value = individual_data.get(field)
+                    return None if _is_missing(value) else value
+
+                # pandas reads an age column with a blank cell as float, and as
+                # numpy integers otherwise; the schema wants an integer.
+                age = known('age')
+                if pd.api.types.is_integer(age) or (
+                    isinstance(age, float) and age.is_integer()
+                ):
+                    age = int(age)
+
                 individual = IndividualRecord(
                     id=sample_id,
-                    sex=individual_data.get('sex'),
-                    ethnicity=individual_data.get('ethnicity'),
-                    geographic_origin=individual_data.get('geographic_origin'),
-                    age=individual_data.get('age')
+                    sex=known('sex'),
+                    ethnicity=known('ethnicity'),
+                    geographic_origin=known('geographic_origin'),
+                    age=age
                 )
                 
                 individuals.append(individual)
@@ -835,7 +870,7 @@ class VCFTransformer:
 
         # Create individuals list from VCF header (no genotype data)
         individuals = self.create_individuals_from_vcf(vcf_path, metadata_file)
-        self._write_json_file([asdict(ind) for ind in individuals], output_path / "individuals.json")
+        self._write_json_file([ind.to_dict() for ind in individuals], output_path / "individuals.json")
 
         # Write empty genotypes file (placeholder for Secure mode later)
         self._write_json_file([], output_path / "variant_genotypes.json")
