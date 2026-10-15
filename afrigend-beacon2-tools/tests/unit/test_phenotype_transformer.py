@@ -567,3 +567,56 @@ class TestFilesWithOnlyOneKindOfData:
         self.t.transform_phenotype_file(str(fixtures / "phenotypes_standard.csv"), str(out))
         assert json.loads((out / "phenotypes.json").read_text())
         assert json.loads((out / "diseases.json").read_text())
+
+
+# ===================================================================
+# TestOntologyAvailability
+# ===================================================================
+
+class TestOntologyAvailability:
+    """An ontology that cannot be loaded must be visible, not silently skipped."""
+
+    def test_mondo_source_is_the_canonical_obo_address(self):
+        # The raw.githubusercontent master path returns 404; the OBO purl is stable.
+        mgr = OntologyManager({})
+        assert mgr._get_ontology_path("MONDO") == "https://purl.obolibrary.org/obo/mondo.obo"
+
+    def test_failed_load_is_remembered_and_not_retried(self):
+        mgr = OntologyManager({})
+        with patch("phenotype_transform.phenotype_to_beacon.pronto.Ontology",
+                   side_effect=OSError("HTTP Error 404")) as ont:
+            assert mgr.load_ontology("MONDO") is None
+            assert mgr.load_ontology("MONDO") is None
+            assert mgr.load_ontology("MONDO") is None
+        assert ont.call_count == 1  # one download attempt, not one per disease row
+        assert mgr.unavailable() == ["MONDO"]
+
+    def test_available_ontology_is_not_reported_unavailable(self):
+        mgr = OntologyManager({})
+        with patch("phenotype_transform.phenotype_to_beacon.pronto.Ontology",
+                   return_value=MagicMock()):
+            assert mgr.load_ontology("HPO") is not None
+        assert mgr.unavailable() == []
+
+    def test_summary_names_the_unavailable_ontologies(self, tmp_path):
+        t = _make_transformer()
+        t.ontology_manager.lookup_term = MagicMock(return_value=None)
+        t.ontology_manager._failed.add("MONDO")
+        csv = tmp_path / "d.csv"
+        pd.DataFrame({
+            "individual_id": ["I1"], "disease_id": ["MONDO:0005027"],
+            "disease_label": ["Epilepsy"], "ontology": ["MONDO"],
+        }).to_csv(csv, index=False)
+        out = tmp_path / "out"
+        t.transform_phenotype_file(str(csv), str(out))
+        summary = json.loads((out / "phenotype_transformation_summary.json").read_text())
+        assert summary["ontologies_unavailable"] == ["MONDO"]
+
+    def test_summary_lists_none_when_all_loaded(self, tmp_path):
+        t = _make_transformer()
+        csv = tmp_path / "p.csv"
+        _standard_df().to_csv(csv, index=False)
+        out = tmp_path / "out"
+        t.transform_phenotype_file(str(csv), str(out))
+        summary = json.loads((out / "phenotype_transformation_summary.json").read_text())
+        assert summary["ontologies_unavailable"] == []
