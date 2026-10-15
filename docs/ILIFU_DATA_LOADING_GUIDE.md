@@ -24,10 +24,22 @@ This guide walks through transforming real H3Africa genomic data into GA4GH Beac
 
 | Requirement | Details |
 |---|---|
-| ILIFU SSH access | `ssh slurm.ilifu.ac.za` |
+| ILIFU SSH access | `ssh <your-ilifu-username>@slurm.ilifu.ac.za` (or the `ilifu` alias below) |
 | Beacon server SSH | `ssh <your-ssh-alias>` |
-| Python 3.9+ | Available on ILIFU compute nodes |
+| Container runtime | Singularity/Apptainer on ILIFU (Option A in Step 2), or Python 3.9+ (Option B) |
 | VCF data | `.vcf.gz` files in `/cbio/dbs/` or `/cbio/projects/` |
+
+Your ILIFU username is the one you were given when your account was created; it
+is not necessarily the username on your own computer. To avoid typing it every
+time, add an alias to `~/.ssh/config` on your own computer, once:
+
+```text
+Host ilifu
+    HostName slurm.ilifu.ac.za
+    User <your-ilifu-username>
+```
+
+Then `ssh ilifu` is the same as `ssh <your-ilifu-username>@slurm.ilifu.ac.za`.
 
 ## Quick Start (Automated Pipeline)
 
@@ -37,17 +49,30 @@ The repository is assumed to be cloned as `variant-checker-beacon` in your
 `/cbio/users/$USER` directory (Step 2 below does this).
 
 ```bash
-# 1. SSH into ILIFU
-ssh slurm.ilifu.ac.za
+# 1. SSH into ILIFU (from your own computer)
+ssh <your-ilifu-username>@slurm.ilifu.ac.za   # or: ssh ilifu
 
 # 2. Get a compute node (NEVER run on login node)
 srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=4 \
      --mem=32G --time=7-0:0:0 --nodelist=compute-[205,209] bash
 
-# 3. Run the pipeline
-cd /cbio/users/$USER/variant-checker-beacon
-./scripts/run_ilifu_pipeline.sh /path/to/h3africa.vcf.gz
+# 3. Get the repository and the tools image (once)
+cd /cbio/users/$USER
+git clone https://github.com/AfriGen-D/variant-checker-beacon.git
+singularity pull beacon-tools.sif docker://ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
+
+# 4. Run the pipeline: the tools run from the container, so nothing is installed
+cd variant-checker-beacon
+./scripts/run_ilifu_pipeline.sh /path/to/h3africa.vcf.gz \
+    --container /cbio/users/$USER/beacon-tools.sif
 ```
+
+`--container` takes a `.sif` file or a `docker://` URI (run with Singularity or
+Apptainer), or a plain Docker image name such as
+`ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest` (run with Docker,
+on a server or workstation). `--runtime` overrides the choice. Without
+`--container` the script uses a Python environment instead and creates it on the
+first run (Step 2, Option B).
 
 ### Pipeline Options
 
@@ -80,7 +105,7 @@ If you prefer to run each step individually for more control.
 ### Step 1: Get a Compute Node
 
 ```bash
-ssh slurm.ilifu.ac.za
+ssh <your-ilifu-username>@slurm.ilifu.ac.za   # or: ssh ilifu
 
 # Request interactive session with resources for VCF processing
 srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=4 \
@@ -97,12 +122,71 @@ srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=4 \
 
 ### Step 2: Install the Tools
 
+First get the repository, which holds the scripts and the tools' configuration:
+
 ```bash
 cd /cbio/users/$USER
 
 # Clone if not already present
 git clone https://github.com/AfriGen-D/variant-checker-beacon.git
-cd variant-checker-beacon/afrigend-beacon2-tools
+```
+
+Then choose a route. Each one ends by defining a small shell function `beacon`,
+which runs a program in the right place, and the variable `$TOOLS`, which says
+where the tools live. Every later step is written with them, so the commands are
+the same whichever route you choose (a function rather than a variable, so it
+behaves the same in bash and zsh). Define them again in each new shell session,
+or put the lines in your `~/.bashrc`.
+
+**Option A (recommended): a container.** Nothing to install or reinstall: the
+image carries Python, every library, `cyvcf2` and `bcftools`. Use Singularity on
+ILIFU (A1) or Docker on a server or workstation where you have it (A2).
+
+**A1. Singularity/Apptainer (ILIFU).** On a node where the command is
+`apptainer`, use that instead; the options are the same. `/cbio` and `/scratch3`
+are bound so your data is visible inside.
+
+```bash
+cd /cbio/users/$USER
+
+# Once: pull the image into a single .sif file in your own space.
+singularity pull beacon-tools.sif docker://ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
+
+# In every shell session:
+beacon() { singularity exec --bind /cbio,/scratch3 "/cbio/users/$USER/beacon-tools.sif" "$@"; }
+TOOLS=/opt/beacon-tools
+
+# Verify installation
+beacon bcftools --version | head -1
+beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
+```
+
+**A2. Docker.** `DATA` is the directory that holds your VCFs and receives the
+output; it is mounted at the same path inside the container. Replace
+`/cbio/users/$USER` in the later steps with it. `--network host` lets the
+container reach the SSH tunnel to MongoDB in Step 7 on Linux.
+
+```bash
+# Once: pull the image.
+docker pull ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
+
+# In every shell session:
+DATA=$HOME/beacon_data
+beacon() { docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$DATA:$DATA" -w "$DATA" --entrypoint= ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest "$@"; }
+TOOLS=/opt/beacon-tools
+
+# Verify installation
+beacon bcftools --version | head -1
+beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
+```
+
+The image is rebuilt and published from this repository's `main` branch. Pull it
+again (`singularity pull --force ...` or `docker pull ...`) to update.
+
+**Option B: a Python environment.** Use this if you cannot run containers.
+
+```bash
+cd /cbio/users/$USER/variant-checker-beacon/afrigend-beacon2-tools
 
 # Create virtual environment
 python3 -m venv .venv
@@ -114,13 +198,17 @@ source .venv/bin/activate
 pip install --upgrade pip "setuptools<70" wheel
 pip install --only-binary=:all: -r requirements-runtime.txt
 
+# The function and variable every later step uses
+beacon() { "$@"; }
+TOOLS=$PWD
+
 # Verify installation
-python vcf_transform/vcf_to_beacon.py --help
-python validation/validate_json.py --help
-python data_import/import_to_mongo.py --help
+python $TOOLS/vcf_transform/vcf_to_beacon.py --help
+python $TOOLS/validation/validate_json.py --help
+python $TOOLS/data_import/import_to_mongo.py --help
 ```
 
-**Troubleshooting installs:**
+**Troubleshooting a Python environment (Option B):**
 - `cyvcf2` is installed as a prebuilt wheel that bundles htslib, so you do not
   need htslib, a compiler or root. If no wheel exists for your Python, pip
   stops with `No matching distribution` instead of trying to compile.
@@ -162,22 +250,37 @@ ls /cbio/users/$USER/           # Your workspace
 find /cbio/dbs/ -name "*.vcf.gz" -type f 2>/dev/null | head -20
 find /cbio/projects/ -name "*.vcf.gz" -type f 2>/dev/null | head -20
 
-# Check a VCF file header to confirm assembly and samples
-module load bcftools  # if available
-bcftools view -h /path/to/file.vcf.gz | head -30
-bcftools query -l /path/to/file.vcf.gz | wc -l   # count samples
+# Check a VCF file header to confirm assembly and samples.
+# bcftools is inside the container; with a Python environment (Option B) run
+# `module load bcftools` first.
+beacon bcftools view -h /path/to/file.vcf.gz | head -30
+beacon bcftools query -l /path/to/file.vcf.gz | wc -l   # count samples
+```
+
+**Use bcftools to inspect and prepare the VCF before transforming it.** It is
+far faster than Python on large files, and a small test slice lets you check the
+whole pipeline in minutes before committing to a full run:
+
+```bash
+# Contigs the file uses, with their variant counts (needs a .tbi/.csi index)
+beacon bcftools index -s /path/to/file.vcf.gz
+
+# Create the index if the file has none
+beacon bcftools index -t /path/to/file.vcf.gz
+
+# A small test slice: one region, PASS variants only, compressed and indexed
+beacon bcftools view -f PASS -r 22:16000000-17000000 /path/to/file.vcf.gz \
+    -Oz -o /cbio/users/$USER/test_slice.vcf.gz
+beacon bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
 ```
 
 ### Step 4: Transform VCF to Beacon JSON
 
 ```bash
-source /cbio/users/$USER/variant-checker-beacon/afrigend-beacon2-tools/.venv/bin/activate
-cd /cbio/users/$USER/variant-checker-beacon/afrigend-beacon2-tools
-
-python vcf_transform/vcf_to_beacon.py /path/to/h3africa.vcf.gz \
+beacon python $TOOLS/vcf_transform/vcf_to_beacon.py /path/to/h3africa.vcf.gz \
     --output /cbio/users/$USER/beacon_output/vcf_output \
     --assembly GRCh38 \
-    --config config/settings.yaml \
+    --config $TOOLS/config/settings.yaml \
     --verbose
 ```
 
@@ -209,10 +312,10 @@ Note: `start` uses 0-based coordinates (VCF POS is 1-based, so `start = POS - 1`
 If you have clinical/phenotype data (CSV/TSV/XLSX):
 
 ```bash
-python phenotype_transform/phenotype_to_beacon.py /path/to/phenotypes.csv \
+beacon python $TOOLS/phenotype_transform/phenotype_to_beacon.py /path/to/phenotypes.csv \
     --output /cbio/users/$USER/beacon_output/phenotype_output \
     --individuals /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
-    --config config/settings.yaml \
+    --config $TOOLS/config/settings.yaml \
     --verbose
 ```
 
@@ -233,17 +336,17 @@ The transformer auto-detects column names and normalizes them.
 
 ```bash
 # Validate variants (strict mode = stop on first error)
-python validation/validate_json.py \
+beacon python $TOOLS/validation/validate_json.py \
     /cbio/users/$USER/beacon_output/vcf_output/variants_batch.jsonl \
     --schema-type variant --strict
 
 # Validate individuals
-python validation/validate_json.py \
+beacon python $TOOLS/validation/validate_json.py \
     /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --schema-type individual --strict
 
 # Validate phenotypes (if generated)
-python validation/validate_json.py \
+beacon python $TOOLS/validation/validate_json.py \
     /cbio/users/$USER/beacon_output/phenotype_output/phenotypes.json \
     --schema-type phenotype --strict
 ```
@@ -270,19 +373,19 @@ nc -z localhost 27017 && echo "Tunnel OK" || echo "Tunnel FAILED"
 MONGO_URI="mongodb://localhost:27017/"
 
 # Import variants
-python data_import/import_to_mongo.py \
+beacon python $TOOLS/data_import/import_to_mongo.py \
     /cbio/users/$USER/beacon_output/vcf_output/variants_batch.jsonl \
     --db beacon_db --collection variants \
     --mongo-uri "$MONGO_URI" --verbose
 
 # Import individuals
-python data_import/import_to_mongo.py \
+beacon python $TOOLS/data_import/import_to_mongo.py \
     /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --db beacon_db --collection individuals \
     --mongo-uri "$MONGO_URI" --verbose
 
 # Import phenotypes (if available)
-python data_import/import_to_mongo.py \
+beacon python $TOOLS/data_import/import_to_mongo.py \
     /cbio/users/$USER/beacon_output/phenotype_output/phenotypes.json \
     --db beacon_db --collection phenotypes \
     --mongo-uri "$MONGO_URI" --verbose
