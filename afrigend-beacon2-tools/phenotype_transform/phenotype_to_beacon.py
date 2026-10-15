@@ -338,6 +338,9 @@ class PhenotypeTransformer:
         phenotype_records = []
         
         # Filter rows that have phenotype information
+        # Likewise a diseases-only file has no phenotype_id column.
+        if 'phenotype_id' not in df.columns:
+            return phenotype_records
         phenotype_df = df[df['phenotype_id'].notna()]
         
         for _, row in tqdm(phenotype_df.iterrows(), 
@@ -386,6 +389,10 @@ class PhenotypeTransformer:
         disease_records = []
         
         # Filter rows that have disease information
+        # A file may carry phenotypes only; with no disease_id column there are
+        # no diseases, rather than a KeyError.
+        if 'disease_id' not in df.columns:
+            return disease_records
         disease_df = df[df['disease_id'].notna()]
         
         for _, row in tqdm(disease_df.iterrows(), 
