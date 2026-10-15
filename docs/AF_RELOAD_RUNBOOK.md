@@ -20,28 +20,33 @@ multi-allelic tuple handling. No `bcftools +fill-tags` recompute is required.
 
 ## Step 0 — Validate the fix on real data (gate)
 
-Run the prepared check inside the tools container (no Mongo, no pipeline):
+Run the check inside the tools container (no Mongo, no pipeline). It calls the
+transformer's own extraction, so it tests the code that will actually run:
 
 ```bash
-SIF=$(find /cbio/users/mamana -name 'beacon-tools*.sif' 2>/dev/null | head -1)
-singularity exec "$SIF" python /cbio/users/mamana/validate_af_extraction.py
+cd /cbio/users/$USER
+singularity pull --force beacon-tools.sif docker://ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
+VCF=/cbio/dbs/refpanels/h3a_reference_panels/version_6/v6hc_s_african/V6HC-S_AFR/vcfs/V6HC-S_AFR_chr1_all.vcf.gz
+singularity exec --bind /cbio beacon-tools.sif \
+    python /opt/beacon-tools/validation/validate_af_extraction.py "$VCF"
 ```
 
-Proceed only if it reports `1000/1000 … non-null allele_frequency`.
+Proceed only if it reports `1000/1000 … non-null allele_frequency` and `PASS`
+(exit status 0). It exits 1 if any record lacks a frequency, or if it read no
+records at all.
 
 ## Step 1 — Get the fixed transform into the pipeline
 
-The transform is **baked into `beacon-tools.sif`** (`tools_base=/opt/beacon-tools`),
-so one of:
+The transform is **baked into `beacon-tools.sif`** (`tools_base=/opt/beacon-tools`).
+The allele-frequency fix is on `main` (merged in #14, 2026-08-05) and in the
+published image, so there is nothing to rebuild: the `singularity pull --force`
+in Step 0 already fetched it. To use a different build instead, one of:
 
-- **Rebuild the container** from `nextflow/docker/Dockerfile.tools` with the fixed
-  `afrigend-beacon2-tools/vcf_transform/vcf_to_beacon.py`, OR
-- **Override `tools_base`** to a `/cbio` checkout that contains the fixed transform
+- **Build the image yourself** from `nextflow/docker/Dockerfile.tools`
+  (see Option A3 in `docs/ILIFU_DATA_LOADING_GUIDE.md`), OR
+- **Override `tools_base`** to a `/cbio` checkout that contains the transform
   (works because `singularity.autoMounts = true` bind-mounts `/cbio`). Verify the
   checkout's other tools match the container's expectations.
-
-The fix currently lives only on local branch `feat/allele-frequency` (uncommitted,
-entangled with WIP) — land/commit it first so there's a clean source.
 
 ## Step 2 — Single-chromosome dry run (transform only, no Mongo)
 
