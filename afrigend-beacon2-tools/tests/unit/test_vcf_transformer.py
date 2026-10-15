@@ -826,6 +826,75 @@ class TestTransformVcfToBeacon:
         data = json.loads(ind_file.read_text())
         assert len(data) == 2
 
+    # -- unknown optional fields are omitted, never written as null or NaN --
+    #
+    # The individual schema types sex/ethnicity/geographic_origin as strings and
+    # age as an integer, none nullable. A run without --metadata used to write
+    # all four as null, so `validate_json.py --schema-type individual` (and the
+    # pipeline script's own validation step) failed for every such run.
+
+    @staticmethod
+    def _run_individuals(transformer, out, samples, metadata_file=None):
+        mock_vcf = MagicMock()
+        mock_vcf.samples = samples
+        mock_vcf.__iter__ = MagicMock(return_value=iter([]))
+        with patch("vcf_transform.vcf_to_beacon.cyvcf2.VCF", return_value=mock_vcf):
+            transformer.transform_vcf_to_beacon(
+                "fake.vcf", str(out), metadata_file=metadata_file)
+        return out / "individuals.json"
+
+    @staticmethod
+    def _strict_json(path):
+        """Parse like a strict consumer: NaN and Infinity are not valid JSON."""
+        def refuse(name):
+            raise ValueError("non-standard JSON constant %r in %s" % (name, path))
+        return json.loads(path.read_text(), parse_constant=refuse)
+
+    def test_no_metadata_omits_unknown_fields(self, tmp_path):
+        path = self._run_individuals(self.t, tmp_path / "out", ["S1", "S2"])
+        data = self._strict_json(path)
+        for rec in data:
+            assert None not in rec.values(), rec
+            for field in ("sex", "ethnicity", "geographic_origin", "age"):
+                assert field not in rec, (field, rec)
+        assert [r["id"] for r in data] == ["S1", "S2"]
+
+    def test_unknown_fields_do_not_drop_the_known_ones(self, tmp_path):
+        data = self._strict_json(
+            self._run_individuals(self.t, tmp_path / "out", ["S1"]))
+        rec = data[0]
+        assert rec["diseases"] == {} and rec["phenotypic_features"] == {}
+        assert rec["created"] and rec["updated"]
+
+    def test_blank_metadata_cells_are_omitted_not_nan(self, tmp_path):
+        meta = tmp_path / "meta.csv"
+        meta.write_text(
+            "sample_id,sex,ethnicity,geographic_origin,age\n"
+            "S1,MALE,Yoruba,Nigeria,30\n"
+            "S2,,Zulu,South Africa,\n")
+        path = self._run_individuals(
+            self.t, tmp_path / "out", ["S1", "S2", "S3"], str(meta))
+        by_id = {r["id"]: r for r in self._strict_json(path)}
+        assert by_id["S2"]["ethnicity"] == "Zulu"
+        assert "sex" not in by_id["S2"] and "age" not in by_id["S2"]
+        # S3 has no metadata row at all.
+        assert not {"sex", "ethnicity", "geographic_origin", "age"} & set(by_id["S3"])
+
+    def test_metadata_values_are_kept_and_age_is_an_integer(self, tmp_path):
+        # A blank age elsewhere in the column makes pandas read the whole column
+        # as float, which would turn 30 into 30.0.
+        meta = tmp_path / "meta.csv"
+        meta.write_text(
+            "sample_id,sex,ethnicity,geographic_origin,age\n"
+            "S1,MALE,Yoruba,Nigeria,30\n"
+            "S2,FEMALE,Zulu,South Africa,\n")
+        path = self._run_individuals(
+            self.t, tmp_path / "out", ["S1", "S2"], str(meta))
+        s1 = {r["id"]: r for r in self._strict_json(path)}["S1"]
+        assert s1["sex"] == "MALE" and s1["ethnicity"] == "Yoruba"
+        assert s1["age"] == 30 and isinstance(s1["age"], int)
+        assert not isinstance(s1["age"], bool)
+
     def test_empty_vcf_produces_empty_output(self, tmp_path):
         out = tmp_path / "out"
         mock_vcf = MagicMock()

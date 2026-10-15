@@ -25,6 +25,20 @@ import pronto
 sys.path.append(str(Path(__file__).parent.parent))
 
 
+def _known(value):
+    """None for what a CSV or XLSX uses to say "unknown": None, NaN or a blank cell.
+
+    pandas reads a blank cell as NaN, which would otherwise be written out as the
+    literal ``NaN``, which is not valid JSON. (vcf_transform has the same helper;
+    these scripts are run standalone, so each carries its own copy.)
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value if value.strip() else None
+    return None if (pd.api.types.is_scalar(value) and pd.isna(value)) else value
+
+
 @dataclass
 class PhenotypeRecord:
     """Data class for phenotype record."""
@@ -48,6 +62,15 @@ class PhenotypeRecord:
         if self.modifiers is None:
             self.modifiers = []
 
+    def to_dict(self) -> Dict:
+        """The record as written to the output file, without unknown fields.
+
+        The schemas type these fields as non-nullable (strings, an object), so an
+        unknown value has to be absent rather than null. False is kept: it is a
+        value, not an absence.
+        """
+        return {k: v for k, v in asdict(self).items() if v is not None}
+
 
 @dataclass
 class DiseaseRecord:
@@ -68,6 +91,15 @@ class DiseaseRecord:
             self.created = datetime.now().isoformat()
         if self.updated is None:
             self.updated = datetime.now().isoformat()
+
+    def to_dict(self) -> Dict:
+        """The record as written to the output file, without unknown fields.
+
+        The schemas type these fields as non-nullable (strings, an object), so an
+        unknown value has to be absent rather than null. False is kept: it is a
+        value, not an absence.
+        """
+        return {k: v for k, v in asdict(self).items() if v is not None}
 
 
 class OntologyManager:
@@ -334,8 +366,8 @@ class PhenotypeTransformer:
                     phenotype_label=phenotype_label,
                     ontology=ontology,
                     observed=bool(row.get('observed', True)),
-                    age_of_onset=row.get('age_of_onset'),
-                    severity=row.get('severity'),
+                    age_of_onset=_known(row.get('age_of_onset')),
+                    severity=_known(row.get('severity')),
                     modifiers=self._parse_list_field(row.get('modifiers')),
                     evidence=self._create_evidence_dict(row)
                 )
@@ -381,10 +413,10 @@ class PhenotypeTransformer:
                     disease_id=disease_id,
                     disease_label=disease_label,
                     ontology=ontology,
-                    age_of_onset=row.get('age_of_onset'),
-                    stage=row.get('stage'),
+                    age_of_onset=_known(row.get('age_of_onset')),
+                    stage=_known(row.get('stage')),
                     family_history=bool(row.get('family_history', False)),
-                    notes=row.get('notes')
+                    notes=_known(row.get('notes'))
                 )
                 
                 disease_records.append(disease_record)
@@ -434,13 +466,13 @@ class PhenotypeTransformer:
         for phenotype in phenotypes:
             if phenotype.individual_id not in phenotype_map:
                 phenotype_map[phenotype.individual_id] = []
-            phenotype_map[phenotype.individual_id].append(asdict(phenotype))
+            phenotype_map[phenotype.individual_id].append(phenotype.to_dict())
 
         disease_map = {}
         for disease in diseases:
             if disease.individual_id not in disease_map:
                 disease_map[disease.individual_id] = []
-            disease_map[disease.individual_id].append(asdict(disease))
+            disease_map[disease.individual_id].append(disease.to_dict())
 
         # Update individuals
         updated_individuals = []
@@ -477,8 +509,8 @@ class PhenotypeTransformer:
         diseases = self.transform_diseases(df)
         
         # Convert to dictionaries
-        phenotype_dicts = [asdict(p) for p in phenotypes]
-        disease_dicts = [asdict(d) for d in diseases]
+        phenotype_dicts = [p.to_dict() for p in phenotypes]
+        disease_dicts = [d.to_dict() for d in diseases]
         
         # Update individuals if provided
         updated_individuals = []
