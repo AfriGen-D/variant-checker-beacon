@@ -35,6 +35,8 @@ ASSEMBLY="${ASSEMBLY:-GRCh38}"
 # default to H3A_V6_AFR (the production H3Africa dataset), so a run that forgot
 # the flag silently filed someone else's data under it.
 DATASET_ID="${DATASET_ID:-}"
+DATASET_FILE="${DATASET_FILE:-}"   # dataset.yaml: id, name, description, ...
+DATASET_RESOLVED=false
 TUNNEL_PORT="${TUNNEL_PORT:-27017}"
 
 # --- Parse arguments ---
@@ -58,8 +60,12 @@ Arguments:
 Options:
   --phenotypes <file>       Path to phenotype data (CSV/TSV/XLSX)
   --assembly <id>           Genome assembly (default: GRCh38)
-  --dataset-id <id>         REQUIRED. The dataset to attribute variants to. Must
-                            match an id in the datasets collection, or the API
+  --dataset-file <file>     A dataset.yaml (id, name, description, assembly,
+                            contact). Supplies the dataset id and, on import,
+                            creates the record /datasets lists. Preferred.
+  --dataset-id <id>         The dataset id, when you have no dataset file. One of
+                            --dataset-file or --dataset-id is REQUIRED. The id
+                            must match the datasets collection, or the API
                             reports "not found" for every dataset.
   --output <dir>            Output directory (default: /cbio/users/$USER/beacon_output)
   --batch-size <n>          Processing batch size (default: 5000)
@@ -87,6 +93,7 @@ while [[ $# -gt 0 ]]; do
         --phenotypes)   PHENOTYPE_FILE="$2"; shift 2 ;;
         --assembly)     ASSEMBLY="$2"; shift 2 ;;
         --dataset-id)   DATASET_ID="$2"; shift 2 ;;
+        --dataset-file) DATASET_FILE="$2"; shift 2 ;;
         --output)       OUTPUT_DIR="$2"; shift 2 ;;
         --batch-size)   BATCH_SIZE="$2"; shift 2 ;;
         --workers)      MAX_WORKERS="$2"; shift 2 ;;
@@ -102,9 +109,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$VCF_FILE" ]] && { echo "Error: VCF file is required"; usage; }
-[[ -z "$DATASET_ID" ]] && {
-    echo "Error: --dataset-id is required: the id the data is listed under in the" >&2
-    echo "datasets collection (for example --dataset-id MY_DATASET)." >&2
+[[ -z "$DATASET_ID" && -z "$DATASET_FILE" ]] && {
+    echo "Error: a dataset is required: pass --dataset-file dataset.yaml (preferred)" >&2
+    echo "or --dataset-id <id>, the id the data is listed under in the datasets collection." >&2
     exit 1
 }
 
@@ -112,6 +119,22 @@ done
 log()  { echo "[$(date '+%H:%M:%S')] $*"; }
 die()  { log "ERROR: $*" >&2; exit 1; }
 step() { echo; echo "━━━ Step $1: $2 ━━━"; }
+
+# Read the dataset id from --dataset-file (validating the file). It needs the
+# tools' Python libraries, so in a plain Python environment this runs only once
+# that environment exists; with a container it runs up front, dry runs included.
+resolve_dataset() {
+    [[ -z "$DATASET_FILE" || "$DATASET_RESOLVED" == true ]] && return 0
+    [[ -f "$DATASET_FILE" ]] || die "Dataset file not found: $DATASET_FILE"
+    local from_file
+    from_file=$("${PY[@]}" "$TOOLS_DIR/data_import/dataset_file.py" "$DATASET_FILE" --get id) \
+        || die "Invalid dataset file: $DATASET_FILE (the reason is printed above)"
+    if [[ -n "$DATASET_ID" && "$DATASET_ID" != "$from_file" ]]; then
+        die "--dataset-id $DATASET_ID does not match the id in $DATASET_FILE ($from_file)"
+    fi
+    DATASET_ID="$from_file"
+    DATASET_RESOLVED=true
+}
 
 # --- How the tools are run: from a container, or from a Python virtualenv ---
 PY=(python)
@@ -124,6 +147,7 @@ if [[ -n "$CONTAINER" ]]; then
     }
     VCF_FILE="$(abspath "$VCF_FILE")"
     [[ -z "$PHENOTYPE_FILE" ]] || PHENOTYPE_FILE="$(abspath "$PHENOTYPE_FILE")"
+    [[ -z "$DATASET_FILE" ]] || DATASET_FILE="$(abspath "$DATASET_FILE")"
     OUTPUT_DIR="$(abspath "$OUTPUT_DIR")"
 
     KIND="$RUNTIME_PREF"
@@ -151,6 +175,7 @@ if [[ -n "$CONTAINER" ]]; then
             SEEN=" $OUTPUT_DIR "
             for d in "$(dirname "$VCF_FILE")" \
                      "${PHENOTYPE_FILE:+$(dirname "$PHENOTYPE_FILE")}" \
+                     "${DATASET_FILE:+$(dirname "$DATASET_FILE")}" \
                      ${CONTAINER_BIND//,/ }; do
                 [[ -n "$d" ]] || continue
                 case "$SEEN" in
@@ -168,13 +193,14 @@ if [[ -n "$CONTAINER" ]]; then
             ;;
     esac
     TOOLS_DIR=/opt/beacon-tools   # where the image keeps the tools
+    resolve_dataset
 fi
 
 # --- Pre-flight checks ---
 log "AfriGend Beacon v2 — ILIFU Data Loading Pipeline"
 log "VCF:       $VCF_FILE"
 log "Assembly:  $ASSEMBLY"
-log "Dataset:   $DATASET_ID"
+log "Dataset:   ${DATASET_ID:-(read from $DATASET_FILE)}"
 log "Output:    $OUTPUT_DIR"
 log "Phenotype: ${PHENOTYPE_FILE:-none}"
 if [[ -n "$CONTAINER" ]]; then
@@ -229,6 +255,9 @@ fi
     || die "vcf_to_beacon.py --help failed. Check dependencies."
 
 log "Python $("${PY[@]}" --version 2>&1) ready"
+
+resolve_dataset
+log "Dataset id: $DATASET_ID"
 
 # --- Create tuned config for ILIFU ---
 step 2 "Creating optimized config for ILIFU"
@@ -398,6 +427,20 @@ if [[ "$SKIP_IMPORT" != true ]]; then
         "${PY[@]}" "$TOOLS_DIR/data_import/import_to_mongo.py" "$PHENO_OUTPUT/phenotypes.json" \
             --db "$MONGO_DB" --collection phenotypes \
             --mongo-uri "$MONGO_URI" --verbose
+    fi
+
+    if [[ -n "$DATASET_FILE" ]]; then
+        log "Registering dataset $DATASET_ID in the datasets collection..."
+        SAMPLES="$("${PY[@]}" -c "import json,sys; print(json.load(open(sys.argv[1]))['statistics']['individuals_found'])" \
+            "$VCF_OUTPUT/transformation_summary.json")" \
+            || die "Could not read the sample count from $VCF_OUTPUT/transformation_summary.json"
+        "${PY[@]}" "$TOOLS_DIR/data_import/register_dataset.py" "$DATASET_FILE" \
+            --db "$MONGO_DB" --mongo-uri "$MONGO_URI" \
+            --samples "$SAMPLES" --assembly "$ASSEMBLY" \
+            || die "Dataset registration failed (the reason is printed above)"
+    else
+        log "NOTE: no --dataset-file, so no dataset record was created: the variants are loaded under"
+        log "      '$DATASET_ID' but /datasets will not list them. Use --dataset-file dataset.yaml for that."
     fi
 
     # Flush Redis cache on beacon server
