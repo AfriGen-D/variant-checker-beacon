@@ -212,6 +212,7 @@ jobs:
           docker run --rm \
             -v "$PWD/scripts/smoke_tools_image.sh:/smoke.sh:ro" \
             -v "$PWD/afrigend-beacon2-tools/tests/fixtures:/fixtures:ro" \
+            -v "$PWD/examples:/examples:ro" \
             --entrypoint bash beacon-tools:ci /smoke.sh
 
       - name: Push the tools image
