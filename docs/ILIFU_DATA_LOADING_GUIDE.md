@@ -138,13 +138,16 @@ the same whichever route you choose (a function rather than a variable, so it
 behaves the same in bash and zsh). Define them again in each new shell session,
 or put the lines in your `~/.bashrc`.
 
-**Option A (recommended): a container.** Nothing to install or reinstall: the
-image carries Python, every library, `cyvcf2` and `bcftools`. Use Singularity on
-ILIFU (A1) or Docker on a server or workstation where you have it (A2).
+#### Option A (recommended): a container
 
-**A1. Singularity/Apptainer (ILIFU).** On a node where the command is
-`apptainer`, use that instead; the options are the same. `/cbio` and `/scratch3`
-are bound so your data is visible inside.
+Nothing to install or reinstall: the image carries Python, every library,
+`cyvcf2` and `bcftools`. Use Singularity on ILIFU (A1) or Docker on a server or
+workstation where you have it (A2).
+
+#### A1. Singularity/Apptainer (ILIFU)
+
+On a node where the command is `apptainer`, use that instead; the options are
+the same. `/cbio` and `/scratch3` are bound so your data is visible inside.
 
 ```bash
 cd /cbio/users/$USER
@@ -161,10 +164,25 @@ beacon bcftools --version | head -1
 beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
 ```
 
-**A2. Docker.** `DATA` is the directory that holds your VCFs and receives the
-output; it is mounted at the same path inside the container. Replace
-`/cbio/users/$USER` in the later steps with it. `--network host` lets the
-container reach the SSH tunnel to MongoDB in Step 7 on Linux.
+**What the two "every shell session" lines do.** The tools are not installed on
+the cluster; `bcftools` and the Python scripts live inside the file
+`beacon-tools.sif`, and `singularity exec` runs a command inside it. The first
+line creates a shortcut named `beacon` so you do not type that out each time:
+`beacon bcftools --version` means `singularity exec --bind /cbio,/scratch3
+beacon-tools.sif bcftools --version` (`--bind` makes `/cbio` and `/scratch3`
+visible inside, so the tools can read your VCFs and write their output, and
+`"$@"` stands for whatever you type after `beacon`). The second line,
+`TOOLS=/opt/beacon-tools`, stores the folder inside the container where the
+scripts are, which keeps later commands short. Both are forgotten when you log
+out or start a new `srun`, so paste them again at the start of each session, or
+add them to your `~/.bashrc` to do it automatically.
+
+#### A2. Docker
+
+`DATA` is the directory that holds your VCFs and receives the output; it is
+mounted at the same path inside the container. Replace `/cbio/users/$USER` in
+the later steps with it. `--network host` lets the container reach the SSH
+tunnel to MongoDB in Step 7 on Linux.
 
 ```bash
 # Once: pull the image.
@@ -183,11 +201,12 @@ beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
 The image is rebuilt and published from this repository's `main` branch. Pull it
 again (`singularity pull --force ...` or `docker pull ...`) to update.
 
-**A3. Build the image yourself.** Use this to change the tools, to work without
-access to `ghcr.io`, or to test a branch. You need Docker and a checkout of this
-repository. Build from the repository root, on a machine with the same CPU type
-as the machine that will run it (ILIFU is x86-64, as are most servers and Intel
-Macs):
+#### A3. Build the image yourself
+
+Use this to change the tools, to work without access to `ghcr.io`, or to test a
+branch. You need Docker and a checkout of this repository. Build from the
+repository root, on a machine with the same CPU type as the machine that will
+run it (ILIFU is x86-64, as are most servers and Intel Macs):
 
 ```bash
 cd variant-checker-beacon
@@ -218,7 +237,9 @@ singularity build beacon-tools.sif docker-archive://beacon-tools.tar
 Keep the archive a plain `.tar`: Singularity rejects a gzipped one with
 `invalid tar header`. From here the `beacon()` function in A1 works unchanged.
 
-**Option B: a Python environment.** Use this if you cannot run containers.
+#### Option B: a Python environment
+
+Use this if you cannot run containers.
 
 ```bash
 cd /cbio/users/$USER/variant-checker-beacon/afrigend-beacon2-tools
