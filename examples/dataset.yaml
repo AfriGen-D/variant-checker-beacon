@@ -1,0 +1,11 @@
+# Dataset description for the example data in this folder. Copy and edit it to
+# describe your own data: only `id` and `name` are required.
+dataset:
+  id: EXAMPLE_1000G_CHR22
+  name: Example - 1000 Genomes chr22 subset
+  description: >-
+    Test data for the ILIFU loading guide: 9 individuals from the 1000 Genomes
+    Project phase 3 (GRCh38), region chr22:16000000-17000000. Not for production.
+  assembly: GRCh38
+  contact:
+    name: AfriGen-D Beacon team

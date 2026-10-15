@@ -1,0 +1,10 @@
+individual_id,phenotype_id,phenotype_label,observed,disease_id,disease_label
+NA18486,HP:0001627,Abnormal heart morphology,true,,
+NA18488,HP:0000822,Hypertension,true,MONDO:0005044,hypertensive disorder
+NA18489,HP:0001627,Abnormal heart morphology,false,,
+NA18499,HP:0000822,Hypertension,true,MONDO:0005044,hypertensive disorder
+NA19017,HP:0004322,Short stature,true,,
+NA19019,HP:0001250,Seizure,true,MONDO:0005027,epilepsy
+NA19020,HP:0001250,Seizure,false,,
+HG02922,HP:0000822,Hypertension,true,,
+HG02923,HP:0004322,Short stature,false,,

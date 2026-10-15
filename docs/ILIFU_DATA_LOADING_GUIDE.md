@@ -41,6 +41,28 @@ Host ilifu
 
 Then `ssh ilifu` is the same as `ssh <your-ilifu-username>@slurm.ilifu.ac.za`.
 
+## Try It First With the Example Data
+
+The repository comes with a small public data set in `examples/` (nine 1000
+Genomes individuals on chromosome 22, 67 KB, plus a made-up phenotype file), so
+you can run everything below before using your own files. Once you have the
+repository and the container (Step 2), this runs the whole pipeline on it in
+seconds, stopping before any database import:
+
+```bash
+cd /cbio/users/$USER/variant-checker-beacon
+./scripts/run_ilifu_pipeline.sh examples/1000G_chr22_subset.vcf.gz \
+    --dataset-file examples/dataset.yaml \
+    --phenotypes examples/phenotypes_example.csv \
+    --container /cbio/users/$USER/beacon-tools.sif \
+    --skip-import
+```
+
+A correct run ends with `Total errors: 0` for each of the variant, individual and
+phenotype files. The step-by-step guide below uses these same files, so you can
+compare every result with what you get. See `examples/README.md` for where the
+data comes from.
+
 ## Quick Start (Automated Pipeline)
 
 The fastest path — a single script handles everything. Paths in this guide use
@@ -259,6 +281,16 @@ Keep the archive a plain `.tar`: Singularity rejects a gzipped one with
 
 ### Step 3: Locate Your VCF Files
 
+The commands below use the example data. To use your own files instead, change
+the three variables.
+
+```bash
+cd /cbio/users/$USER/variant-checker-beacon
+VCF=$PWD/examples/1000G_chr22_subset.vcf.gz          # your VCF: /path/to/your_data.vcf.gz
+PHENOTYPES=$PWD/examples/phenotypes_example.csv      # your phenotypes (optional)
+DATASET=$PWD/examples/dataset.yaml                   # your dataset description
+```
+
 ```bash
 # Your workspace on ILIFU:
 ls /cbio/users/$USER/
@@ -269,8 +301,8 @@ find /cbio/projects/ -name "*.vcf.gz" -type f 2>/dev/null | head -20
 
 # Check a VCF file header to confirm assembly and samples.
 # bcftools is inside the container.
-beacon bcftools view -h /path/to/file.vcf.gz | head -30
-beacon bcftools query -l /path/to/file.vcf.gz | wc -l   # count samples
+beacon bcftools view -h $VCF | head -30
+beacon bcftools query -l $VCF | wc -l   # count samples (example: 9)
 ```
 
 **Use bcftools to inspect and prepare the VCF before transforming it.** It is
@@ -279,22 +311,24 @@ whole pipeline in minutes before committing to a full run:
 
 ```bash
 # Contigs the file uses, with their variant counts (needs a .tbi/.csi index)
-beacon bcftools index -s /path/to/file.vcf.gz
+beacon bcftools index -s $VCF     # example: chr22 and 4231 variants
 
 # Create the index if the file has none
-beacon bcftools index -t /path/to/file.vcf.gz
+beacon bcftools index -t $VCF
 
 # A small test slice: one region, PASS variants only, compressed and indexed.
-# Use the contig name exactly as `index -s` printed it above (22 or chr22).
-beacon bcftools view -f PASS -r 22:16000000-17000000 /path/to/file.vcf.gz \
+# Use the contig name exactly as `index -s` printed it above (this file uses
+# chr22; some files use 22).
+beacon bcftools view -f PASS -r chr22:16000000-17000000 $VCF \
     -Oz -o /cbio/users/$USER/test_slice.vcf.gz
 beacon bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
 ```
 
 ### Step 4: Transform VCF to Beacon JSON
 
-First describe the dataset in a small file, `dataset.yaml`. Only `id` and `name`
-are required; unknown keys are refused so a typo cannot be ignored:
+First describe the dataset in a small file, `dataset.yaml`; the example data
+comes with one (`examples/dataset.yaml`, id `EXAMPLE_1000G_CHR22`). Only `id` and
+`name` are required; unknown keys are refused so a typo cannot be ignored:
 
 ```yaml
 dataset:
@@ -308,10 +342,10 @@ dataset:
 ```
 
 ```bash
-beacon python $TOOLS/vcf_transform/vcf_to_beacon.py /path/to/your_data.vcf.gz \
+beacon python $TOOLS/vcf_transform/vcf_to_beacon.py $VCF \
     --output /cbio/users/$USER/beacon_output/vcf_output \
     --assembly GRCh38 \
-    --dataset-id MY_DATASET \
+    --dataset-id EXAMPLE_1000G_CHR22 \
     --config $TOOLS/config/settings.yaml \
     --verbose
 ```
@@ -351,7 +385,7 @@ Note: `start` uses 0-based coordinates (VCF POS is 1-based, so `start = POS - 1`
 If you have clinical/phenotype data (CSV/TSV/XLSX):
 
 ```bash
-beacon python $TOOLS/phenotype_transform/phenotype_to_beacon.py /path/to/phenotypes.csv \
+beacon python $TOOLS/phenotype_transform/phenotype_to_beacon.py $PHENOTYPES \
     --output /cbio/users/$USER/beacon_output/phenotype_output \
     --individuals /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --config $TOOLS/config/settings.yaml \
@@ -397,6 +431,9 @@ beacon python $TOOLS/validation/validate_json.py \
 
 ### Step 7: Import to Production MongoDB
 
+**Do not import the example data into a production Beacon.** The phenotypes are
+made up. To practise this step, use a development Beacon, or stop after Step 6.
+
 MongoDB runs inside Docker on the beacon server (<your-server-ip>). You need an SSH tunnel.
 
 ```bash
@@ -437,7 +474,7 @@ refuses an id that no imported variant carries, and running it again updates the
 same record:
 
 ```bash
-beacon python $TOOLS/data_import/register_dataset.py dataset.yaml \
+beacon python $TOOLS/data_import/register_dataset.py $DATASET \
     --db beacon_db --mongo-uri "$MONGO_URI" --samples 9
 ```
 
