@@ -1,29 +1,31 @@
-FROM python:3.9-slim
+FROM python:3.12-slim-bookworm
 
 LABEL maintainer="AfriGend Beacon v2"
-LABEL description="Beacon v2 data transformation tools (VCF, phenotype, validation, import/export)"
+LABEL description="Beacon v2 data transformation tools (VCF, phenotype, validation, import/export) with bcftools"
 
-# System deps for cyvcf2, pysam, pybedtools, and SSH tunnel support
+# System tools only; nothing is compiled. bcftools and tabix are here so users can
+# inspect, filter, subset and index a VCF with the same image that transforms it,
+# with no `module load` and no install. openssh-client and netcat are for the SSH
+# tunnel to MongoDB, procps is for Nextflow.
+#
+# The base image is pinned to a Debian release on purpose. This file used to build
+# FROM python:3.9-slim and compile cyvcf2 from source. When that tag moved to a
+# newer Debian the compile failed (htslib needs libdeflate.h), and an image nobody
+# can rebuild is the install problem again, one level up.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ make \
-    zlib1g-dev libbz2-dev liblzma-dev libcurl4-openssl-dev libssl-dev \
-    tabix bedtools \
+    bcftools tabix bedtools \
     openssh-client netcat-openbsd \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/beacon-tools
 
-# Install Python deps
-# 1. setuptools<70 required for django-mongoengine build
-# 2. C-extension genomics libs (cyvcf2, pysam) need --no-build-isolation
-#    because their setup.py imports pkg_resources at build time
-COPY afrigend-beacon2-tools/requirements.txt /opt/beacon-tools/requirements.txt
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir "setuptools<70" wheel Cython numpy==1.24.4 && \
-    CFLAGS="-Wno-error=incompatible-pointer-types" \
-    pip install --no-cache-dir --no-build-isolation cyvcf2==0.30.22 pysam==0.22.0 && \
-    pip install --no-cache-dir -r requirements.txt
+# Python libraries from prebuilt wheels only, so no compiler is needed and a library
+# with no wheel fails the build loudly instead of starting a source build. This is
+# the set the tools import (see the header of requirements-runtime.txt); the full
+# requirements.txt pins versions that have no Python 3.12 build.
+COPY afrigend-beacon2-tools/requirements-runtime.txt /opt/beacon-tools/requirements-runtime.txt
+RUN pip install --no-cache-dir --only-binary=:all: -r requirements-runtime.txt
 
 # Copy tool modules and config
 COPY afrigend-beacon2-tools/vcf_transform/       /opt/beacon-tools/vcf_transform/
