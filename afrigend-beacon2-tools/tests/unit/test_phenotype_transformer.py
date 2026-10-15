@@ -509,3 +509,61 @@ class TestOutputOmitsUnknownFields:
             assert data, name
         for rec in self._strict(out / "phenotypes.json") + self._strict(out / "diseases.json"):
             assert None not in rec.values(), rec
+
+
+class TestFilesWithOnlyOneKindOfData:
+    """A file may carry phenotypes or diseases or both.
+
+    The guide marks phenotype_id "for phenotypes" and disease_id "for diseases",
+    so neither column is required. Both transforms used to read their column
+    unconditionally, so a phenotype-only file died with KeyError: 'disease_id' and
+    a disease-only file with KeyError: 'phenotype_id'.
+    """
+
+    def setup_method(self):
+        self.t = _make_transformer()
+
+    def test_no_disease_column_means_no_disease_records(self):
+        df = _standard_df()
+        assert "disease_id" not in df.columns
+        assert self.t.transform_diseases(df) == []
+
+    def test_no_phenotype_column_means_no_phenotype_records(self):
+        df = pd.DataFrame({
+            "individual_id": ["I1"], "disease_id": ["MONDO:0005027"],
+            "disease_label": ["Epilepsy"], "ontology": ["MONDO"],
+        })
+        assert "phenotype_id" not in df.columns
+        assert self.t.transform_phenotypes(df) == []
+
+    def test_empty_dataframe_with_neither_column(self):
+        df = pd.DataFrame({"individual_id": ["I1"]})
+        assert self.t.transform_phenotypes(df) == []
+        assert self.t.transform_diseases(df) == []
+
+    def test_phenotype_only_file_is_written(self, tmp_path):
+        csv = tmp_path / "p.csv"
+        _standard_df().to_csv(csv, index=False)
+        out = tmp_path / "out"
+        self.t.transform_phenotype_file(str(csv), str(out))
+        assert len(json.loads((out / "phenotypes.json").read_text())) == 2
+        assert json.loads((out / "diseases.json").read_text()) == []
+
+    def test_disease_only_file_is_written(self, tmp_path):
+        csv = tmp_path / "d.csv"
+        pd.DataFrame({
+            "individual_id": ["I1"], "disease_id": ["MONDO:0005027"],
+            "disease_label": ["Epilepsy"], "ontology": ["MONDO"],
+        }).to_csv(csv, index=False)
+        out = tmp_path / "out"
+        self.t.transform_phenotype_file(str(csv), str(out))
+        assert json.loads((out / "phenotypes.json").read_text()) == []
+        assert len(json.loads((out / "diseases.json").read_text())) == 1
+
+    def test_a_file_with_both_still_works(self, tmp_path):
+        # Control: the fixture the guide's Step 5 shows, with both kinds.
+        fixtures = Path(__file__).resolve().parents[1] / "fixtures" / "phenotype"
+        out = tmp_path / "out"
+        self.t.transform_phenotype_file(str(fixtures / "phenotypes_standard.csv"), str(out))
+        assert json.loads((out / "phenotypes.json").read_text())
+        assert json.loads((out / "diseases.json").read_text())
