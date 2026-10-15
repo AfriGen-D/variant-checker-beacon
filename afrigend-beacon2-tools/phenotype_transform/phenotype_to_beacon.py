@@ -109,12 +109,19 @@ class OntologyManager:
         self.config = config
         self.ontologies = {}
         self.cache = {}
+        self._failed = set()
         self.logger = logging.getLogger(__name__)
+
+    def unavailable(self) -> List[str]:
+        """Names of ontologies that could not be loaded, sorted."""
+        return sorted(self._failed)
 
     def load_ontology(self, ontology_name: str) -> Optional[pronto.Ontology]:
         """Load ontology from file or URL."""
         if ontology_name in self.ontologies:
             return self.ontologies[ontology_name]
+        if ontology_name in self._failed:
+            return None  # already tried; do not download again for every row
 
         try:
             ontology_path = self._get_ontology_path(ontology_name)
@@ -125,6 +132,7 @@ class OntologyManager:
                 return ontology
         except Exception as e:
             self.logger.error(f"Failed to load ontology {ontology_name}: {e}")
+            self._failed.add(ontology_name)
 
         return None
 
@@ -132,7 +140,7 @@ class OntologyManager:
         """Get path or URL for ontology."""
         ontology_sources = {
             'HPO': 'https://raw.githubusercontent.com/obophenotype/human-phenotype-ontology/master/hp.obo',
-            'MONDO': 'https://raw.githubusercontent.com/monarch-initiative/mondo/master/mondo.obo',
+            'MONDO': 'https://purl.obolibrary.org/obo/mondo.obo',
             'ORDO': 'https://raw.githubusercontent.com/Orphanet/ORDO/master/ordo.obo'
         }
         
@@ -544,11 +552,16 @@ class PhenotypeTransformer:
             'input_file': str(file_path),
             'output_directory': str(output_path),
             'statistics': self.stats,
+            'ontologies_unavailable': self.ontology_manager.unavailable(),
             'files_created': [
                 'phenotypes.json',
                 'diseases.json'
             ]
         }
+        if summary['ontologies_unavailable']:
+            self.logger.warning(
+                "Terms were NOT checked against these ontologies (could not load): %s",
+                ", ".join(summary['ontologies_unavailable']))
         
         if updated_individuals:
             summary['files_created'].append('individuals_with_phenotypes.json')
