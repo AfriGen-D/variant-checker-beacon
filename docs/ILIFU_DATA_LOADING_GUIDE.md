@@ -266,7 +266,8 @@ beacon bcftools index -s /path/to/file.vcf.gz
 # Create the index if the file has none
 beacon bcftools index -t /path/to/file.vcf.gz
 
-# A small test slice: one region, PASS variants only, compressed and indexed
+# A small test slice: one region, PASS variants only, compressed and indexed.
+# Use the contig name exactly as `index -s` printed it above (22 or chr22).
 beacon bcftools view -f PASS -r 22:16000000-17000000 /path/to/file.vcf.gz \
     -Oz -o /cbio/users/$USER/test_slice.vcf.gz
 beacon bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
@@ -282,13 +283,18 @@ beacon python $TOOLS/vcf_transform/vcf_to_beacon.py /path/to/your_data.vcf.gz \
     --verbose
 ```
 
+Add `--dataset-id <id>` to attribute the variants to a dataset. Without it the
+records carry an empty `dataset_ids`; `run_ilifu_pipeline.sh` instead defaults to
+`H3A_V6_AFR`, the production dataset, so pass `--dataset-id` there too whenever
+the data belongs to another dataset.
+
 **What this produces:**
 
 | File | Description |
 |---|---|
 | `variants_batch.jsonl` | One JSON variant record per line (JSONL format) |
 | `individuals.json` | Individual records derived from VCF sample names |
-| `variant_genotypes.json` | Mapping of variants → individuals → genotypes |
+| `variant_genotypes.json` | Reserved: always an empty list `[]` today; genotypes stay in the VCF |
 | `transformation_summary.json` | Stats: variants processed/filtered, individuals found |
 
 **Understanding the output:**
