@@ -1,6 +1,6 @@
-# Loading H3Africa Data into Beacon v2 on ILIFU
+# Loading VCF Data into Beacon v2 on ILIFU
 
-This guide walks through transforming real H3Africa genomic data into GA4GH Beacon v2 format and loading it into the production MongoDB instance.
+This guide walks through transforming your VCF files (any cohort or dataset) into GA4GH Beacon v2 format and loading it into the production MongoDB instance.
 
 ## Architecture Overview
 
@@ -18,7 +18,7 @@ This guide walks through transforming real H3Africa genomic data into GA4GH Beac
 └─────────────────────┘
 ```
 
-**Why ILIFU?** VCF transformation is compute-intensive (parsing millions of variants). ILIFU compute nodes provide the CPU, memory, and direct access to H3Africa reference data that this requires.
+**Why ILIFU?** VCF transformation is compute-intensive (parsing millions of variants). ILIFU compute nodes provide the CPU, memory, and direct access to the data on `/cbio` that this requires.
 
 ## Prerequisites
 
@@ -63,7 +63,7 @@ singularity pull beacon-tools.sif docker://ghcr.io/afrigen-d/variant-checker-bea
 
 # 4. Run the pipeline: the tools run from the container, so nothing is installed
 cd variant-checker-beacon
-./scripts/run_ilifu_pipeline.sh /path/to/h3africa.vcf.gz \
+./scripts/run_ilifu_pipeline.sh /path/to/your_data.vcf.gz \
     --container /cbio/users/$USER/beacon-tools.sif
 ```
 
@@ -238,7 +238,7 @@ source .venv/bin/activate
 
 Both methods need outbound internet from the node. If the node has none, create the venv from a Python module or a conda environment whose build includes `venv` (`module avail python`, `which conda mamba`).
 
-### Step 3: Locate H3Africa Data
+### Step 3: Locate Your VCF Files
 
 ```bash
 # Common locations on ILIFU:
@@ -277,7 +277,7 @@ beacon bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
 ### Step 4: Transform VCF to Beacon JSON
 
 ```bash
-beacon python $TOOLS/vcf_transform/vcf_to_beacon.py /path/to/h3africa.vcf.gz \
+beacon python $TOOLS/vcf_transform/vcf_to_beacon.py /path/to/your_data.vcf.gz \
     --output /cbio/users/$USER/beacon_output/vcf_output \
     --assembly GRCh38 \
     --config $TOOLS/config/settings.yaml \
@@ -437,7 +437,7 @@ ssh <your-ssh-alias> \
 
 ## Performance Tuning
 
-### For Large H3Africa Datasets (>10M variants)
+### For Large Datasets (>10M variants)
 
 Edit `config/settings.yaml` or pass `--batch-size` / `--workers` to the pipeline script:
 

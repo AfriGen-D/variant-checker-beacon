@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ──────────────────────────────────────────────────────────────────────────────
 # AfriGend Beacon v2 — ILIFU Data Loading Pipeline
-# Transforms H3Africa VCF data → Beacon v2 JSON → Validates → Imports to MongoDB
+# Transforms VCF data → Beacon v2 JSON → Validates → Imports to MongoDB
 #
 # Prerequisites:
 #   - Running on an ILIFU compute node (NOT the login node)
