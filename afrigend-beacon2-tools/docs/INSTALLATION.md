@@ -1,5 +1,12 @@
 # Installation Guide
 
+> **Just want to run the tools?** You do not need to install anything. The
+> tools, their Python libraries and `bcftools` are published as one container
+> image, and the
+> [ILIFU data loading guide](../../docs/ILIFU_DATA_LOADING_GUIDE.md) (Step 2)
+> shows how to use it with Singularity, Docker, or an image you build yourself.
+> The rest of this page is for developing the tools themselves.
+
 ## Prerequisites
 
 ### System Requirements

@@ -25,12 +25,17 @@
 ## Installation Questions
 
 ### Q5: How do I install the toolkit?
-**A:** 
+**A:** To just run it, do not install it: use the published container image, as
+described in Step 2 of the
+[ILIFU data loading guide](../../docs/ILIFU_DATA_LOADING_GUIDE.md). To develop the
+tools, install the Python dependencies:
 ```bash
 cd afrigend-beacon2-tools
 pip install -r requirements.txt
 ```
-See [INSTALLATION.md](INSTALLATION.md) for detailed instructions.
+`requirements.txt` fails on Python 3.12 (no `cyvcf2`/`numpy` build); there, use
+`pip install --only-binary=:all: -r requirements-runtime.txt`. See
+[INSTALLATION.md](INSTALLATION.md) for detailed instructions.
 
 ### Q6: I'm getting installation errors for pysam/cyvcf2. What should I do?
 **A:** Install system dependencies first:

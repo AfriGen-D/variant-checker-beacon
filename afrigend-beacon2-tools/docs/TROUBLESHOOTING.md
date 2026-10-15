@@ -4,6 +4,11 @@
 
 ### Installation Issues
 
+> **Most installation problems disappear if you do not install.** The tools,
+> their libraries and `bcftools` ship as one container image; see Step 2 of the
+> [ILIFU data loading guide](../../docs/ILIFU_DATA_LOADING_GUIDE.md). The entries
+> below are for installing the tools yourself.
+
 #### 1. Python Version Compatibility
 
 **Problem**: Tools require Python 3.8+ but older version is installed.
