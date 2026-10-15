@@ -108,9 +108,11 @@ cd variant-checker-beacon/afrigend-beacon2-tools
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies (setuptools<70 is required for django-mongoengine)
+# Install the runtime dependencies from prebuilt wheels (no compiler needed).
+# Use requirements-runtime.txt, not requirements.txt: the latter pins numpy and
+# cyvcf2 versions that have no Python 3.12 build and fails on current nodes.
 pip install --upgrade pip "setuptools<70" wheel
-pip install -r requirements.txt
+pip install --only-binary=:all: -r requirements-runtime.txt
 
 # Verify installation
 python vcf_transform/vcf_to_beacon.py --help
@@ -119,8 +121,13 @@ python data_import/import_to_mongo.py --help
 ```
 
 **Troubleshooting installs:**
-- `cyvcf2` requires `htslib` — usually available on ILIFU, but if not: `conda install -c bioconda cyvcf2`
-- If `pip install` is slow, try: `pip install --no-cache-dir -r requirements.txt`
+- `cyvcf2` is installed as a prebuilt wheel that bundles htslib, so you do not
+  need htslib, a compiler or root. If no wheel exists for your Python, pip
+  stops with `No matching distribution` instead of trying to compile.
+- If `pip install` is slow, try:
+  `pip install --only-binary=:all: --no-cache-dir -r requirements-runtime.txt`
+- `requirements.txt` is the full set pinned for Python 3.9 development and CI.
+  Do not use it on the cluster; see the Common Issues entry below.
 
 **If `python3 -m venv .venv` fails** with `ensurepip is not available` and suggests `apt install python3.12-venv`: you cannot install system packages on the cluster, so create the venv without them. The simplest way is `uv`, which installs into your home directory and needs no root:
 
@@ -368,6 +375,24 @@ tmux new -s beacon
 ## Troubleshooting
 
 ### Common Issues
+
+**`Failed to build 'cyvcf2'` / `No module named 'pkg_resources'` during
+`pip install`:**
+
+```text
+ModuleNotFoundError: No module named 'pkg_resources'
+ERROR: Failed to build 'cyvcf2' when getting requirements to build wheel
+```
+
+Fix: you installed `requirements.txt` on Python 3.12. It pins `cyvcf2==0.30.22`,
+which has no 3.12 wheel, so pip compiles it in an isolated build environment
+whose setuptools no longer ships `pkg_resources`. Pinning `setuptools<70` in
+your venv does not help, because pip's build isolation ignores it. Install
+`requirements-runtime.txt` from wheels instead, as in Step 2:
+
+```bash
+pip install --only-binary=:all: -r requirements-runtime.txt
+```
 
 **`File exists: .../afrigend-beacon2-tools/.venv` when creating the venv:**
 

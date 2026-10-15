@@ -130,7 +130,10 @@ if [[ ! -d "$VENV_DIR" ]]; then
     python3 -m venv "$VENV_DIR"
     source "$VENV_DIR/bin/activate"
     pip install --upgrade pip "setuptools<70" wheel
-    pip install -r "$TOOLS_DIR/requirements.txt"
+    # requirements-runtime.txt, wheels only: the full requirements.txt pins
+    # numpy and cyvcf2 versions that have no Python 3.12 build, so it cannot be
+    # installed on a current ILIFU node. See the header of that file.
+    pip install --only-binary=:all: -r "$TOOLS_DIR/requirements-runtime.txt"
 else
     source "$VENV_DIR/bin/activate"
     log "Using existing venv: $VENV_DIR"

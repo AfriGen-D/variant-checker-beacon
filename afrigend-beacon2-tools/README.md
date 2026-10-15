@@ -44,6 +44,14 @@ cd afrigend-beacon2-tools
 pip install -r requirements.txt
 ```
 
+On Python 3.12, on an HPC node, or anywhere without a compiler and root, use the
+runtime set from prebuilt wheels instead. `requirements.txt` pins `numpy` and
+`cyvcf2` versions that have no Python 3.12 build and fails there:
+
+```bash
+pip install --only-binary=:all: -r requirements-runtime.txt
+```
+
 **requirements.txt**:
 ```
 pysam==0.21.0

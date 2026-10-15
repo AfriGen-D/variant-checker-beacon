@@ -1,0 +1,35 @@
+# Runtime dependencies for the VCF -> Beacon JSON -> validate -> import tools.
+#
+# This is what vcf_transform/vcf_to_beacon.py, phenotype_transform/
+# phenotype_to_beacon.py, validation/validate_json.py and data_import/
+# import_to_mongo.py actually import. Install it from wheels only, so nothing
+# needs a compiler, htslib headers or root:
+#
+#     pip install --only-binary=:all: -r requirements-runtime.txt
+#
+# Use this on HPC nodes (ILIFU) and any Python 3.12 machine. requirements.txt is
+# the full, exactly-pinned set the project was developed and tested with on
+# Python 3.9; it does not install on Python 3.12:
+#
+#   numpy==1.24.4   has no Python 3.12 build at all (pandas 2.1.4 on 3.12 needs
+#                   numpy>=1.26 as well)
+#   cyvcf2==0.30.22 has no Python 3.12 wheel (wheels start at 0.31.0), so pip
+#                   compiles it in an isolated build environment that pulls a
+#                   setuptools without pkg_resources, and the build fails.
+#                   Pinning setuptools<70 in the venv does not help, because
+#                   pip's build isolation ignores the venv's setuptools.
+#
+# Floors only, no ceilings: pip picks the newest release that supports the
+# running Python, and every one of these has wheels for 3.9 through 3.12.
+
+pyyaml>=6.0.1
+tqdm>=4.66.1
+pandas>=2.1.4
+numpy>=1.26.4
+cyvcf2>=0.31.0
+jsonschema>=4.20.0
+ijson>=3.2.3
+pymongo>=4.6.1
+requests>=2.31.0
+pronto>=2.5.4
+openpyxl>=3.1.2
