@@ -241,10 +241,8 @@ Both methods need outbound internet from the node. If the node has none, create 
 ### Step 3: Locate Your VCF Files
 
 ```bash
-# Common locations on ILIFU:
-ls /cbio/dbs/refpanels/          # Reference panels (H3AR3b, H3AR6x)
-ls /cbio/projects/               # Project data
-ls /cbio/users/$USER/           # Your workspace
+# Your workspace on ILIFU:
+ls /cbio/users/$USER/
 
 # Search for VCF files
 find /cbio/dbs/ -name "*.vcf.gz" -type f 2>/dev/null | head -20
