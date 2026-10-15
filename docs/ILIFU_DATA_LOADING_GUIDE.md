@@ -119,6 +119,27 @@ python data_import/import_to_mongo.py --help
 - `cyvcf2` requires `htslib` — usually available on ILIFU, but if not: `conda install -c bioconda cyvcf2`
 - If `pip install` is slow, try: `pip install --no-cache-dir -r requirements.txt`
 
+**If `python3 -m venv .venv` fails** with `ensurepip is not available` and suggests `apt install python3.12-venv`: you cannot install system packages on the cluster, so create the venv without them. The simplest way is `uv`, which installs into your home directory and needs no root:
+
+```bash
+rm -rf .venv                      # remove the half-created directory
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+uv venv --seed .venv
+source .venv/bin/activate
+```
+
+Then continue with the `pip install` lines above. To avoid installing a new tool, build the venv without pip and bootstrap pip into it:
+
+```bash
+rm -rf .venv
+python3 -m venv --without-pip .venv
+curl -sS https://bootstrap.pypa.io/get-pip.py | .venv/bin/python
+source .venv/bin/activate
+```
+
+Both methods need outbound internet from the node. If the node has none, create the venv from a Python module or a conda environment whose build includes `venv` (`module avail python`, `which conda mamba`).
+
 ### Step 3: Locate H3Africa Data
 
 ```bash
