@@ -26,7 +26,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
 |---|---|
 | ILIFU SSH access | `ssh <your-ilifu-username>@slurm.ilifu.ac.za` (or the `ilifu` alias below) |
 | Beacon server SSH | `ssh <your-ssh-alias>` |
-| Container runtime | Singularity/Apptainer on ILIFU (Option A in Step 2), or Python 3.9+ (Option B) |
+| Container runtime | Singularity/Apptainer on ILIFU, or Docker on a server (Step 2) |
 | VCF data | `.vcf.gz` files in `/cbio/dbs/` or `/cbio/projects/` |
 
 Your ILIFU username is the one you were given when your account was created; it
@@ -61,44 +61,58 @@ cd /cbio/users/$USER
 git clone https://github.com/AfriGen-D/variant-checker-beacon.git
 singularity pull beacon-tools.sif docker://ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
 
-# 4. Run the pipeline: the tools run from the container, so nothing is installed
+# 4. Describe your dataset: a short file that says what it is called
 cd variant-checker-beacon
+cat > dataset.yaml <<'EOF'
+dataset:
+  id: MY_DATASET
+  name: My dataset
+  description: What this data is.
+  assembly: GRCh38
+EOF
+
+# 5. Run the pipeline: the tools run from the container, so nothing is installed
 ./scripts/run_ilifu_pipeline.sh /path/to/your_data.vcf.gz \
-    --dataset-id MY_DATASET \
+    --dataset-file dataset.yaml \
     --container /cbio/users/$USER/beacon-tools.sif
 ```
 
-`--dataset-id` is required: it is the name your data is listed under (replace
-`MY_DATASET` with your own, for example `AIBST_EXOMES`). There is no default, so
-data is never filed under someone else's dataset by accident.
+`dataset.yaml` is required (or `--dataset-id`, see Step 4). Its `id` is the name
+your data is listed under: choose your own, for example `AIBST_EXOMES`. There is
+no default, so data is never filed under someone else's dataset by accident.
+When the pipeline imports, it also creates the dataset's record from this file,
+so the dataset appears in the Beacon's dataset list.
 
 `--container` takes a `.sif` file or a `docker://` URI (run with Singularity or
 Apptainer), or a plain Docker image name such as
 `ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest` (run with Docker,
-on a server or workstation). `--runtime` overrides the choice. Without
-`--container` the script uses a Python environment instead and creates it on the
-first run (Step 2, Option B).
+on a server or workstation). `--runtime` overrides the choice.
 
 ### Pipeline Options
 
 ```bash
 # With phenotype data
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET \
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
+    --dataset-file dataset.yaml \
     --phenotypes /path/to/phenotypes.csv
 
 # Transform + validate only (no MongoDB import)
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET --skip-import
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
+    --dataset-file dataset.yaml --skip-import
 
 # Custom assembly and output location
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET \
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
+    --dataset-file dataset.yaml \
     --assembly GRCh37 \
     --output /scratch3/users/$USER/beacon_output
 
 # Preview what will happen (no execution)
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET --dry-run
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
+    --dataset-file dataset.yaml --dry-run
 
 # Tune for large datasets
-./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz --dataset-id MY_DATASET \
+./scripts/run_ilifu_pipeline.sh /path/to/data.vcf.gz \
+    --dataset-file dataset.yaml \
     --batch-size 10000 \
     --workers 4
 ```
@@ -136,20 +150,21 @@ cd /cbio/users/$USER
 git clone https://github.com/AfriGen-D/variant-checker-beacon.git
 ```
 
-Then choose a route. Each one ends by defining a small shell function `beacon`,
-which runs a program in the right place, and the variable `$TOOLS`, which says
-where the tools live. Every later step is written with them, so the commands are
-the same whichever route you choose (a function rather than a variable, so it
-behaves the same in bash and zsh). Define them again in each new shell session,
-or put the lines in your `~/.bashrc`.
+Then choose how to run the container: Singularity on ILIFU (A1) or Docker on a
+server or workstation (A2). Each ends by defining a small shell function
+`beacon`, which runs a program inside the container, and the variable `$TOOLS`,
+which says where the tools live. Every later step is written with them, so the
+commands are the same whichever you choose (a function rather than a variable, so
+it behaves the same in bash and zsh). Define them again in each new shell
+session, or put the lines in your `~/.bashrc`.
 
-#### Option A (recommended): a container
+#### The tools run from a container
 
 Nothing to install or reinstall: the image carries Python, every library,
 `cyvcf2` and `bcftools`. Use Singularity on ILIFU (A1) or Docker on a server or
 workstation where you have it (A2).
 
-#### A1. Singularity/Apptainer (ILIFU)
+##### A1. Singularity/Apptainer (ILIFU)
 
 On a node where the command is `apptainer`, use that instead; the options are
 the same. `/cbio` and `/scratch3` are bound so your data is visible inside.
@@ -182,7 +197,7 @@ scripts are, which keeps later commands short. Both are forgotten when you log
 out or start a new `srun`, so paste them again at the start of each session, or
 add them to your `~/.bashrc` to do it automatically.
 
-#### A2. Docker
+##### A2. Docker
 
 `DATA` is the directory that holds your VCFs and receives the output; it is
 mounted at the same path inside the container. Replace `/cbio/users/$USER` in
@@ -206,7 +221,7 @@ beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
 The image is rebuilt and published from this repository's `main` branch. Pull it
 again (`singularity pull --force ...` or `docker pull ...`) to update.
 
-#### A3. Build the image yourself
+##### A3. Build the image yourself
 
 Use this to change the tools, to work without access to `ghcr.io`, or to test a
 branch. You need Docker and a checkout of this repository. Build from the
@@ -242,63 +257,6 @@ singularity build beacon-tools.sif docker-archive://beacon-tools.tar
 Keep the archive a plain `.tar`: Singularity rejects a gzipped one with
 `invalid tar header`. From here the `beacon()` function in A1 works unchanged.
 
-#### Option B: a Python environment
-
-Use this if you cannot run containers.
-
-```bash
-cd /cbio/users/$USER/variant-checker-beacon/afrigend-beacon2-tools
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install the runtime dependencies from prebuilt wheels (no compiler needed).
-# Use requirements-runtime.txt, not requirements.txt: the latter pins numpy and
-# cyvcf2 versions that have no Python 3.12 build and fails on current nodes.
-pip install --upgrade pip "setuptools<70" wheel
-pip install --only-binary=:all: -r requirements-runtime.txt
-
-# The function and variable every later step uses
-beacon() { "$@"; }
-TOOLS=$PWD
-
-# Verify installation
-python $TOOLS/vcf_transform/vcf_to_beacon.py --help
-python $TOOLS/validation/validate_json.py --help
-python $TOOLS/data_import/import_to_mongo.py --help
-```
-
-**Troubleshooting a Python environment (Option B):**
-- `cyvcf2` is installed as a prebuilt wheel that bundles htslib, so you do not
-  need htslib, a compiler or root. If no wheel exists for your Python, pip
-  stops with `No matching distribution` instead of trying to compile.
-- If `pip install` is slow, try:
-  `pip install --only-binary=:all: --no-cache-dir -r requirements-runtime.txt`
-- `requirements.txt` is the full set pinned for Python 3.9 development and CI.
-  Do not use it on the cluster; see the Common Issues entry below.
-
-**If `python3 -m venv .venv` fails** with `ensurepip is not available` and suggests `apt install python3.12-venv`: you cannot install system packages on the cluster, so create the venv without them. The simplest way is `uv`, which installs into your home directory and needs no root:
-
-```bash
-rm -rf .venv                      # remove the half-created directory
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-uv venv --seed .venv
-source .venv/bin/activate
-```
-
-Then continue with the `pip install` lines above. To avoid installing a new tool, build the venv without pip and bootstrap pip into it:
-
-```bash
-rm -rf .venv
-python3 -m venv --without-pip .venv
-curl -sS https://bootstrap.pypa.io/get-pip.py | .venv/bin/python
-source .venv/bin/activate
-```
-
-Both methods need outbound internet from the node. If the node has none, create the venv from a Python module or a conda environment whose build includes `venv` (`module avail python`, `which conda mamba`).
-
 ### Step 3: Locate Your VCF Files
 
 ```bash
@@ -310,8 +268,7 @@ find /cbio/dbs/ -name "*.vcf.gz" -type f 2>/dev/null | head -20
 find /cbio/projects/ -name "*.vcf.gz" -type f 2>/dev/null | head -20
 
 # Check a VCF file header to confirm assembly and samples.
-# bcftools is inside the container; with a Python environment (Option B) run
-# `module load bcftools` first.
+# bcftools is inside the container.
 beacon bcftools view -h /path/to/file.vcf.gz | head -30
 beacon bcftools query -l /path/to/file.vcf.gz | wc -l   # count samples
 ```
@@ -336,6 +293,20 @@ beacon bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
 
 ### Step 4: Transform VCF to Beacon JSON
 
+First describe the dataset in a small file, `dataset.yaml`. Only `id` and `name`
+are required; unknown keys are refused so a typo cannot be ignored:
+
+```yaml
+dataset:
+  id: MY_DATASET                 # letters, digits, _ . -  (up to 64)
+  name: My dataset
+  description: What this data is.
+  assembly: GRCh38
+  contact:
+    name: Your Name
+    email: you@example.org
+```
+
 ```bash
 beacon python $TOOLS/vcf_transform/vcf_to_beacon.py /path/to/your_data.vcf.gz \
     --output /cbio/users/$USER/beacon_output/vcf_output \
@@ -345,11 +316,12 @@ beacon python $TOOLS/vcf_transform/vcf_to_beacon.py /path/to/your_data.vcf.gz \
     --verbose
 ```
 
-`--dataset-id` attributes every variant to a dataset: use the name your data is
-listed under (replace `MY_DATASET`). Without it the records carry an empty
-`dataset_ids`, so no dataset lists them and dataset-scoped queries do not find
-them; the tool prints a warning if you leave it out. `run_ilifu_pipeline.sh`
-refuses to run without it.
+`--dataset-id` attributes every variant to a dataset: use the `id` from your
+`dataset.yaml`. Without it the records carry an empty `dataset_ids`, so no
+dataset lists them and dataset-scoped queries do not find them; the tool prints
+a warning if you leave it out. `run_ilifu_pipeline.sh` instead takes
+`--dataset-file dataset.yaml` and reads the id from it (`--dataset-id` also
+works there, and must match the file if you give both).
 
 **What this produces:**
 
@@ -458,6 +430,19 @@ beacon python $TOOLS/data_import/import_to_mongo.py \
     --mongo-uri "$MONGO_URI" --verbose
 ```
 
+Importing variants does not create the dataset's record, so it would not appear
+in the Beacon's dataset list. Register it from the same `dataset.yaml`, after
+the variants are in (`--samples` is the number of samples in the VCF). It
+refuses an id that no imported variant carries, and running it again updates the
+same record:
+
+```bash
+beacon python $TOOLS/data_import/register_dataset.py dataset.yaml \
+    --db beacon_db --mongo-uri "$MONGO_URI" --samples 9
+```
+
+`run_ilifu_pipeline.sh` does this for you when you give it `--dataset-file`.
+
 **Alternative: Copy files to beacon server and import locally**
 
 ```bash
@@ -536,7 +521,8 @@ For large datasets that may take hours:
 tmux new -s beacon
 
 # Run pipeline inside tmux
-./scripts/run_ilifu_pipeline.sh /path/to/large.vcf.gz --dataset-id MY_DATASET
+./scripts/run_ilifu_pipeline.sh /path/to/large.vcf.gz \
+    --dataset-file dataset.yaml
 
 # Detach: Ctrl+B then D
 # Re-attach later: tmux attach -t beacon
@@ -546,54 +532,16 @@ tmux new -s beacon
 
 ### Common Issues
 
-**`Failed to build 'cyvcf2'` / `No module named 'pkg_resources'` during
-`pip install`:**
+**`singularity: command not found`:** `singularity` is on the path only in a login
+shell on a compute node. Work inside your `srun` session; if you run a single
+command over `ssh`, wrap it as `ssh <node> 'bash -lc "<command>"'`.
 
-```text
-ModuleNotFoundError: No module named 'pkg_resources'
-ERROR: Failed to build 'cyvcf2' when getting requirements to build wheel
-```
+**`INFO: Mounting image with FUSE.` before every output:** harmless. It is
+Singularity saying how it opened the image, and does not mean anything failed.
 
-Fix: you installed `requirements.txt` on Python 3.12. It pins `cyvcf2==0.30.22`,
-which has no 3.12 wheel, so pip compiles it in an isolated build environment
-whose setuptools no longer ships `pkg_resources`. Pinning `setuptools<70` in
-your venv does not help, because pip's build isolation ignores it. Install
-`requirements-runtime.txt` from wheels instead, as in Step 2:
-
-```bash
-pip install --only-binary=:all: -r requirements-runtime.txt
-```
-
-**`File exists: .../afrigend-beacon2-tools/.venv` when creating the venv:**
-
-```text
-Error: [Errno 17] File exists: '.../afrigend-beacon2-tools/.venv'
-```
-
-Fix: clones made before this was fixed contain a stray `.venv` symlink that
-points at a path on a developer's laptop, so it dangles on the cluster. Check
-with `ls -l .venv`, then remove only the link with `rm .venv` (no trailing
-slash) and create the venv again. Clones made after the fix do not have it.
-
-**`ensurepip is not available` when creating the venv:**
-
-```text
-The virtual environment was not created successfully because ensurepip is not
-available.  On Debian/Ubuntu systems, you need to install the python3-venv
-package using the following command.
-
-    apt install python3.12-venv
-```
-
-Fix: `apt` is not available to you on the cluster. Remove the half-created
-`.venv` and use the `uv` or `--without-pip` method in
-[Step 2](#step-2-install-the-tools).
-
-**`cyvcf2` import error:**
-```
-ModuleNotFoundError: No module named 'cyvcf2'
-```
-Fix: Ensure the venv is activated (`source .venv/bin/activate`). If `cyvcf2` failed to install, try `pip install --no-cache-dir cyvcf2` or use conda.
+**`FATAL: ... invalid tar header` from `singularity build`:** the Docker archive
+was gzipped. Save it as a plain `.tar` (`docker save -o beacon-tools.tar ...`),
+as in A3.
 
 **SSH tunnel refused:**
 ```
