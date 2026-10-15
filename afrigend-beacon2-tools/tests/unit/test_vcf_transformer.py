@@ -1,5 +1,6 @@
 """Unit tests for vcf_transform.vcf_to_beacon — highest-risk logic."""
 import json
+import logging
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -308,6 +309,36 @@ class TestDatasetAttribution:
     def test_no_dataset_id_gives_empty_list(self):
         rec = _make_transformer()._create_variant_record(_make_variant(), "GRCh38")
         assert rec.dataset_ids == []
+
+    def test_no_dataset_id_warns_that_variants_belong_to_no_dataset(self, caplog):
+        # An empty dataset_ids is a silent trap: the variants load but belong to
+        # no dataset, so /datasets lists nothing and dataset-scoped queries miss them.
+        with caplog.at_level(logging.WARNING):
+            _make_transformer()
+        warned = [r for r in caplog.records
+                  if r.levelno == logging.WARNING and "--dataset-id" in r.getMessage()]
+        assert warned, "expected a warning naming --dataset-id"
+
+    def test_dataset_id_given_does_not_warn(self, caplog):
+        cfg = {
+            "vcf": {"default_assembly": "GRCh38", "quality_filters": {}},
+            "processing": {"batch_size": 100, "show_progress": False, "log_level": "WARNING"},
+        }
+        with patch.object(VCFTransformer, "_load_config", return_value=cfg):
+            with caplog.at_level(logging.WARNING):
+                VCFTransformer(dataset_id="MY_DATASET")
+        assert not [r for r in caplog.records if "--dataset-id" in r.getMessage()]
+
+    def test_dataset_id_from_config_does_not_warn(self, caplog):
+        cfg = {
+            "vcf": {"default_assembly": "GRCh38", "quality_filters": {}},
+            "processing": {"batch_size": 100, "show_progress": False, "log_level": "WARNING"},
+            "dataset": {"id": "from-config"},
+        }
+        with patch.object(VCFTransformer, "_load_config", return_value=cfg):
+            with caplog.at_level(logging.WARNING):
+                VCFTransformer()
+        assert not [r for r in caplog.records if "--dataset-id" in r.getMessage()]
 
     def test_dataset_ids_survive_serialization(self, tmp_path):
         """The field must reach the JSONL under the exact name the API queries."""

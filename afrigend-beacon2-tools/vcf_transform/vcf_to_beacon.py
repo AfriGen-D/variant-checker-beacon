@@ -148,6 +148,13 @@ class VCFTransformer:
         self.config = self._load_config(config_path)
         self.dataset_id = dataset_id or (self.config.get('dataset') or {}).get('id')
         self._setup_logging()
+        if not self.dataset_id:
+            self.logger.warning(
+                "No --dataset-id given: these variants will belong to no dataset, "
+                "so /datasets will not list them and dataset-scoped queries will "
+                "not find them. Pass --dataset-id <id> (the id the dataset is "
+                "listed under in the datasets collection)."
+            )
         self.stats = {
             'variants_processed': 0,
             'variants_filtered': 0,
