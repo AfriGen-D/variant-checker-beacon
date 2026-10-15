@@ -2,8 +2,17 @@
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+# CI's test environment has no cyvcf2. The transformer only needs the name to be
+# importable here (the counting tests use fake variants), so stand one in rather than
+# depend on another test module having done it first.
+try:
+    import cyvcf2  # noqa: F401
+except ImportError:
+    sys.modules["cyvcf2"] = MagicMock()
 
 from validation.validate_af_extraction import count_allele_frequencies  # noqa: E402
 
@@ -114,3 +123,39 @@ class TestRunAsAScript:
         r = self._run(str(tmp_path / "nope.vcf.gz"))
         assert r.returncode != 0
         assert "nope.vcf.gz" in (r.stderr + r.stdout)
+
+
+class TestWithoutCyvcf2:
+    """CI's test environment has no cyvcf2, and so can a user's shell. The script must
+    still start, show help and report a missing file, and say clearly what is missing
+    when it needs the library, instead of crashing on import."""
+
+    _RUNNER = (
+        "import runpy, sys\n"
+        "sys.modules['cyvcf2'] = None  # `import cyvcf2` raises ImportError\n"
+        "script = sys.argv[1]; sys.argv = sys.argv[1:]\n"
+        "runpy.run_path(script, run_name='__main__')\n"
+    )
+
+    def _run(self, *args):
+        import os
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        script = Path(__file__).resolve().parents[2] / "validation" / "validate_af_extraction.py"
+        return subprocess.run([sys.executable, "-c", self._RUNNER, str(script), *args],
+                              capture_output=True, text=True, env=env, cwd="/", timeout=120)
+
+    def test_help_works_without_cyvcf2(self):
+        r = self._run("--help")
+        assert r.returncode == 0, r.stderr
+
+    def test_a_missing_file_is_reported_without_cyvcf2(self, tmp_path):
+        r = self._run(str(tmp_path / "nope.vcf.gz"))
+        assert r.returncode == 2
+        assert "nope.vcf.gz" in r.stderr
+
+    def test_a_real_file_without_cyvcf2_says_what_is_missing(self, tmp_path):
+        f = tmp_path / "x.vcf.gz"
+        f.write_bytes(b"")
+        r = self._run(str(f))
+        assert r.returncode == 2
+        assert "cyvcf2" in r.stderr

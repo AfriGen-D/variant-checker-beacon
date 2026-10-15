@@ -27,11 +27,13 @@ from typing import Any, Dict, Iterable
 # the path (the container sets PYTHONPATH, a plain environment does not).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from vcf_transform.vcf_to_beacon import VCFTransformer  # noqa: E402
-
 
 def count_allele_frequencies(variants: Iterable[Any], limit: int) -> Dict[str, Any]:
     """Run the real extraction over the first ``limit`` variants."""
+    # Imported here, not at the top: the transformer imports cyvcf2, and the script
+    # must still start (help, a missing-file message) where cyvcf2 is not installed.
+    from vcf_transform.vcf_to_beacon import VCFTransformer
+
     checked = with_af = 0
     examples = []
     for variant in variants:
