@@ -156,6 +156,7 @@ jobs:
           NS=$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
           echo "api=ghcr.io/${NS}/beacon-api" >> "$GITHUB_OUTPUT"
           echo "frontend=ghcr.io/${NS}/beacon-frontend" >> "$GITHUB_OUTPUT"
+          echo "tools=ghcr.io/${NS}/beacon-tools" >> "$GITHUB_OUTPUT"
 
       # API image
       - uses: docker/build-push-action@v5
@@ -180,6 +181,40 @@ jobs:
             ${{ steps.img.outputs.frontend }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Tools image: the transform, validate and import tools plus bcftools, so a
+      # user on an HPC cluster runs them with `singularity exec` and installs
+      # nothing (see docs/ILIFU_DATA_LOADING_GUIDE.md). It is built and
+      # smoke-tested on every run, pull requests included, and pushed only from
+      # main and tags, like the other two.
+      - name: Build the tools image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: nextflow/docker/Dockerfile.tools
+          load: true
+          tags: beacon-tools:ci
+          cache-from: type=gha,scope=tools
+          cache-to: type=gha,mode=max,scope=tools
+
+      - name: Smoke-test the tools image
+        run: |
+          docker run --rm \
+            -v "$PWD/scripts/smoke_tools_image.sh:/smoke.sh:ro" \
+            -v "$PWD/afrigend-beacon2-tools/tests/fixtures:/fixtures:ro" \
+            --entrypoint bash beacon-tools:ci /smoke.sh
+
+      - name: Push the tools image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: nextflow/docker/Dockerfile.tools
+          push: true
+          tags: |
+            ${{ steps.img.outputs.tools }}:latest
+            ${{ steps.img.outputs.tools }}:${{ github.sha }}
+          cache-from: type=gha,scope=tools
 
 
 # Production deploy lives in deploy.yml (tag-triggered, GHCR images,
