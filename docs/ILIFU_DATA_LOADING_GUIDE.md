@@ -661,6 +661,79 @@ ssh <your-ssh-alias> \
     "docker exec beacon-mongodb mongosh beacon_db --eval 'db.individuals.countDocuments({})'"
 ```
 
+#### More example queries
+
+Run these after Step 8's `BEACON_URL` line. The first block defines a small helper
+that prints only the answer, and two short variables for the queries below; the
+queries use the example dataset (`EXAMPLE_1000G_CHR22`). Read the `exists`
+field: in boolean mode the answer is `True` or `False`.
+
+```bash
+SHOW="import json,sys; d=json.load(sys.stdin)
+print(d.get('responseSummary',{}).get('exists', d))"
+ask() { curl -s "$BEACON_URL/api/$1" | python3 -c "$SHOW"; }
+Q="g_variants?assemblyId=GRCh38&referenceName=22"
+DS="&datasetIds=EXAMPLE_1000G_CHR22"
+```
+
+An exact variant (`start` is 0-based: VCF position 16021005 is `16021004`),
+expect `True`:
+
+```bash
+ask "$Q&start=16021004&referenceBases=G&alternateBases=C"
+```
+
+Any variant in a region (`start` and `end`), expect `True`; an empty region
+(`start=1&end=1000`) gives `False`:
+
+```bash
+ask "$Q&start=16021000&end=16022000"
+ask "$Q&start=1&end=1000"
+```
+
+A region, only variants of one type, expect `True`. The types are `SNV`, `INS`,
+`DEL`, `DUP`, `INV`, `CNV`, `DEL:ME`, `INS:ME` and `DUP:TANDEM`; anything else is
+refused with this list:
+
+```bash
+ask "$Q&start=16021000&end=16022000&variantType=SNV"
+```
+
+Only inside one dataset, expect `True`. The same position with an allele the
+dataset does not hold, expect `False`:
+
+```bash
+ask "$Q&start=16021004&referenceBases=G&alternateBases=C$DS"
+ask "$Q&start=16021004&referenceBases=G&alternateBases=T$DS"
+```
+
+Inside several datasets: separate the ids with commas
+(`&datasetIds=<id1>,<id2>`). A route such as `/datasets/<id>/g_variants` is not
+implemented; use `datasetIds`. An unknown id answers `False`, not an error.
+
+`chromosome=22` works in place of `referenceName=22`, and the same question
+can be sent as a POST:
+
+```bash
+BODY='{"query":{"requestParameters":{"assemblyId":"GRCh38","referenceName":"22",
+"start":16021004,"referenceBases":"G","alternateBases":"C"},
+"datasetIds":["EXAMPLE_1000G_CHR22"]}}'
+JSON='Content-Type: application/json'
+curl -s -X POST -H "$JSON" -d "$BODY" $BEACON_URL/api/g_variants
+```
+
+Individuals and datasets, each `True` when something matches:
+
+```bash
+ask "query/individuals?sex=MALE"
+ask "individuals?skip=0&limit=5"
+ask "datasets/EXAMPLE_1000G_CHR22"
+```
+
+`curl -s $BEACON_URL/api/datasets` lists the datasets with their variant and sample
+counts. The Beacon allows about 50 requests per hour per client address; beyond
+that it answers HTTP 429 `Request was throttled` with a `Retry-After` in seconds.
+
 #### Stop the Beacon's containers (optional)
 
 To stop every container of the Beacon's compose project (API, MongoDB, Redis and,
@@ -1082,6 +1155,79 @@ ssh <your-ssh-alias> "docker exec beacon-mongodb mongosh beacon_db --eval 'db.in
 For the example data the variant count is 4231 (2116 + 2115) and there are 9
 samples.
 
+#### More example queries for many VCF files
+
+Run these after Step 8's `BEACON_URL` line. The first block defines a small helper
+that prints only the answer, and two short variables for the queries below; the
+queries use the example dataset (`EXAMPLE_1000G_CHR22`). Read the `exists`
+field: in boolean mode the answer is `True` or `False`.
+
+```bash
+SHOW="import json,sys; d=json.load(sys.stdin)
+print(d.get('responseSummary',{}).get('exists', d))"
+ask() { curl -s "$BEACON_URL/api/$1" | python3 -c "$SHOW"; }
+Q="g_variants?assemblyId=GRCh38&referenceName=22"
+DS="&datasetIds=EXAMPLE_1000G_CHR22"
+```
+
+An exact variant (`start` is 0-based: VCF position 16021005 is `16021004`),
+expect `True`:
+
+```bash
+ask "$Q&start=16021004&referenceBases=G&alternateBases=C"
+```
+
+Any variant in a region (`start` and `end`), expect `True`; an empty region
+(`start=1&end=1000`) gives `False`:
+
+```bash
+ask "$Q&start=16021000&end=16022000"
+ask "$Q&start=1&end=1000"
+```
+
+A region, only variants of one type, expect `True`. The types are `SNV`, `INS`,
+`DEL`, `DUP`, `INV`, `CNV`, `DEL:ME`, `INS:ME` and `DUP:TANDEM`; anything else is
+refused with this list:
+
+```bash
+ask "$Q&start=16021000&end=16022000&variantType=SNV"
+```
+
+Only inside one dataset, expect `True`. The same position with an allele the
+dataset does not hold, expect `False`:
+
+```bash
+ask "$Q&start=16021004&referenceBases=G&alternateBases=C$DS"
+ask "$Q&start=16021004&referenceBases=G&alternateBases=T$DS"
+```
+
+Inside several datasets: separate the ids with commas
+(`&datasetIds=<id1>,<id2>`). A route such as `/datasets/<id>/g_variants` is not
+implemented; use `datasetIds`. An unknown id answers `False`, not an error.
+
+`chromosome=22` works in place of `referenceName=22`, and the same question
+can be sent as a POST:
+
+```bash
+BODY='{"query":{"requestParameters":{"assemblyId":"GRCh38","referenceName":"22",
+"start":16021004,"referenceBases":"G","alternateBases":"C"},
+"datasetIds":["EXAMPLE_1000G_CHR22"]}}'
+JSON='Content-Type: application/json'
+curl -s -X POST -H "$JSON" -d "$BODY" $BEACON_URL/api/g_variants
+```
+
+Individuals and datasets, each `True` when something matches:
+
+```bash
+ask "query/individuals?sex=MALE"
+ask "individuals?skip=0&limit=5"
+ask "datasets/EXAMPLE_1000G_CHR22"
+```
+
+`curl -s $BEACON_URL/api/datasets` lists the datasets with their variant and sample
+counts. The Beacon allows about 50 requests per hour per client address; beyond
+that it answers HTTP 429 `Request was throttled` with a `Retry-After` in seconds.
+
 #### Stop the Beacon's containers when you are done (optional)
 
 To stop every container of the Beacon's compose project (API, MongoDB, Redis and,
@@ -1251,6 +1397,11 @@ Mode"), not your data.** The variants are in the database but no dataset record
 exists for them. `mongoimport` never creates one; register it with
 `register_dataset.py` (Step 7), then flush the cache because the list is cached
 for an hour.
+
+**HTTP 429 `Request was throttled. Expected available in N seconds.`** You sent
+more than about 50 requests in an hour from one address. Wait the `N` seconds
+(also in the `Retry-After` header); a script that loops over many queries needs
+to pace itself.
 
 **A query that should match says `exists: false`.** Check these, in order:
 
