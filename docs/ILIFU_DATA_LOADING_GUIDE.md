@@ -2,7 +2,33 @@
 
 This guide walks through transforming your VCF files (any cohort or dataset) into GA4GH Beacon v2 format and loading it into the production MongoDB instance.
 
-## Architecture Overview
+## Contents
+
+- [1. Architecture Overview](#1-architecture-overview)
+- [2. Prerequisites](#2-prerequisites)
+- [3. Quick Start (Automated Pipeline)](#3-quick-start-automated-pipeline)
+  - [3.1 Using your own data](#31-using-your-own-data)
+  - [3.2 Pipeline Options](#32-pipeline-options)
+- [4. Step-by-Step Guide (Manual)](#4-step-by-step-guide-manual)
+  - [4.1 Step 1: Get a Compute Node](#41-step-1-get-a-compute-node)
+  - [4.2 Step 2: Install the Tools](#42-step-2-install-the-tools)
+  - [4.3 Step 3: Locate Your VCF Files](#43-step-3-locate-your-vcf-files)
+  - [4.4 Step 4: Transform VCF to Beacon JSON](#44-step-4-transform-vcf-to-beacon-json)
+  - [4.5 Step 5: Transform Phenotype Data (Optional)](#45-step-5-transform-phenotype-data-optional)
+  - [4.6 Step 6: Validate](#46-step-6-validate)
+  - [4.7 Step 7: Import to Production MongoDB](#47-step-7-import-to-production-mongodb)
+  - [4.8 Step 8: Verify](#48-step-8-verify)
+- [5. Performance Tuning](#5-performance-tuning)
+  - [5.1 For Large Datasets (>10M variants)](#51-for-large-datasets-10m-variants)
+  - [5.2 SLURM Resource Requests](#52-slurm-resource-requests)
+  - [5.3 Using Screen/Tmux for Long Runs](#53-using-screentmux-for-long-runs)
+- [6. Troubleshooting](#6-troubleshooting)
+  - [6.1 Common Issues](#61-common-issues)
+  - [6.2 Checking Pipeline Output](#62-checking-pipeline-output)
+- [7. Tool Reference](#7-tool-reference)
+- [8. Verification Checklist](#8-verification-checklist)
+
+## 1. Architecture Overview
 
 ```
 ┌─────────────────────┐     ┌──────────────────┐     ┌───────────────────────┐
@@ -20,7 +46,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
 
 **Why ILIFU?** VCF transformation is compute-intensive (parsing millions of variants). ILIFU compute nodes provide the CPU, memory, and direct access to the data on `/cbio` that this requires.
 
-## Prerequisites
+## 2. Prerequisites
 
 | Requirement | Details |
 |---|---|
@@ -41,7 +67,7 @@ Host ilifu
 
 Then `ssh ilifu` is the same as `ssh <your-ilifu-username>@slurm.ilifu.ac.za`.
 
-## Quick Start (Automated Pipeline)
+## 3. Quick Start (Automated Pipeline)
 
 The fastest path: one script does everything. Paths in this guide use `$USER`,
 your ILIFU username, so the commands work for any user as written.
@@ -49,7 +75,7 @@ your ILIFU username, so the commands work for any user as written.
 The steps below run on a small public example (nine 1000 Genomes individuals on
 chromosome 22, plus a made-up phenotype file) so you can see a correct run
 before you use your own files. It stops before any database import. To use your
-own data, see "Using your own data" after the steps.
+own data, see section 3.1 after the steps.
 
 ```bash
 # 1. SSH into ILIFU (from your own computer)
@@ -91,7 +117,7 @@ uses these same files, so you can compare every result with what you get. The
 files are also in the `examples/` folder of the repository; its README says
 where the data comes from.
 
-### Using your own data
+### 3.1 Using your own data
 
 Describe your dataset in a short `dataset.yaml`, then point the script at your
 VCF. The `id` is the name your data is listed under: choose your own, for
@@ -124,7 +150,7 @@ Apptainer), or a plain Docker image name such as
 `ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest` (run with Docker,
 on a server or workstation). `--runtime` overrides the choice.
 
-### Pipeline Options
+### 3.2 Pipeline Options
 
 ```bash
 # With phenotype data
@@ -153,11 +179,11 @@ on a server or workstation). `--runtime` overrides the choice.
     --workers 4
 ```
 
-## Step-by-Step Guide (Manual)
+## 4. Step-by-Step Guide (Manual)
 
 If you prefer to run each step individually for more control.
 
-### Step 1: Get a Compute Node
+### 4.1 Step 1: Get a Compute Node
 
 ```bash
 ssh <your-ilifu-username>@slurm.ilifu.ac.za   # or: ssh ilifu
@@ -175,7 +201,7 @@ srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=4 \
 | 1-10M variants | 4 | 32G | Standard WGS |
 | 10M+ variants | 8 | 64G | Large cohort VCF |
 
-### Step 2: Install the Tools
+### 4.2 Step 2: Install the Tools
 
 First get the repository, which holds the scripts and the tools' configuration:
 
@@ -194,7 +220,7 @@ commands are the same whichever you choose (a function rather than a variable, s
 it behaves the same in bash and zsh). Define them again in each new shell
 session, or put the lines in your `~/.bashrc`.
 
-#### The tools run from a container
+#### 4.2.1 The tools run from a container
 
 Nothing to install or reinstall: the image carries Python, every library,
 `cyvcf2` and `bcftools`. Use Singularity on ILIFU (A1) or Docker on a server or
@@ -293,7 +319,7 @@ singularity build beacon-tools.sif docker-archive://beacon-tools.tar
 Keep the archive a plain `.tar`: Singularity rejects a gzipped one with
 `invalid tar header`. From here the `beacon()` function in A1 works unchanged.
 
-### Step 3: Locate Your VCF Files
+### 4.3 Step 3: Locate Your VCF Files
 
 The commands below use the example data. If you did not download it in the Quick
 Start, do it now (skip this block if you did):
@@ -352,7 +378,7 @@ beacon bcftools view -f PASS -r chr22:16000000-17000000 $VCF \
 beacon bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
 ```
 
-### Step 4: Transform VCF to Beacon JSON
+### 4.4 Step 4: Transform VCF to Beacon JSON
 
 First describe the dataset in a small file, `dataset.yaml`; the example data
 comes with one (`examples/dataset.yaml`, id `EXAMPLE_1000G_CHR22`). Only `id` and
@@ -408,7 +434,7 @@ works there, and must match the file if you give both).
 
 Note: `start` uses 0-based coordinates (VCF POS is 1-based, so `start = POS - 1`).
 
-### Step 5: Transform Phenotype Data (Optional)
+### 4.5 Step 5: Transform Phenotype Data (Optional)
 
 If you have clinical/phenotype data (CSV/TSV/XLSX):
 
@@ -433,7 +459,7 @@ beacon python $TOOLS/phenotype_transform/phenotype_to_beacon.py $PHENOTYPES \
 
 The transformer auto-detects column names and normalizes them.
 
-### Step 6: Validate
+### 4.6 Step 6: Validate
 
 ```bash
 # Validate variants (strict mode = stop on first error)
@@ -457,7 +483,7 @@ beacon python $TOOLS/validation/validate_json.py \
 - Correct data types (`start` is integer, `id` is string)
 - Value ranges (`start >= 0`, valid chromosome names)
 
-### Step 7: Import to Production MongoDB
+### 4.7 Step 7: Import to Production MongoDB
 
 **Do not import the example data into a production Beacon.** The phenotypes are
 made up. To practise this step, use a development Beacon, or stop after Step 6.
@@ -528,7 +554,7 @@ docker exec -i beacon-mongodb mongoimport \
     --type json ~/beacon_output/vcf_output/individuals.json
 ```
 
-### Step 8: Verify
+### 4.8 Step 8: Verify
 
 ```bash
 # Flush Redis cache (old test data may be cached)
@@ -559,9 +585,9 @@ ssh <your-ssh-alias> \
     "docker exec beacon-mongodb mongosh beacon_db --eval 'db.individuals.countDocuments({})'"
 ```
 
-## Performance Tuning
+## 5. Performance Tuning
 
-### For Large Datasets (>10M variants)
+### 5.1 For Large Datasets (>10M variants)
 
 Edit `config/settings.yaml` or pass `--batch-size` / `--workers` to the pipeline script:
 
@@ -572,7 +598,7 @@ processing:
   memory_limit: 8192    # 8GB per worker
 ```
 
-### SLURM Resource Requests
+### 5.2 SLURM Resource Requests
 
 ```bash
 # For large WGS cohort VCFs (100+ samples, 10M+ variants)
@@ -584,7 +610,7 @@ srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=2 \
      --mem=16G --time=1-0:0:0 bash
 ```
 
-### Using Screen/Tmux for Long Runs
+### 5.3 Using Screen/Tmux for Long Runs
 
 For large datasets that may take hours:
 
@@ -600,9 +626,9 @@ tmux new -s beacon
 # Re-attach later: tmux attach -t beacon
 ```
 
-## Troubleshooting
+## 6. Troubleshooting
 
-### Common Issues
+### 6.1 Common Issues
 
 **`singularity: command not found`:** `singularity` is on the path only in a login
 shell on a compute node. Work inside your `srun` session; if you run a single
@@ -636,7 +662,7 @@ Fix: The individual schema expects uppercase sex values. Normalize your input da
 **Out of memory on compute node:**
 Fix: Request more memory (`--mem=64G`) or reduce batch size (`--batch-size 500`).
 
-### Checking Pipeline Output
+### 6.2 Checking Pipeline Output
 
 ```bash
 # Count lines in variants file
@@ -649,7 +675,7 @@ head -1 beacon_output/vcf_output/variants_batch.jsonl | python -m json.tool
 cat beacon_output/vcf_output/transformation_summary.json | python -m json.tool
 ```
 
-## Tool Reference
+## 7. Tool Reference
 
 | Tool | Purpose | Input | Output |
 |---|---|---|---|
@@ -659,7 +685,7 @@ cat beacon_output/vcf_output/transformation_summary.json | python -m json.tool
 | `import_to_mongo.py` | Import to MongoDB | `.json`/`.jsonl` | Records in MongoDB |
 | `export_from_mongo.py` | Export from MongoDB | MongoDB query | `.json` files |
 
-## Verification Checklist
+## 8. Verification Checklist
 
 After completing the pipeline, verify:
 
