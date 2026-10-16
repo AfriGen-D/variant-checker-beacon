@@ -40,19 +40,15 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
 
 ## 1. Architecture Overview
 
-```
-┌─────────────────────┐     ┌──────────────────┐     ┌───────────────────────┐
-│  ILIFU Compute Node │     │  SSH Tunnel       │     │  Beacon Server        │
-│                     │     │                   │     │  (<your-server-ip>)      │
-│  VCF files          │────>│  localhost:27017  │────>│  MongoDB (Docker)     │
-│  ↓                  │     │  ←→               │     │  ↓                    │
-│  vcf_to_beacon.py   │     └──────────────────┘     │  Beacon API           │
-│  ↓                  │                               │  ↓                    │
-│  validate_json.py   │                               │  Frontend             │
-│  ↓                  │                               └───────────────────────┘
-│  import_to_mongo.py │
-└─────────────────────┘
-```
+![Data flow from VCF files on the ILIFU cluster to the Beacon server](diagrams/ilifu-data-loading-architecture.svg)
+
+*The path of a dataset. On the cluster, a Slurm array converts and validates one
+VCF per task. The results then reach MongoDB by one of two routes. Route A
+(solid green) copies them through your computer to the Beacon server and imports
+there; it is the usual route, because ILIFU compute nodes normally cannot reach
+the Beacon servers. Route B (dashed orange) lets a cluster job import through an
+SSH tunnel, and works only when the cluster can reach the server. The vector
+source is in [diagrams/](diagrams/README.md).*
 
 **Why ILIFU?** VCF transformation is compute-intensive (parsing millions of variants). ILIFU compute nodes provide the CPU, memory, and direct access to the data on `/cbio` that this requires.
 
