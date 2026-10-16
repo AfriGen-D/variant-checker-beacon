@@ -578,6 +578,25 @@ beacon python $TOOLS/data_import/register_dataset.py $DATASET \
 
 `run_ilifu_pipeline.sh` does this for you when you give it `--dataset-file`.
 
+**Build the indexes once after a large import.** The importers (`import_to_mongo.py`,
+`mongoimport`, the pipeline) do not create the indexes the Beacon's position
+queries rely on. Without them every query scans every variant, and with a few
+million variants the API gives up with HTTP 503 (`This beacon could not answer
+in time`) even though its health check says `healthy`. On the Beacon server,
+preview, then build (the API container is `beacon-api-boolean`):
+
+```bash
+docker exec beacon-api-boolean python manage.py create_indexes --dry-run --settings=beacon_project.settings_boolean
+docker exec beacon-api-boolean python manage.py create_indexes --settings=beacon_project.settings_boolean
+```
+
+Expect the preview to list the indexes it would create (`variant_locus_overlap`,
+`variant_exact_allele`, `variant_dataset_ids`) and the second command to end with
+`Done.`; it took about two minutes for 6 million variants and is safe to run
+again (existing indexes are reported as up to date). Then flush the cache, as in
+the verify step. On a collection of tens of millions of variants the build is
+long: agree the time first.
+
 **Alternative: Copy files to beacon server and import locally**
 
 ```bash
@@ -988,6 +1007,25 @@ dataset list; it refuses an id that no imported variant carries, and running it
 again updates the same record. If the files hold **different samples** (split by
 group rather than by chromosome), import each file's `individuals.json` inside the
 loop as well, and pass the total number of distinct samples to `--samples`.
+
+**Build the indexes once after a large import.** The importers (`import_to_mongo.py`,
+`mongoimport`, the pipeline) do not create the indexes the Beacon's position
+queries rely on. Without them every query scans every variant, and with a few
+million variants the API gives up with HTTP 503 (`This beacon could not answer
+in time`) even though its health check says `healthy`. On the Beacon server,
+preview, then build (the API container is `beacon-api-boolean`):
+
+```bash
+docker exec beacon-api-boolean python manage.py create_indexes --dry-run --settings=beacon_project.settings_boolean
+docker exec beacon-api-boolean python manage.py create_indexes --settings=beacon_project.settings_boolean
+```
+
+Expect the preview to list the indexes it would create (`variant_locus_overlap`,
+`variant_exact_allele`, `variant_dataset_ids`) and the second command to end with
+`Done.`; it took about two minutes for 6 million variants and is safe to run
+again (existing indexes are reported as up to date). Then flush the cache, as in
+the verify step. On a collection of tens of millions of variants the build is
+long: agree the time first.
 
 #### Route B: let a cluster job do the import
 
