@@ -176,7 +176,7 @@ if [[ -n "$CONTAINER" ]]; then
             for d in "$(dirname "$VCF_FILE")" \
                      "${PHENOTYPE_FILE:+$(dirname "$PHENOTYPE_FILE")}" \
                      "${DATASET_FILE:+$(dirname "$DATASET_FILE")}" \
-                     ${CONTAINER_BIND//,/ }; do
+                     ${CONTAINER_BIND:+${CONTAINER_BIND//,/ }}; do
                 [[ -n "$d" ]] || continue
                 case "$SEEN" in
                     *" $d "*) ;;
