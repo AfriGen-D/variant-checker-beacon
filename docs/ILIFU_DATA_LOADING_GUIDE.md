@@ -787,9 +787,99 @@ list again.
 made up. To practise this step, use a development Beacon, or stop after Step 6.
 
 The import writes to the Beacon's MongoDB, which runs in Docker on the Beacon
-server. The import job opens an SSH tunnel to that server on its own, so
-`BEACON_HOST` must be the SSH alias of the server, and your SSH key must work
-without a passphrase prompt.
+server. Check first whether the cluster can reach that server (run it on a
+cluster node, with the server's address):
+
+```bash
+timeout 6 bash -c 'echo > /dev/tcp/<your-server-ip>/22' \
+    && echo "reachable: use route B" || echo "not reachable: use route A"
+```
+
+On ILIFU compute nodes the Beacon servers are normally **not** reachable, so
+route A is the one to use.
+
+#### Route A: copy the results to the Beacon server and import there
+
+Three short hops. Replace `<your-ilifu-username>` and `<your-ssh-alias>` with your
+own.
+
+1. On **your own computer**, download the results of Step 5 and the dataset file:
+
+   ```bash
+   mkdir -p ~/beacon_import/beacon_example
+   cd ~/beacon_import
+   U=<your-ilifu-username>
+   scp -r $U@transfer.ilifu.ac.za:/cbio/users/$U/beacon_multi .
+   scp $U@transfer.ilifu.ac.za:/cbio/users/$U/beacon_example/dataset.yaml \
+       beacon_example/
+
+   ls beacon_multi                      # expect: one folder per VCF file, and logs
+   ```
+
+2. Still on your computer, upload them to the Beacon server:
+
+   ```bash
+   scp -r ~/beacon_import <your-ssh-alias>:~/
+   ```
+
+3. On the **Beacon server** (`ssh <your-ssh-alias>`), import and register, with
+   the tools image run through Docker:
+
+   ```bash
+   DATA=$HOME/beacon_import
+   OUT=$DATA/beacon_multi
+   EX=$DATA/beacon_example
+   MONGO_URI="mongodb://localhost:27017/"
+   TOOLS=/opt/beacon-tools
+   IMAGE=ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
+
+   # The image is public. An empty Docker configuration makes the pull work even
+   # when the server holds an old ghcr.io login that the registry now rejects.
+   mkdir -p $HOME/.emptydocker && echo '{}' > $HOME/.emptydocker/config.json
+   DOCKER_CONFIG=$HOME/.emptydocker docker pull $IMAGE
+   beacon() {
+       docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp \
+           -v "$DATA:$DATA" -w "$DATA" --entrypoint= $IMAGE "$@"
+   }
+
+   # 1. Variants of every file
+   for d in $OUT/part_*/; do
+       beacon python $TOOLS/data_import/import_to_mongo.py \
+           $d/vcf_output/variants_batch.jsonl \
+           --db beacon_db --collection variants --mongo-uri "$MONGO_URI"
+   done
+
+   # The samples are the same in every chromosome file, so import them once
+   first=$(ls -d $OUT/part_*/ | head -1)
+   beacon python $TOOLS/data_import/import_to_mongo.py \
+       $first/vcf_output/individuals.json \
+       --db beacon_db --collection individuals --mongo-uri "$MONGO_URI"
+
+   # 2. Register the dataset (the sample count is in the transform summary)
+   SAMPLES=$(grep -o '"individuals_found": [0-9]*' \
+       $first/vcf_output/transformation_summary.json | grep -o '[0-9]*$')
+   beacon python $TOOLS/data_import/register_dataset.py $EX/dataset.yaml \
+       --db beacon_db --mongo-uri "$MONGO_URI" --samples $SAMPLES
+   ```
+
+   Expect `Errors: 0` for every file and a last line such as `Registered dataset
+   'MY_DATASET' (...): 4231 variants, 9 samples`. The loop uses `part_*` for the
+   example; for your own data use the pattern of your folder names (for example
+   `chr*`), as the folders under `beacon_multi` are named after your VCF files.
+   When you are done, remove `~/beacon_import` on the server and on your computer.
+
+Registering creates the dataset's record, so the dataset appears in the Beacon's
+dataset list; it refuses an id that no imported variant carries, and running it
+again updates the same record. If the files hold **different samples** (split by
+group rather than by chromosome), import each file's `individuals.json` inside the
+loop as well, and pass the total number of distinct samples to `--samples`.
+
+#### Route B: let a cluster job do the import
+
+Only when the check above says the server is reachable from the cluster. The
+import job opens an SSH tunnel to the server on its own, so `BEACON_HOST` must be
+the SSH alias of the server, set up on the cluster, and the key must work without
+a passphrase prompt.
 
 ```bash
 EX=/cbio/users/$USER/beacon_example
@@ -809,49 +899,6 @@ Use the same list again: it tells the job which folders to import. To do Steps 5
 and 7 in one go, add `--import` to the Step 5 command instead of running Step 7:
 the import job then waits for the array, and is cancelled without importing
 anything if any task fails.
-
-**If you cannot use the import job** (for example your SSH key needs a passphrase),
-import by hand from your own session, one file after the other. First open the
-tunnel, in its own terminal or in tmux, and check it:
-
-```bash
-ssh -f -N -L 27017:localhost:27017 <your-ssh-alias>
-
-nc -z localhost 27017 && echo "Tunnel OK" || echo "Tunnel FAILED"
-```
-
-Then, with the `beacon` and `TOOLS` lines from Step 2 defined in the same shell:
-
-```bash
-EX=/cbio/users/$USER/beacon_example
-OUT=/cbio/users/$USER/beacon_multi
-MONGO_URI="mongodb://localhost:27017/"
-
-# 1. Variants of every file
-for d in $OUT/*/; do
-    beacon python $TOOLS/data_import/import_to_mongo.py \
-        $d/vcf_output/variants_batch.jsonl \
-        --db beacon_db --collection variants --mongo-uri "$MONGO_URI"
-done
-
-# The samples are the same in every chromosome file, so import them once
-first=$(ls -d $OUT/*/ | head -1)
-beacon python $TOOLS/data_import/import_to_mongo.py \
-    $first/vcf_output/individuals.json \
-    --db beacon_db --collection individuals --mongo-uri "$MONGO_URI"
-
-# 2. Register the dataset (the sample count is in the transform summary)
-SAMPLES=$(grep -o '"individuals_found": [0-9]*' \
-    $first/vcf_output/transformation_summary.json | grep -o '[0-9]*$')
-beacon python $TOOLS/data_import/register_dataset.py $EX/dataset.yaml \
-    --db beacon_db --mongo-uri "$MONGO_URI" --samples $SAMPLES
-```
-
-Registering creates the dataset's record, so the dataset appears in the Beacon's
-dataset list; it refuses an id that no imported variant carries, and running it
-again updates the same record. If the files hold **different samples** (split by
-group rather than by chromosome), import each file's `individuals.json` inside
-the loop as well, and pass the total number of distinct samples to `--samples`.
 
 ### 5.8 Step 8: Verify
 
