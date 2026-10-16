@@ -252,6 +252,18 @@ examples silently report "not found" for everything. See
 
 ## Step 6 — Load the test data
 
+Before you load anything, check that the stack is still up and healthy (a
+container that exited, or a stack started from another folder, is the usual
+reason a load goes nowhere):
+
+```bash
+docker compose -f compose/docker-compose.dev.yml ps
+curl -s http://localhost:8000/api/health
+```
+
+All three containers must say `Up` and `healthy`, and the health response must
+show `database` and `cache` as `healthy`, as in Step 4. If not, fix that first.
+
 ```bash
 docker compose -f compose/docker-compose.dev.yml exec -T beacon-api \
   python manage.py load_boolean_test_data --settings=beacon_project.settings_boolean
@@ -528,12 +540,40 @@ removed the `cgi` module it depends on.
 
 ## Step 12 — Shut down
 
+Pick the amount of cleaning you want. Each level includes the one before it.
+
+**Stop the containers, keep everything** (restart in seconds with `start`):
+
+```bash
+docker compose -f compose/docker-compose.dev.yml stop
+```
+
+**Remove the containers**, keep the images and the data:
+
 ```bash
 docker compose -f compose/docker-compose.dev.yml down
 ```
 
-Add `-v` to delete the MongoDB volume as well and start completely fresh next
-time.
+**Also remove the images** (the API image you built, MongoDB, Redis), to give
+the disk space back. The next `up` rebuilds and pulls them again:
+
+```bash
+docker compose -f compose/docker-compose.dev.yml down --rmi all
+```
+
+An image that another container on the machine still uses is left alone (the
+output says `Resource is still in use`); nothing is force-removed.
+
+Check what is left. Expect no output from either command:
+
+```bash
+docker ps -a --filter name=beacon --format '{{.Names}}'
+docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'beacon|mongo:5.0|redis:6-alpine'
+```
+
+**Also delete the data**: add `-v` to any `down` above to delete the MongoDB
+volume and start completely fresh next time. That cannot be undone. `stop` and
+`down` without `-v` never touch the data.
 
 ---
 
@@ -544,7 +584,27 @@ finished initialising. `docker compose -f compose/docker-compose.dev.yml restart
 
 **Port 8000, 27017 or 6380 already allocated.** Something else is using it.
 Find it with `lsof -i :8000`, or change the host side of the mapping in
-`compose/docker-compose.dev.yml`.
+`compose/docker-compose.dev.yml`. On a server that runs other stacks, `lsof`
+only names `docker-proxy`; this names the container that owns the port:
+
+```bash
+docker ps --format '{{.Names}}  {{.Ports}}' | grep ':8000->'
+```
+
+**`Conflict. The container name "/beacon-dev-mongodb" is already in use`.**
+Another Beacon stack already exists on this machine, started from a different
+folder or compose project. Do not `docker rm` it: it may be the one people are
+using, and it has its own data volume, so a second stack you start here would
+show an empty dataset list. See who owns it, then either use that stack or stop
+it with its own project name:
+
+```bash
+docker compose ls
+docker ps -a --filter name=beacon --format '{{.Names}}  {{.Status}}'
+docker compose -p <project-from-the-first-command> stop
+```
+
+Never delete a volume to make a conflict go away.
 
 **`mongosh: not found`.** The `mongo:5.0` image only has the legacy `mongo`
 shell. Use `mongo`.
