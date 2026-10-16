@@ -522,9 +522,9 @@ says `prod` and you are practising with the example data, stop here.
 If the containers are not up, start the ones that exist (they keep their data):
 
 ```bash
-LABEL='{{index .Config.Labels "com.docker.compose.project.config_files"}}'
-F=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
-ssh <your-ssh-alias> "docker compose -f $F start"
+LABEL='{{index .Config.Labels "com.docker.compose.project"}}'
+P=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
+ssh <your-ssh-alias> "docker compose -p $P start"
 ```
 
 If `docker compose up` says a container name is already in use or a port is
@@ -635,21 +635,31 @@ To stop every container of the Beacon's compose project (API, MongoDB, Redis and
 on production, the front end and nginx) in one command, from your own computer:
 
 ```bash
-LABEL='{{index .Config.Labels "com.docker.compose.project.config_files"}}'
-F=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
-ssh <your-ssh-alias> "docker compose -f $F stop"
+LABEL='{{index .Config.Labels "com.docker.compose.project"}}'
+P=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
+ssh <your-ssh-alias> "docker compose -p $P stop"
 ```
 
-The first two lines find the compose file the running containers were started
-from, so the same lines work on the development VM and on production. Check
-that they stopped (expect no output):
+The first two lines find the compose project the running containers belong to,
+so the same lines work on the development VM and on production. If you are
+already logged in on the Beacon server, run them there without `ssh`:
+
+```bash
+LABEL='{{index .Config.Labels "com.docker.compose.project"}}'
+P=$(docker inspect -f "$LABEL" beacon-api-boolean)
+docker compose -p $P stop
+```
+
+Check that they stopped (expect no output):
 
 ```bash
 ssh <your-ssh-alias> "docker ps --format '{{.Names}}' | grep beacon"
 ```
 
 `stop` keeps the containers and the data volumes. Start them again with the
-same three lines and `start` in place of `stop`. **Stopping the production
+same three lines and `start` in place of `stop`. The `ssh <your-ssh-alias>`
+lines are for your own computer; on the Beacon server itself, `ssh` is not
+needed (and the alias does not exist there). **Stopping the production
 Beacon takes the website and its API offline for everyone.** Do not use
 `docker compose down -v`: `-v` deletes the data volumes, including the MongoDB
 data.
@@ -883,9 +893,9 @@ says `prod` and you are practising with the example data, stop here.
 If the containers are not up, start the ones that exist (they keep their data):
 
 ```bash
-LABEL='{{index .Config.Labels "com.docker.compose.project.config_files"}}'
-F=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
-ssh <your-ssh-alias> "docker compose -f $F start"
+LABEL='{{index .Config.Labels "com.docker.compose.project"}}'
+P=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
+ssh <your-ssh-alias> "docker compose -p $P start"
 ```
 
 If `docker compose up` says a container name is already in use or a port is
@@ -1027,21 +1037,31 @@ To stop every container of the Beacon's compose project (API, MongoDB, Redis and
 on production, the front end and nginx) in one command, from your own computer:
 
 ```bash
-LABEL='{{index .Config.Labels "com.docker.compose.project.config_files"}}'
-F=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
-ssh <your-ssh-alias> "docker compose -f $F stop"
+LABEL='{{index .Config.Labels "com.docker.compose.project"}}'
+P=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
+ssh <your-ssh-alias> "docker compose -p $P stop"
 ```
 
-The first two lines find the compose file the running containers were started
-from, so the same lines work on the development VM and on production. Check
-that they stopped (expect no output):
+The first two lines find the compose project the running containers belong to,
+so the same lines work on the development VM and on production. If you are
+already logged in on the Beacon server, run them there without `ssh`:
+
+```bash
+LABEL='{{index .Config.Labels "com.docker.compose.project"}}'
+P=$(docker inspect -f "$LABEL" beacon-api-boolean)
+docker compose -p $P stop
+```
+
+Check that they stopped (expect no output):
 
 ```bash
 ssh <your-ssh-alias> "docker ps --format '{{.Names}}' | grep beacon"
 ```
 
 `stop` keeps the containers and the data volumes. Start them again with the
-same three lines and `start` in place of `stop`. **Stopping the production
+same three lines and `start` in place of `stop`. The `ssh <your-ssh-alias>`
+lines are for your own computer; on the Beacon server itself, `ssh` is not
+needed (and the alias does not exist there). **Stopping the production
 Beacon takes the website and its API offline for everyone.** Do not use
 `docker compose down -v`: `-v` deletes the data volumes, including the MongoDB
 data.
