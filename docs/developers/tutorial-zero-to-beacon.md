@@ -11,9 +11,9 @@ printed. If yours differs, something is wrong and the troubleshooting section
 at the end probably covers it.
 
 > **Deploying to a server instead?** This tutorial covers a local instance. For
-> a public deployment on a VM with TLS and a tunnel, see PR #9
-> (`docs/DEPLOYMENT_TUTORIAL.md`), written from a real production deploy. It is
-> not merged yet, so read it from the pull request.
+> a public deployment on a VM with TLS and a tunnel, see
+> [`docs/DEPLOYMENT_TUTORIAL.md`](../DEPLOYMENT_TUTORIAL.md), written from a real
+> production deploy.
 
 ## What you will have at the end
 
@@ -98,7 +98,7 @@ cost an hour to diagnose while writing this page.
 ## Step 2 — Check the environment file exists
 
 The dev stack reads `.env.boolean` from the repository root. **It is gitignored
-(`.gitignore:62`), so a fresh clone does not have it** and `docker compose` will
+(it is listed in `.gitignore`), so a fresh clone does not have it** and `docker compose` will
 refuse to start:
 
 ```text
@@ -166,10 +166,10 @@ docker compose -f compose/docker-compose.dev.yml ps
 ```
 
 ```text
-NAME                 IMAGE                STATUS                    PORTS
-beacon-api-boolean   compose-beacon-api   Up (health: starting)     127.0.0.1:8000->8000/tcp
-beacon-dev-mongodb   mongo:5.0            Up (healthy)              127.0.0.1:27017->27017/tcp
-beacon-dev-redis     redis:6-alpine       Up (healthy)              127.0.0.1:6380->6379/tcp
+NAME                 IMAGE                    STATUS                    PORTS
+beacon-api-boolean   beacon-beacon-api:local   Up (health: starting)     127.0.0.1:8000->8000/tcp
+beacon-dev-mongodb   mongo:5.0                Up (healthy)              127.0.0.1:27017->27017/tcp
+beacon-dev-redis     redis:6-alpine           Up (healthy)              127.0.0.1:6380->6379/tcp
 ```
 
 Note the ports bind to `127.0.0.1`, not `0.0.0.0` — the stack is not reachable
@@ -210,8 +210,9 @@ curl -s http://localhost:8000/api/health
 ```
 
 ```json
-{"status":"healthy","version":"2.0.0-boolean",
- "services":{"database":"healthy","cache":"healthy"}}
+{"status":"healthy","version":"2.0.0-boolean","release":"unknown",
+ "services":{"database":"healthy","cache":"healthy"},
+ "timestamp":"2026-10-16T08:30:00.000000"}
 ```
 
 Both `database` and `cache` must say `healthy`. If either does not, the API
@@ -447,7 +448,8 @@ curl -s -X POST http://localhost:8000/api/g_variants -H 'Content-Type: applicati
 **The body is in double quotes, and the inner quotes are escaped.** JSON needs
 double quotes and the shell needs `$POS` to expand, so single quotes will not
 do here. Pasting a literal `<POS>` sends invalid JSON and the server answers
-`500`, which tells you nothing about what you did wrong.
+`400` with `Could not parse the request body as JSON`; the fix is to replace the
+placeholder with a real number.
 
 It must return exactly what the GET in Step 8 returned — if POST and GET ever
 disagree, one of them is wrong.
@@ -487,6 +489,12 @@ curl -s http://localhost:8000/api/map
 curl -s 'http://localhost:8000/api/individuals?sex=MALE'
 ```
 
+`/api/` includes an `environment` field. It says `prod` unless you set
+`BEACON_ENVIRONMENT` in `.env.boolean` to `prod`, `test`, `dev` or `staging`, so on
+a local stack add `BEACON_ENVIRONMENT=dev` (and recreate the container, as in
+Step 2). Any other value, such as `development`, stops the API from starting
+rather than being treated as `prod`.
+
 ## Step 11 — Run the test suites
 
 The query-correctness suites need **no dependencies at all** — no Django, no
@@ -505,12 +513,13 @@ python3 -m unittest \
 ```
 
 ```text
-Ran 200 tests in 0.002s
+Ran 204 tests in 0.002s
 
 OK
 ```
 
-That is the merge gate. If you change how a query is interpreted, these are the
+That is the merge gate (CI also runs `beacon_api.test_environment`,
+`beacon_api.test_repo_hygiene` and `docs.developers.test_docs_json`). If you change how a query is interpreted, these are the
 tests that must stay green — and the ones you extend.
 
 `beacon_api.test_middleware` is different: it imports Django, so it needs a
@@ -547,8 +556,10 @@ prints it); is your `start` the stored 0-based value rather than the 1-based VCF
 position; and does the variant you are asking about actually exist (ask Mongo
 directly, as in Step 7).
 
-**A query changed answers after you edited code.** Redis caches responses for
-five minutes. `docker compose -f compose/docker-compose.dev.yml exec redis redis-cli FLUSHDB`.
+**A query changed answers after you edited code.** Redis caches GET responses: five
+minutes for queries (`g_variants`, `individuals`, `cohorts`), one hour for
+`/datasets`, `/filtering_terms` and the dataset detail pages, so a dataset you
+just loaded can take that long to appear unless you flush. `docker compose -f compose/docker-compose.dev.yml exec redis redis-cli FLUSHDB`.
 
 **Everything returns HTTP 301 / `curl` shows `Location: https://localhost:8000`.**
 `SECURE_SSL_REDIRECT=True` is still set in `.env.boolean`. See Step 2 — and
@@ -557,7 +568,7 @@ apply.
 
 **`ValueError: Unable to configure handler 'file'` in the API logs, container
 never becomes healthy.** The container runs as the non-root user `beacon`
-(uid 1000, `Dockerfile.boolean:39`) and cannot write `logs/beacon.log`. Almost
+(created in `Dockerfile.boolean`, `useradd` then `USER beacon`) and cannot write `logs/beacon.log`. Almost
 always means the repository is somewhere Docker Desktop does not share — see
 Step 1. If you are on a shared path, Docker creates `logs/` with workable
 ownership automatically and you should not hit this.
@@ -582,6 +593,8 @@ handles the ordering; if you are installing by hand outside Docker, install
 - [contributing.md](contributing.md) — branching, commits, PRs
 
 Loading **real** genomic data rather than the test fixture is a separate job:
-see `docs/ILIFU_DATA_LOADING_GUIDE.md` and `afrigend-beacon2-tools/README.md`.
-Read the data-tools caveats in [testing.md](testing.md) before running an
-import — there are known issues with loading a second dataset over a first.
+see [`docs/ILIFU_DATA_LOADING_GUIDE.md`](../ILIFU_DATA_LOADING_GUIDE.md). It runs
+the tools from a container, describes a dataset in a small `dataset.yaml`
+(`--dataset-file`), and comes with a public example in [`examples/`](../../examples/)
+that you can run first. A dataset only appears in `/api/datasets` once it has
+been registered; the guide shows how.
