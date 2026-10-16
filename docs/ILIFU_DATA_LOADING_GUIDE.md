@@ -595,8 +595,20 @@ docker exec -i beacon-mongodb mongoimport \
 
 docker exec -i beacon-mongodb mongoimport \
     --db beacon_db --collection individuals \
-    --type json ~/beacon_output/vcf_output/individuals.json
+    --type json --jsonArray < ~/beacon_output/vcf_output/individuals.json
 ```
+
+`mongoimport` runs **inside** the container, which cannot see your home
+folder, so each file is fed in through standard input (`< file`), never as a
+path argument. `individuals.json` is a JSON array, hence `--jsonArray`;
+`variants_batch.jsonl` has one record per line and needs no flag. The
+container is `beacon-mongodb` on production and `beacon-dev-mongodb` on the
+development VM.
+
+This route is plainer than `import_to_mongo.py`: it gives every record a random
+`_id`, so importing a file twice duplicates its records, and it does not
+register the dataset. Prefer the `import_to_mongo.py` route above, or Route A in
+section 5, unless you have a reason not to.
 
 ### 4.8 Step 8: Verify
 
