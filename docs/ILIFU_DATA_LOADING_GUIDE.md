@@ -22,6 +22,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [5.1 For Large Datasets (>10M variants)](#51-for-large-datasets-10m-variants)
   - [5.2 SLURM Resource Requests](#52-slurm-resource-requests)
   - [5.3 Using Screen/Tmux for Long Runs](#53-using-screentmux-for-long-runs)
+  - [5.4 Many VCF files (for example one per chromosome)](#54-many-vcf-files-for-example-one-per-chromosome)
 - [6. Troubleshooting](#6-troubleshooting)
   - [6.1 Common Issues](#61-common-issues)
   - [6.2 Checking Pipeline Output](#62-checking-pipeline-output)
@@ -626,6 +627,74 @@ tmux new -s beacon
 # Re-attach later: tmux attach -t beacon
 ```
 
+### 5.4 Many VCF files (for example one per chromosome)
+
+A cohort is often delivered as one VCF per chromosome. Load them as **one
+dataset**: every file uses the same `dataset.yaml`, so every variant carries the
+same dataset id. Two rules keep it safe:
+
+- **Transform the files at the same time, but import them one at a time.** The
+  transform needs no database. The import goes through one SSH tunnel, and a full
+  pipeline run closes the tunnel it opened when it finishes, which would cut off
+  another run still importing. So run every file with `--skip-import`, then import
+  in a loop.
+- **Register the dataset once, after the last import.** The dataset record counts
+  the variants it finds in the database, so registering early records a
+  partial count.
+
+Request enough CPUs for the files you run at once: with the default of 4 workers
+per file, four at a time need `--cpus-per-task=16` (see section 5.2).
+
+```bash
+cd /cbio/users/$USER/variant-checker-beacon
+OUT=/cbio/users/$USER/beacon_multi      # one folder per VCF is made under here
+mkdir -p $OUT
+ls /path/to/vcfs/*.vcf.gz > $OUT/vcf_list.txt     # the files to load
+
+# 1. Transform and validate every file, at most 4 at a time
+for vcf in $(cat $OUT/vcf_list.txt); do
+    name=$(basename $vcf .vcf.gz)
+    ./scripts/run_ilifu_pipeline.sh $vcf --dataset-file dataset.yaml \
+        --container /cbio/users/$USER/beacon-tools.sif --skip-import \
+        --output $OUT/$name > $OUT/$name.log 2>&1 &
+    while [ $(jobs -r | wc -l) -ge 4 ]; do sleep 5; done
+done
+wait
+
+# Any log listed here did not finish: read it before importing (expect no output)
+grep -L "Done!" $OUT/*.log
+```
+
+When every file finished, import them one after the other through the tunnel from
+Step 7, then register the dataset once:
+
+```bash
+MONGO_URI="mongodb://localhost:27017/"
+
+# 2. Variants of every file
+for d in $OUT/*/; do
+    beacon python $TOOLS/data_import/import_to_mongo.py \
+        $d/vcf_output/variants_batch.jsonl \
+        --db beacon_db --collection variants --mongo-uri "$MONGO_URI"
+done
+
+# The samples are the same in every chromosome file, so import them once
+first=$(ls -d $OUT/*/ | head -1)
+beacon python $TOOLS/data_import/import_to_mongo.py \
+    $first/vcf_output/individuals.json \
+    --db beacon_db --collection individuals --mongo-uri "$MONGO_URI"
+
+# 3. Register the dataset (the sample count is in the transform summary)
+SAMPLES=$(grep -o '"individuals_found": [0-9]*' \
+    $first/vcf_output/transformation_summary.json | grep -o '[0-9]*$')
+beacon python $TOOLS/data_import/register_dataset.py $PWD/dataset.yaml \
+    --db beacon_db --mongo-uri "$MONGO_URI" --samples $SAMPLES
+```
+
+If the files hold **different samples** (split by group rather than by chromosome),
+import each file's `individuals.json` inside the loop as well, and pass the total
+number of distinct samples to `--samples`.
+
 ## 6. Troubleshooting
 
 ### 6.1 Common Issues
@@ -640,6 +709,17 @@ Singularity saying how it opened the image, and does not mean anything failed.
 **`FATAL: ... invalid tar header` from `singularity build`:** the Docker archive
 was gzipped. Save it as a plain `.tar` (`docker save -o beacon-tools.tar ...`),
 as in A3.
+
+**`docker pull` says `denied` for the tools image:** the image is public. On a
+machine that holds an old `ghcr.io` login that the registry now rejects, even
+public pulls are refused. Run `docker logout ghcr.io` and pull again, or pull once
+with an empty Docker configuration, which changes nothing on the machine:
+
+```bash
+mkdir -p /tmp/emptydocker && echo '{}' > /tmp/emptydocker/config.json
+DOCKER_CONFIG=/tmp/emptydocker docker pull \
+    ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
+```
 
 **SSH tunnel refused:**
 ```
