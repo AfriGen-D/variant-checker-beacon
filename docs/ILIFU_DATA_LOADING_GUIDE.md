@@ -34,6 +34,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
 - [7. Troubleshooting](#7-troubleshooting)
   - [7.1 Common Issues](#71-common-issues)
   - [7.2 Checking Pipeline Output](#72-checking-pipeline-output)
+  - [7.3 The Beacon itself: build, containers and queries](#73-the-beacon-itself-build-containers-and-queries)
 - [8. Tool Reference](#8-tool-reference)
 - [9. Verification Checklist](#9-verification-checklist)
 
@@ -1216,6 +1217,51 @@ head -1 beacon_output/vcf_output/variants_batch.jsonl | python -m json.tool
 # Check transformation summary
 cat beacon_output/vcf_output/transformation_summary.json | python -m json.tool
 ```
+
+### 7.3 The Beacon itself: build, containers and queries
+
+These are problems with the Beacon server you load data into, not with the
+loading tools above.
+
+**The Beacon image fails to build while installing Python dependencies.** The
+backend is pinned to Django 4.0.10 by `django-mongoengine`, which needs
+`setuptools<70`. The Dockerfile installs them in the right order; the failure
+appears if you install by hand outside Docker without `setuptools<70` first.
+
+**`Conflict. The container name "/beacon-dev-mongodb" is already in use`, or
+`port is already allocated`.** A different compose project already owns the name
+or the port. Find out which, and use that project instead of fighting it:
+
+```bash
+docker compose ls
+docker ps -a --filter name=beacon --format '{{.Names}}  {{.Status}}'
+docker ps --format '{{.Names}}  {{.Ports}}' | grep ':8000->'
+```
+
+Do not `docker rm` a Beacon someone is using, and never delete a volume to make
+the error go away: a second stack has its own, empty data volume.
+
+**Queries fail with HTTP 503 (`This beacon could not answer in time`) but
+`/api/health` says `healthy`.** The variants collection has no position
+indexes, which happens after any import that does not build them. Build them
+once, as in Step 7 ("Build the indexes once after a large import").
+
+**`/api/datasets` shows only `test_dataset_001` ("Test Dataset for Boolean
+Mode"), not your data.** The variants are in the database but no dataset record
+exists for them. `mongoimport` never creates one; register it with
+`register_dataset.py` (Step 7), then flush the cache because the list is cached
+for an hour.
+
+**A query that should match says `exists: false`.** Check these, in order:
+
+1. `start` is the 0-based position (VCF position 60070 is `start=60069`).
+2. `assemblyId` is the one the data was loaded under (`GRCh38` here).
+3. If you pass `datasetIds`, it is the id your variants carry; the default
+   dataset `test_dataset_001` matches none of your data. An unknown id gives
+   `false`, not an error. Ask for one dataset with `&datasetIds=<id>` and for
+   several with `&datasetIds=<id1>,<id2>`; the ids are the ones
+   `/api/datasets` lists.
+4. The cache: a result is kept for five minutes. Flush it after loading data.
 
 ## 8. Tool Reference
 
