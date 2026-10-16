@@ -631,47 +631,75 @@ tmux new -s beacon
 
 A cohort is often delivered as one VCF per chromosome. Load them as **one
 dataset**: every file uses the same `dataset.yaml`, so every variant carries the
-same dataset id. Two rules keep it safe:
+same dataset id. `scripts/submit_multi_vcf.sh` does this as Slurm jobs, so you do
+not need to keep a session open:
 
-- **Transform the files at the same time, but import them one at a time.** The
-  transform needs no database. The import goes through one SSH tunnel, and a full
-  pipeline run closes the tunnel it opened when it finishes, which would cut off
-  another run still importing. So run every file with `--skip-import`, then import
-  in a loop.
-- **Register the dataset once, after the last import.** The dataset record counts
-  the variants it finds in the database, so registering early records a
-  partial count.
+1. a **job array** transforms and validates the files, one task per file, at most
+   `--max-parallel` at a time (no database is touched);
+2. an optional **import job** starts only after every task succeeded, imports the
+   files one after another and registers the dataset once.
 
-Request enough CPUs for the files you run at once: with the default of 4 workers
-per file, four at a time need `--cpus-per-task=16` (see section 5.2).
+The two stages are separate because the transforms are independent, while the
+import goes through one SSH tunnel and a full pipeline run closes the tunnel it
+opened. The dataset record counts the variants it finds, so it is written after
+the last import.
+
+Run it from the cluster, in the repository folder (`sbatch` must work in your shell:
+use a login shell, `bash -l`, on a compute node):
 
 ```bash
 cd /cbio/users/$USER/variant-checker-beacon
-OUT=/cbio/users/$USER/beacon_multi      # one folder per VCF is made under here
-mkdir -p $OUT
-ls /path/to/vcfs/*.vcf.gz > $OUT/vcf_list.txt     # the files to load
 
-# 1. Transform and validate every file, at most 4 at a time
-for vcf in $(cat $OUT/vcf_list.txt); do
-    name=$(basename $vcf .vcf.gz)
-    ./scripts/run_ilifu_pipeline.sh $vcf --dataset-file dataset.yaml \
-        --container /cbio/users/$USER/beacon-tools.sif --skip-import \
-        --output $OUT/$name > $OUT/$name.log 2>&1 &
-    while [ $(jobs -r | wc -l) -ge 4 ]; do sleep 5; done
-done
-wait
-
-# Any log listed here did not finish: read it before importing (expect no output)
-grep -L "Done!" $OUT/*.log
+# 1. Transform and validate every file. Nothing is written to a database.
+./scripts/submit_multi_vcf.sh \
+    --dataset-file dataset.yaml \
+    --container /cbio/users/$USER/beacon-tools.sif \
+    --max-parallel 4 --cpus 4 --mem 32G --time 1-00:00:00 \
+    /path/to/vcfs/*.vcf.gz
 ```
 
-When every file finished, import them one after the other through the tunnel from
-Step 7, then register the dataset once:
+It prints the job ids and where the logs are. Each file gets its own folder under
+`/cbio/users/$USER/beacon_multi` (change it with `--output`), so the file names
+must be different from one another and contain no spaces. To check on the jobs:
 
 ```bash
+squeue --me
+sacct -j <array-job-id> --format=JobID,State,Elapsed,ExitCode,MaxRSS
+tail /cbio/users/$USER/beacon_multi/logs/transform_1.log
+```
+
+Every task should end `COMPLETED`. When they have, import and register the
+dataset as a second job:
+
+```bash
+export BEACON_HOST=<your-ssh-alias>      # the Beacon server, as in Step 7
+./scripts/submit_multi_vcf.sh \
+    --dataset-file dataset.yaml \
+    --container /cbio/users/$USER/beacon-tools.sif \
+    --import-only /path/to/vcfs/*.vcf.gz
+```
+
+(Pass the same file list again: it tells the job which folders to import.) To do
+both in one go, add `--import` to the first command instead: the import job then
+waits for the array and is cancelled, without importing anything, if any task
+fails. The import job opens its own SSH tunnel from the compute node, so
+`BEACON_HOST` must be set when you submit it, and your SSH key must work without
+a passphrase prompt; if that is not the case, import by hand as shown below.
+
+Other options: `--sbatch-args "<options>"` adds options to every job (for example
+`--nodelist=compute-[205,209]`), and `--dry-run` writes the job scripts and shows
+what would be submitted without submitting anything.
+
+#### Import by hand
+
+The transformed files can also be imported from your own session, one after the
+other, through the tunnel from Step 7:
+
+```bash
+OUT=/cbio/users/$USER/beacon_multi
 MONGO_URI="mongodb://localhost:27017/"
 
-# 2. Variants of every file
+# 1. Variants of every file
 for d in $OUT/*/; do
     beacon python $TOOLS/data_import/import_to_mongo.py \
         $d/vcf_output/variants_batch.jsonl \
@@ -684,7 +712,7 @@ beacon python $TOOLS/data_import/import_to_mongo.py \
     $first/vcf_output/individuals.json \
     --db beacon_db --collection individuals --mongo-uri "$MONGO_URI"
 
-# 3. Register the dataset (the sample count is in the transform summary)
+# 2. Register the dataset (the sample count is in the transform summary)
 SAMPLES=$(grep -o '"individuals_found": [0-9]*' \
     $first/vcf_output/transformation_summary.json | grep -o '[0-9]*$')
 beacon python $TOOLS/data_import/register_dataset.py $PWD/dataset.yaml \
