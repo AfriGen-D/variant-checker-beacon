@@ -198,7 +198,9 @@ JOB
 
 # The import job is only written when something will import: a transform-only run
 # must leave nothing behind that could be submitted by mistake.
+WROTE_IMPORT=false
 if [[ "$DO_IMPORT" == true || "$IMPORT_ONLY" == true ]]; then
+WROTE_IMPORT=true
 cat > "$OUT/import.sbatch" <<JOB
 #!/bin/bash
 #SBATCH --job-name=beacon-import
@@ -223,7 +225,11 @@ fi
 EXTRA=(); if [[ -n "$SBATCH_ARGS" ]]; then read -r -a EXTRA <<< "$SBATCH_ARGS"; fi
 
 if [[ "$DRY_RUN" == true ]]; then
-    echo "Dry run: wrote $OUT/transform.sbatch and $OUT/import.sbatch; nothing submitted."
+    # Name only what this run wrote: import.sbatch is written only when importing (a
+    # copy left by an earlier run is not ours to claim).
+    WROTE="$OUT/transform.sbatch"
+    if [[ "$WROTE_IMPORT" == true ]]; then WROTE="$WROTE and $OUT/import.sbatch"; fi
+    echo "Dry run: wrote $WROTE; nothing submitted."
     exit 0
 fi
 

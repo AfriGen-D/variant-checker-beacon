@@ -175,6 +175,27 @@ class TestDryRun:
         assert _calls(env) == []
         assert (tmp_path / "out" / "transform.sbatch").exists()
         assert (tmp_path / "out" / "import.sbatch").exists()
+        assert "import.sbatch" in r.stdout          # both files were written, so both are named
+
+    def test_without_import_it_names_only_the_file_it_wrote(self, env, tmp_path):
+        r = _run(env, tmp_path, *_base(tmp_path, *_vcfs(tmp_path), extra=("--dry-run",)))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert not (tmp_path / "out" / "import.sbatch").exists()
+        assert "transform.sbatch" in r.stdout
+        assert "import.sbatch" not in r.stdout      # it must not claim a file that does not exist
+
+    def test_a_stale_import_script_from_an_earlier_run_is_not_claimed(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        _run(env, tmp_path, *_base(tmp_path, *v, extra=("--import", "--dry-run")))   # leaves import.sbatch behind
+        assert (tmp_path / "out" / "import.sbatch").exists()
+        r = _run(env, tmp_path, *_base(tmp_path, *v, extra=("--dry-run",)))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "import.sbatch" not in r.stdout
+
+    def test_import_only_dry_run_names_the_import_file_it_wrote(self, env, tmp_path):
+        r = _run(env, tmp_path, *_base(tmp_path, *_vcfs(tmp_path), extra=("--import-only", "--dry-run")))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "import.sbatch" in r.stdout
 
 
 class TestRefusals:
