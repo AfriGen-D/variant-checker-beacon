@@ -41,34 +41,15 @@ Host ilifu
 
 Then `ssh ilifu` is the same as `ssh <your-ilifu-username>@slurm.ilifu.ac.za`.
 
-## Try It First With the Example Data
-
-The repository comes with a small public data set in `examples/` (nine 1000
-Genomes individuals on chromosome 22, 67 KB, plus a made-up phenotype file), so
-you can run everything below before using your own files. Once you have the
-repository and the container (Step 2), this runs the whole pipeline on it in
-seconds, stopping before any database import:
-
-```bash
-cd /cbio/users/$USER/variant-checker-beacon
-./scripts/run_ilifu_pipeline.sh examples/1000G_chr22_subset.vcf.gz \
-    --dataset-file examples/dataset.yaml \
-    --phenotypes examples/phenotypes_example.csv \
-    --container /cbio/users/$USER/beacon-tools.sif \
-    --skip-import
-```
-
-A correct run ends with `Total errors: 0` for each of the variant, individual and
-phenotype files. The step-by-step guide below uses these same files, so you can
-compare every result with what you get. See `examples/README.md` for where the
-data comes from.
-
 ## Quick Start (Automated Pipeline)
 
-The fastest path — a single script handles everything. Paths in this guide use
-`$USER`, your ILIFU username, so the commands work for any user as written.
-The repository is assumed to be cloned as `variant-checker-beacon` in your
-`/cbio/users/$USER` directory (Step 2 below does this).
+The fastest path: one script does everything. Paths in this guide use `$USER`,
+your ILIFU username, so the commands work for any user as written.
+
+The steps below run on a small public example (nine 1000 Genomes individuals on
+chromosome 22, plus a made-up phenotype file) so you can see a correct run
+before you use your own files. It stops before any database import. To use your
+own data, see "Using your own data" after the steps.
 
 ```bash
 # 1. SSH into ILIFU (from your own computer)
@@ -83,8 +64,42 @@ cd /cbio/users/$USER
 git clone https://github.com/AfriGen-D/variant-checker-beacon.git
 singularity pull beacon-tools.sif docker://ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
 
-# 4. Describe your dataset: a short file that says what it is called
-cd variant-checker-beacon
+# 4. Download the example data: four small files (about 70 KB) from GitHub
+mkdir -p /cbio/users/$USER/beacon_example
+cd /cbio/users/$USER/beacon_example
+RAW=https://raw.githubusercontent.com
+BASE=$RAW/AfriGen-D/variant-checker-beacon/main/examples
+for f in 1000G_chr22_subset.vcf.gz 1000G_chr22_subset.vcf.gz.tbi \
+         phenotypes_example.csv dataset.yaml; do
+    curl -sSLO "$BASE/$f"
+done
+ls -l      # expect 4 files; the VCF is about 68 KB
+
+# 5. Run it from the container (nothing to install)
+cd /cbio/users/$USER/variant-checker-beacon
+EXAMPLE=/cbio/users/$USER/beacon_example
+./scripts/run_ilifu_pipeline.sh $EXAMPLE/1000G_chr22_subset.vcf.gz \
+    --dataset-file $EXAMPLE/dataset.yaml \
+    --phenotypes $EXAMPLE/phenotypes_example.csv \
+    --container /cbio/users/$USER/beacon-tools.sif \
+    --skip-import
+```
+
+A correct run processes 4,231 variants and ends with `Total errors: 0` for each
+of the variant, individual and phenotype files. The step-by-step guide below
+uses these same files, so you can compare every result with what you get. The
+files are also in the `examples/` folder of the repository; its README says
+where the data comes from.
+
+### Using your own data
+
+Describe your dataset in a short `dataset.yaml`, then point the script at your
+VCF. The `id` is the name your data is listed under: choose your own, for
+example `AIBST_EXOMES`. There is no default, so data is never filed under
+someone else's dataset by accident.
+
+```bash
+cd /cbio/users/$USER/variant-checker-beacon
 cat > dataset.yaml <<'EOF'
 dataset:
   id: MY_DATASET
@@ -93,17 +108,16 @@ dataset:
   assembly: GRCh38
 EOF
 
-# 5. Run the pipeline: the tools run from the container, so nothing is installed
 ./scripts/run_ilifu_pipeline.sh /path/to/your_data.vcf.gz \
     --dataset-file dataset.yaml \
-    --container /cbio/users/$USER/beacon-tools.sif
+    --container /cbio/users/$USER/beacon-tools.sif \
+    --skip-import
 ```
 
-`dataset.yaml` is required (or `--dataset-id`, see Step 4). Its `id` is the name
-your data is listed under: choose your own, for example `AIBST_EXOMES`. There is
-no default, so data is never filed under someone else's dataset by accident.
-When the pipeline imports, it also creates the dataset's record from this file,
-so the dataset appears in the Beacon's dataset list.
+Leave out `--skip-import` only when you mean to write to the Beacon's database:
+the pipeline then imports your variants and also creates the dataset's record
+from `dataset.yaml`, so the dataset appears in the Beacon's dataset list.
+(`--dataset-id` also works in place of the file, see Step 4.)
 
 `--container` takes a `.sif` file or a `docker://` URI (run with Singularity or
 Apptainer), or a plain Docker image name such as
@@ -281,14 +295,28 @@ Keep the archive a plain `.tar`: Singularity rejects a gzipped one with
 
 ### Step 3: Locate Your VCF Files
 
-The commands below use the example data. To use your own files instead, change
-the three variables.
+The commands below use the example data. If you did not download it in the Quick
+Start, do it now (skip this block if you did):
 
 ```bash
-cd /cbio/users/$USER/variant-checker-beacon
-VCF=$PWD/examples/1000G_chr22_subset.vcf.gz          # your VCF: /path/to/your_data.vcf.gz
-PHENOTYPES=$PWD/examples/phenotypes_example.csv      # your phenotypes (optional)
-DATASET=$PWD/examples/dataset.yaml                   # your dataset description
+mkdir -p /cbio/users/$USER/beacon_example
+cd /cbio/users/$USER/beacon_example
+RAW=https://raw.githubusercontent.com
+BASE=$RAW/AfriGen-D/variant-checker-beacon/main/examples
+for f in 1000G_chr22_subset.vcf.gz 1000G_chr22_subset.vcf.gz.tbi \
+         phenotypes_example.csv dataset.yaml; do
+    curl -sSLO "$BASE/$f"
+done
+```
+
+Then set three variables, and define the `beacon` shortcut from Step 2 again if
+this is a new shell. To use your own files instead, change the variables:
+
+```bash
+EXAMPLE=/cbio/users/$USER/beacon_example
+VCF=$EXAMPLE/1000G_chr22_subset.vcf.gz       # or: /path/to/your.vcf.gz
+PHENOTYPES=$EXAMPLE/phenotypes_example.csv   # your phenotypes (optional)
+DATASET=$EXAMPLE/dataset.yaml                # your dataset description
 ```
 
 ```bash
@@ -507,13 +535,20 @@ docker exec -i beacon-mongodb mongoimport \
 ssh <your-ssh-alias> \
     "docker exec beacon-redis redis-cli FLUSHDB"
 
-# Check datasets endpoint
-curl -s "http://<your-server-ip>:8000/api/datasets" | python -m json.tool
+# Where is the Beacon API? Use the first line from your own computer or from
+# ILIFU, and the second when you are logged in on the machine where the Beacon
+# runs (no network address needed). The port is the one the API publishes:
+# 8000 on the production host, 8080 on the development VM (see `docker ps`).
+BEACON_URL=http://<your-server-ip>:8000
+BEACON_URL=http://localhost:8000
 
-# Query a known variant
-curl -s "http://<your-server-ip>:8000/api/g_variants?\
-assemblyId=GRCh38&referenceName=1&start=100000&\
-referenceBases=A&alternateBases=T" | python -m json.tool
+# Check datasets endpoint
+curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
+
+# Query a known variant (this one is in the example data: chr22, 0-based start)
+curl -s "$BEACON_URL/api/g_variants?\
+assemblyId=GRCh38&referenceName=22&start=16021004&\
+referenceBases=G&alternateBases=C" | python3 -m json.tool
 
 # Check variant count in MongoDB
 ssh <your-ssh-alias> \

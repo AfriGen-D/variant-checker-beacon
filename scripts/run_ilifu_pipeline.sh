@@ -471,6 +471,7 @@ find "$OUTPUT_DIR" -type f -name "*.json*" -printf "  %p (%s bytes)\n" 2>/dev/nu
 echo
 if [[ "$SKIP_IMPORT" != true ]]; then
     echo "Verify in Beacon API:"
+    echo "  (on the Beacon machine itself use http://localhost:8000 instead of the address)"
     echo "  curl 'http://<your-server-ip>:8000/api/datasets'"
     echo "  curl 'http://<your-server-ip>:8000/api/g_variants?assemblyId=${ASSEMBLY}&referenceName=1&start=100000'"
 fi

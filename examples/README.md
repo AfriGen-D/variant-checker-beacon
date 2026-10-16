@@ -39,6 +39,19 @@ phenotype and disease rows were invented to exercise the phenotype transformer.
 They describe no real person. Do not cite them or load them into a Beacon that
 real users query.
 
+## Download
+
+If you have not cloned the repository (or want the files somewhere else):
+
+```bash
+RAW=https://raw.githubusercontent.com
+BASE=$RAW/AfriGen-D/variant-checker-beacon/main/examples
+for f in 1000G_chr22_subset.vcf.gz 1000G_chr22_subset.vcf.gz.tbi \
+         phenotypes_example.csv dataset.yaml; do
+    curl -sSLO "$BASE/$f"
+done
+```
+
 ## Use it
 
 Run the whole pipeline, stopping before the database import:
