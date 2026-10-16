@@ -79,3 +79,67 @@ class TestRefusals:
         r = _run(tmp_path, "--container", "some/image:tag", "--runtime", "docker", "--dry-run", runtime="docker")
         assert r.returncode == 1
         assert "dataset" in r.stderr.lower()
+
+
+class TestImportOnly:
+    """--import-only reuses an earlier --skip-import run's output folder."""
+
+    def _out(self, tmp_path, make_variants=True):
+        out = tmp_path / "out"
+        (out / "vcf_output").mkdir(parents=True)
+        if make_variants:
+            (out / "vcf_output" / "variants_batch.jsonl").write_text('{"id": "1"}\n')
+        return out
+
+    def _call(self, tmp_path, *extra):
+        env = {k: v for k, v in os.environ.items() if k not in ("CONTAINER_BIND", "DATASET_ID", "DATASET_FILE")}
+        env["PATH"] = f"{_shim(tmp_path, 'docker')}{os.pathsep}/usr/bin:/bin"
+        return subprocess.run(
+            ["bash", str(SCRIPT), str(VCF), "--dataset-id", "X", "--container", "some/image:tag",
+             "--runtime", "docker", "--output", str(tmp_path / "out"), *extra],
+            capture_output=True, text=True, env=env, cwd=str(tmp_path), timeout=120)
+
+    def test_dry_run_with_existing_output_is_accepted(self, tmp_path):
+        self._out(tmp_path)
+        r = self._call(tmp_path, "--import-only", "--dry-run")
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_missing_output_is_refused_with_the_reason(self, tmp_path):
+        self._out(tmp_path, make_variants=False)
+        r = self._call(tmp_path, "--import-only", "--skip-validate")
+        assert r.returncode == 1
+        assert "variants_batch.jsonl" in (r.stdout + r.stderr)
+        assert "--import-only" in (r.stdout + r.stderr)
+
+    def test_contradicting_flags_are_refused(self, tmp_path):
+        self._out(tmp_path)
+        r = self._call(tmp_path, "--import-only", "--skip-import")
+        assert r.returncode == 1
+        assert "contradict" in r.stderr
+
+    def test_it_does_not_transform_or_validate(self, tmp_path):
+        # The stand-in docker records every call. With --import-only and no database
+        # to reach, the run must stop at the import step without ever having started
+        # the transform or the validator.
+        self._out(tmp_path)
+        pheno = tmp_path / "pheno.csv"
+        pheno.write_text("id,sex\nA,F\n")      # given on purpose: --import-only must still not transform it
+        log = tmp_path / "docker_calls.log"
+        shim = _shim(tmp_path, "docker")
+        (shim / "docker").write_text(f'#!/bin/sh\necho "$@" >> {log}\nexit 0\n')
+        (shim / "nc").write_text("#!/bin/sh\nexit 0\n")      # pretend the SSH tunnel is already up
+        (shim / "nc").chmod(0o755)
+        env = {k: v for k, v in os.environ.items() if k not in ("CONTAINER_BIND",)}
+        env["PATH"] = f"{shim}{os.pathsep}/usr/bin:/bin"
+        r = subprocess.run(
+            ["bash", str(SCRIPT), str(VCF), "--dataset-id", "X", "--container", "some/image:tag",
+             "--runtime", "docker", "--output", str(tmp_path / "out"), "--import-only",
+             "--phenotypes", str(pheno)],
+            capture_output=True, text=True, env=env, cwd=str(tmp_path), timeout=120)
+        calls = log.read_text() if log.exists() else ""
+        # (Step 1 runs `vcf_to_beacon.py --help` as a startup check; a real transform has --assembly.)
+        transforms = [c for c in calls.splitlines() if "vcf_to_beacon.py" in c and "--assembly" in c]
+        assert not transforms, transforms
+        assert "validate_json.py" not in calls, calls
+        assert "phenotype_to_beacon.py" not in calls, calls
+        assert "import_to_mongo.py" in calls, r.stdout + r.stderr

@@ -44,6 +44,7 @@ VCF_FILE=""
 PHENOTYPE_FILE=""
 SKIP_IMPORT=false
 SKIP_VALIDATE=false
+IMPORT_ONLY=false
 CONTAINER="${BEACON_CONTAINER:-}"
 RUNTIME_PREF="${BEACON_RUNTIME:-auto}"
 DRY_RUN=false
@@ -82,6 +83,9 @@ Options:
                             (comma-separated paths) to add more.
   --skip-import             Transform + validate only, don't import to MongoDB
   --skip-validate           Skip validation step
+  --import-only             Import (and register the dataset) from an existing --output
+                            folder that a previous --skip-import run filled. Skips the
+                            transform and validation. Used by submit_multi_vcf.sh.
   --dry-run                 Show what would be done without executing
   -h, --help                Show this help message
 USAGE
@@ -101,6 +105,7 @@ while [[ $# -gt 0 ]]; do
         --runtime)      RUNTIME_PREF="$2"; shift 2 ;;
         --skip-import)  SKIP_IMPORT=true; shift ;;
         --skip-validate) SKIP_VALIDATE=true; shift ;;
+        --import-only)  IMPORT_ONLY=true; shift ;;
         --dry-run)      DRY_RUN=true; shift ;;
         -h|--help)      usage ;;
         -*)             echo "Unknown option: $1" >&2; usage ;;
@@ -109,6 +114,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$VCF_FILE" ]] && { echo "Error: VCF file is required"; usage; }
+if [[ "$IMPORT_ONLY" == true && "$SKIP_IMPORT" == true ]]; then
+    echo "Error: --import-only and --skip-import contradict each other" >&2
+    exit 1
+fi
 [[ -z "$DATASET_ID" && -z "$DATASET_FILE" ]] && {
     echo "Error: a dataset is required: pass --dataset-file dataset.yaml (preferred)" >&2
     echo "or --dataset-id <id>, the id the data is listed under in the datasets collection." >&2
@@ -324,34 +333,42 @@ YAML
 log "Config written: $ILIFU_CONFIG"
 
 # --- Transform VCF ---
-step 3 "Transforming VCF to Beacon v2 JSON"
-
 VCF_OUTPUT="$OUTPUT_DIR/vcf_output"
-log "Input:  $VCF_FILE"
-log "Output: $VCF_OUTPUT"
+PHENO_OUTPUT="$OUTPUT_DIR/phenotype_output"
 
-"${PY[@]}" "$TOOLS_DIR/vcf_transform/vcf_to_beacon.py" "$VCF_FILE" \
-    --output "$VCF_OUTPUT" \
-    --assembly "$ASSEMBLY" \
-    --dataset-id "$DATASET_ID" \
-    --config "$ILIFU_CONFIG" \
-    --verbose
+if [[ "$IMPORT_ONLY" == true ]]; then
+    step 3 "Using the existing transform output (--import-only)"
+    [[ -f "$VCF_OUTPUT/variants_batch.jsonl" ]] \
+        || die "--import-only needs $VCF_OUTPUT/variants_batch.jsonl from a previous --skip-import run"
+    log "Output: $VCF_OUTPUT"
+    log "Variants to import: $(wc -l < "$VCF_OUTPUT/variants_batch.jsonl")"
+else
+    step 3 "Transforming VCF to Beacon v2 JSON"
+    log "Input:  $VCF_FILE"
+    log "Output: $VCF_OUTPUT"
 
-# Check output was created
-[[ -f "$VCF_OUTPUT/variants_batch.jsonl" ]] || die "variants_batch.jsonl not created"
-VARIANT_COUNT=$(wc -l < "$VCF_OUTPUT/variants_batch.jsonl")
-log "Variants produced: $VARIANT_COUNT"
+    "${PY[@]}" "$TOOLS_DIR/vcf_transform/vcf_to_beacon.py" "$VCF_FILE" \
+        --output "$VCF_OUTPUT" \
+        --assembly "$ASSEMBLY" \
+        --dataset-id "$DATASET_ID" \
+        --config "$ILIFU_CONFIG" \
+        --verbose
 
-if [[ -f "$VCF_OUTPUT/individuals.json" ]]; then
-    IND_COUNT=$("${PY[@]}" -c "import json; print(len(json.load(open('$VCF_OUTPUT/individuals.json'))))")
-    log "Individuals found: $IND_COUNT"
+    # Check output was created
+    [[ -f "$VCF_OUTPUT/variants_batch.jsonl" ]] || die "variants_batch.jsonl not created"
+    VARIANT_COUNT=$(wc -l < "$VCF_OUTPUT/variants_batch.jsonl")
+    log "Variants produced: $VARIANT_COUNT"
+
+    if [[ -f "$VCF_OUTPUT/individuals.json" ]]; then
+        IND_COUNT=$("${PY[@]}" -c "import json; print(len(json.load(open('$VCF_OUTPUT/individuals.json'))))")
+        log "Individuals found: $IND_COUNT"
+    fi
 fi
 
 # --- Transform phenotypes (optional) ---
-if [[ -n "$PHENOTYPE_FILE" ]]; then
+if [[ -n "$PHENOTYPE_FILE" && "$IMPORT_ONLY" != true ]]; then
     step 4 "Transforming phenotype data"
 
-    PHENO_OUTPUT="$OUTPUT_DIR/phenotype_output"
     INDIVIDUALS_ARG=""
     if [[ -f "$VCF_OUTPUT/individuals.json" ]]; then
         INDIVIDUALS_ARG="--individuals $VCF_OUTPUT/individuals.json"
@@ -367,7 +384,7 @@ if [[ -n "$PHENOTYPE_FILE" ]]; then
 fi
 
 # --- Validate ---
-if [[ "$SKIP_VALIDATE" != true ]]; then
+if [[ "$SKIP_VALIDATE" != true && "$IMPORT_ONLY" != true ]]; then
     step 5 "Validating transformed data"
 
     log "Validating variants..."
