@@ -9,7 +9,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
 - [3. Quick Start (Automated Pipeline)](#3-quick-start-automated-pipeline)
   - [3.1 Using your own data](#31-using-your-own-data)
   - [3.2 Pipeline Options](#32-pipeline-options)
-- [4. Step-by-Step Guide (Manual)](#4-step-by-step-guide-manual)
+- [4. Step-by-Step Guide (Single VCF File)](#4-step-by-step-guide-single-vcf-file)
   - [4.1 Step 1: Get a Compute Node](#41-step-1-get-a-compute-node)
   - [4.2 Step 2: Install the Tools](#42-step-2-install-the-tools)
   - [4.3 Step 3: Locate Your VCF Files](#43-step-3-locate-your-vcf-files)
@@ -18,16 +18,24 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [4.6 Step 6: Validate](#46-step-6-validate)
   - [4.7 Step 7: Import to Production MongoDB](#47-step-7-import-to-production-mongodb)
   - [4.8 Step 8: Verify](#48-step-8-verify)
-- [5. Performance Tuning](#5-performance-tuning)
-  - [5.1 For Large Datasets (>10M variants)](#51-for-large-datasets-10m-variants)
-  - [5.2 SLURM Resource Requests](#52-slurm-resource-requests)
-  - [5.3 Using Screen/Tmux for Long Runs](#53-using-screentmux-for-long-runs)
-  - [5.4 Many VCF files (for example one per chromosome)](#54-many-vcf-files-for-example-one-per-chromosome)
-- [6. Troubleshooting](#6-troubleshooting)
-  - [6.1 Common Issues](#61-common-issues)
-  - [6.2 Checking Pipeline Output](#62-checking-pipeline-output)
-- [7. Tool Reference](#7-tool-reference)
-- [8. Verification Checklist](#8-verification-checklist)
+- [5. Step-by-Step Guide (Multi VCF Files)](#5-step-by-step-guide-multi-vcf-files)
+  - [5.1 Step 1: Get a Node where `sbatch` Works](#51-step-1-get-a-node-where-sbatch-works)
+  - [5.2 Step 2: Install the Tools](#52-step-2-install-the-tools)
+  - [5.3 Step 3: List the VCF Files](#53-step-3-list-the-vcf-files)
+  - [5.4 Step 4: Preview the Jobs (Optional)](#54-step-4-preview-the-jobs-optional)
+  - [5.5 Step 5: Submit the Transform and Validate Jobs](#55-step-5-submit-the-transform-and-validate-jobs)
+  - [5.6 Step 6: Watch the Jobs](#56-step-6-watch-the-jobs)
+  - [5.7 Step 7: Import and Register the Dataset](#57-step-7-import-and-register-the-dataset)
+  - [5.8 Step 8: Verify](#58-step-8-verify)
+- [6. Performance Tuning](#6-performance-tuning)
+  - [6.1 For Large Datasets (>10M variants)](#61-for-large-datasets-10m-variants)
+  - [6.2 SLURM Resource Requests](#62-slurm-resource-requests)
+  - [6.3 Using Screen/Tmux for Long Runs](#63-using-screentmux-for-long-runs)
+- [7. Troubleshooting](#7-troubleshooting)
+  - [7.1 Common Issues](#71-common-issues)
+  - [7.2 Checking Pipeline Output](#72-checking-pipeline-output)
+- [8. Tool Reference](#8-tool-reference)
+- [9. Verification Checklist](#9-verification-checklist)
 
 ## 1. Architecture Overview
 
@@ -180,9 +188,10 @@ on a server or workstation). `--runtime` overrides the choice.
     --workers 4
 ```
 
-## 4. Step-by-Step Guide (Manual)
+## 4. Step-by-Step Guide (Single VCF File)
 
-If you prefer to run each step individually for more control.
+If you prefer to run each step individually for more control. This section loads
+**one VCF file**; for many files (for example one per chromosome), use section 5.
 
 ### 4.1 Step 1: Get a Compute Node
 
@@ -586,81 +595,111 @@ ssh <your-ssh-alias> \
     "docker exec beacon-mongodb mongosh beacon_db --eval 'db.individuals.countDocuments({})'"
 ```
 
-## 5. Performance Tuning
+## 5. Step-by-Step Guide (Multi VCF Files)
 
-### 5.1 For Large Datasets (>10M variants)
+Use this section when your cohort is delivered as **many VCF files**, for example
+one per chromosome. All the files are loaded as **one dataset**: every file
+uses the same `dataset.yaml`, so every variant carries the same dataset id. The
+work is submitted to the cluster as Slurm jobs, so you do not need to keep a
+session open.
+For a single VCF file, use section 4.
 
-Edit `config/settings.yaml` or pass `--batch-size` / `--workers` to the pipeline script:
-
-```yaml
-processing:
-  batch_size: 10000     # Process 10k variants per batch (up from 1000)
-  max_workers: 4        # Match your --cpus-per-task SLURM allocation
-  memory_limit: 8192    # 8GB per worker
-```
-
-### 5.2 SLURM Resource Requests
-
-```bash
-# For large WGS cohort VCFs (100+ samples, 10M+ variants)
-srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 \
-     --mem=64G --time=3-0:0:0 bash
-
-# For smaller exome/panel data
-srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=2 \
-     --mem=16G --time=1-0:0:0 bash
-```
-
-### 5.3 Using Screen/Tmux for Long Runs
-
-For large datasets that may take hours:
-
-```bash
-# Start a tmux session (persists if SSH disconnects)
-tmux new -s beacon
-
-# Run pipeline inside tmux
-./scripts/run_ilifu_pipeline.sh /path/to/large.vcf.gz \
-    --dataset-file dataset.yaml
-
-# Detach: Ctrl+B then D
-# Re-attach later: tmux attach -t beacon
-```
-
-### 5.4 Many VCF files (for example one per chromosome)
-
-A cohort is often delivered as one VCF per chromosome. Load them as **one
-dataset**: every file uses the same `dataset.yaml`, so every variant carries the
-same dataset id. `scripts/submit_multi_vcf.sh` does this as Slurm jobs, so you do
-not need to keep a session open:
+The steps use `scripts/submit_multi_vcf.sh`. It submits two stages:
 
 1. a **job array** transforms and validates the files, one task per file, at most
    `--max-parallel` at a time (no database is touched);
-2. an optional **import job** starts only after every task succeeded, imports the
-   files one after another and registers the dataset once.
+2. an **import job** that starts only after every task succeeded, imports the files
+   one after another and registers the dataset once.
 
-The two stages are separate because the transforms are independent, while the
-import goes through one SSH tunnel and a full pipeline run closes the tunnel it
-opened. The dataset record counts the variants it finds, so it is written after
-the last import.
+The stages are separate because the transforms are independent, while the import
+goes through one SSH tunnel and a full pipeline run closes the tunnel it opened.
+The dataset record counts the variants it finds, so it is written after the last
+import.
 
-Run it from the cluster, in the repository folder (`sbatch` must work in your shell:
-use a login shell, `bash -l`, on a compute node):
+### 5.1 Step 1: Get a Node where `sbatch` Works
+
+Any login or compute node on the cluster works, as long as `sbatch` is on your
+`PATH`. The jobs themselves run on whichever nodes Slurm picks, so you do not
+need to ask for many CPUs here.
+
+```bash
+# If you are on a compute node from section 4.1 you are already set.
+# On a shell that does not find the Slurm commands, start a login shell:
+bash -l
+
+command -v sbatch      # expect: a path such as /opt/slurm/bin/sbatch
+```
+
+### 5.2 Step 2: Install the Tools
+
+Do Step 2 of section 4 (4.2): get the repository and pull the tools image. If
+you did this already, update the repository so you have the current scripts:
 
 ```bash
 cd /cbio/users/$USER/variant-checker-beacon
+git pull --ff-only
+ls scripts/submit_multi_vcf.sh      # expect: the file name
+ls /cbio/users/$USER/beacon-tools.sif
+```
 
-# 1. Transform and validate every file. Nothing is written to a database.
+### 5.3 Step 3: List the VCF Files
+
+Put the VCF paths in a text file, one per line. Keeping the list in a file makes
+the run repeatable and avoids typing out long file lists.
+
+```bash
+cd /cbio/users/$USER/variant-checker-beacon
+ls /path/to/vcfs/*.vcf.gz > vcf_files.txt
+
+wc -l vcf_files.txt                 # expect: the number of files you want to load
+head -3 vcf_files.txt               # expect: full paths, one per line
+```
+
+Rules for the list:
+
+- one path per line; blank lines and lines starting with `#` are ignored;
+- relative paths are relative to the folder you run the command from;
+- file names must be different from one another (`chr1.vcf.gz`, `chr2.vcf.gz`, ...)
+  and the paths must not contain spaces, because each file gets its own output
+  folder named after it.
+
+Then write your `dataset.yaml` (see section 3.1), or use the example one to try
+the steps first.
+
+### 5.4 Step 4: Preview the Jobs (Optional)
+
+`--dry-run` writes the job scripts and shows what would be submitted, without
+submitting anything:
+
+```bash
 ./scripts/submit_multi_vcf.sh \
     --dataset-file dataset.yaml \
     --container /cbio/users/$USER/beacon-tools.sif \
-    --max-parallel 4 --cpus 4 --mem 32G --time 1-00:00:00 \
-    /path/to/vcfs/*.vcf.gz
+    --vcf-list vcf_files.txt --dry-run
+
+less /cbio/users/$USER/beacon_multi/transform.sbatch
 ```
 
-It prints the job ids and where the logs are. Each file gets its own folder under
-`/cbio/users/$USER/beacon_multi` (change it with `--output`), so the file names
-must be different from one another and contain no spaces. To check on the jobs:
+### 5.5 Step 5: Submit the Transform and Validate Jobs
+
+```bash
+./scripts/submit_multi_vcf.sh \
+    --dataset-file dataset.yaml \
+    --container /cbio/users/$USER/beacon-tools.sif \
+    --vcf-list vcf_files.txt \
+    --max-parallel 4 --cpus 4 --mem 32G --time 1-00:00:00
+```
+
+Expect a line such as `Submitted transform array 14282111: 2 file(s), at most 2
+at a time.` and, below it, a note that nothing is written to a database. Each file
+gets its own folder under `/cbio/users/$USER/beacon_multi` (change it with
+`--output`).
+
+Other options: `--sbatch-args "<options>"` adds options to every job (for example
+`--nodelist=compute-[205,209]`), and VCF paths can also be given directly on the
+command line, together with or instead of `--vcf-list`.
+
+### 5.6 Step 6: Watch the Jobs
 
 ```bash
 squeue --me
@@ -668,32 +707,37 @@ sacct -j <array-job-id> --format=JobID,State,Elapsed,ExitCode,MaxRSS
 tail /cbio/users/$USER/beacon_multi/logs/transform_1.log
 ```
 
-Every task should end `COMPLETED`. When they have, import and register the
-dataset as a second job:
+Every task should end `COMPLETED`. The log of each file is
+`logs/transform_<n>.log`, where `<n>` is the line number of the file in your list.
+If a task shows `FAILED`, read its log, fix the cause (often a corrupt or
+truncated VCF) and submit again: a new submission transforms every file in the
+list again.
+
+### 5.7 Step 7: Import and Register the Dataset
+
+When every task is `COMPLETED`, submit the import job. It opens an SSH tunnel to
+the Beacon server, so `BEACON_HOST` must be set, and your SSH key must work
+without a passphrase prompt.
 
 ```bash
-export BEACON_HOST=<your-ssh-alias>      # the Beacon server, as in Step 7
+export BEACON_HOST=<your-ssh-alias>      # the Beacon server, as in section 4.7
 ./scripts/submit_multi_vcf.sh \
     --dataset-file dataset.yaml \
     --container /cbio/users/$USER/beacon-tools.sif \
-    --import-only /path/to/vcfs/*.vcf.gz
+    --vcf-list vcf_files.txt --import-only
+
+squeue --me
+tail /cbio/users/$USER/beacon_multi/logs/import.log
 ```
 
-(Pass the same file list again: it tells the job which folders to import.) To do
-both in one go, add `--import` to the first command instead: the import job then
-waits for the array and is cancelled, without importing anything, if any task
-fails. The import job opens its own SSH tunnel from the compute node, so
-`BEACON_HOST` must be set when you submit it, and your SSH key must work without
-a passphrase prompt; if that is not the case, import by hand as shown below.
+Use the same list again: it tells the job which folders to import. To do Steps 5
+and 7 in one go, add `--import` to the Step 5 command instead of running Step 7:
+the import job then waits for the array, and is cancelled without importing
+anything if any task fails.
 
-Other options: `--sbatch-args "<options>"` adds options to every job (for example
-`--nodelist=compute-[205,209]`), and `--dry-run` writes the job scripts and shows
-what would be submitted without submitting anything.
-
-#### Import by hand
-
-The transformed files can also be imported from your own session, one after the
-other, through the tunnel from Step 7:
+**If you cannot use the import job** (for example your SSH key needs a passphrase),
+import by hand from your own session, one file after the other, through the
+tunnel from section 4.7:
 
 ```bash
 OUT=/cbio/users/$USER/beacon_multi
@@ -723,9 +767,56 @@ If the files hold **different samples** (split by group rather than by chromosom
 import each file's `individuals.json` inside the loop as well, and pass the total
 number of distinct samples to `--samples`.
 
-## 6. Troubleshooting
+### 5.8 Step 8: Verify
 
-### 6.1 Common Issues
+Verify as in section 4.8: flush the Redis cache, then check that `/api/datasets`
+lists your dataset with the total variant count, and query a variant from one of
+the files.
+
+## 6. Performance Tuning
+
+### 6.1 For Large Datasets (>10M variants)
+
+Edit `config/settings.yaml` or pass `--batch-size` / `--workers` to the pipeline script:
+
+```yaml
+processing:
+  batch_size: 10000     # Process 10k variants per batch (up from 1000)
+  max_workers: 4        # Match your --cpus-per-task SLURM allocation
+  memory_limit: 8192    # 8GB per worker
+```
+
+### 6.2 SLURM Resource Requests
+
+```bash
+# For large WGS cohort VCFs (100+ samples, 10M+ variants)
+srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 \
+     --mem=64G --time=3-0:0:0 bash
+
+# For smaller exome/panel data
+srun --pty --nodes=1 --ntasks-per-node=1 --cpus-per-task=2 \
+     --mem=16G --time=1-0:0:0 bash
+```
+
+### 6.3 Using Screen/Tmux for Long Runs
+
+For large datasets that may take hours:
+
+```bash
+# Start a tmux session (persists if SSH disconnects)
+tmux new -s beacon
+
+# Run pipeline inside tmux
+./scripts/run_ilifu_pipeline.sh /path/to/large.vcf.gz \
+    --dataset-file dataset.yaml
+
+# Detach: Ctrl+B then D
+# Re-attach later: tmux attach -t beacon
+```
+
+## 7. Troubleshooting
+
+### 7.1 Common Issues
 
 **`singularity: command not found`:** `singularity` is on the path only in a login
 shell on a compute node. Work inside your `srun` session; if you run a single
@@ -770,7 +861,7 @@ Fix: The individual schema expects uppercase sex values. Normalize your input da
 **Out of memory on compute node:**
 Fix: Request more memory (`--mem=64G`) or reduce batch size (`--batch-size 500`).
 
-### 6.2 Checking Pipeline Output
+### 7.2 Checking Pipeline Output
 
 ```bash
 # Count lines in variants file
@@ -783,7 +874,7 @@ head -1 beacon_output/vcf_output/variants_batch.jsonl | python -m json.tool
 cat beacon_output/vcf_output/transformation_summary.json | python -m json.tool
 ```
 
-## 7. Tool Reference
+## 8. Tool Reference
 
 | Tool | Purpose | Input | Output |
 |---|---|---|---|
@@ -792,8 +883,9 @@ cat beacon_output/vcf_output/transformation_summary.json | python -m json.tool
 | `validate_json.py` | Validate against schemas | `.json`/`.jsonl` | PASS/FAIL report |
 | `import_to_mongo.py` | Import to MongoDB | `.json`/`.jsonl` | Records in MongoDB |
 | `export_from_mongo.py` | Export from MongoDB | MongoDB query | `.json` files |
+| `submit_multi_vcf.sh` | Many VCFs as Slurm jobs | VCF list | Slurm jobs |
 
-## 8. Verification Checklist
+## 9. Verification Checklist
 
 After completing the pipeline, verify:
 

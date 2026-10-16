@@ -216,3 +216,107 @@ class TestRefusals:
     def test_an_unknown_option(self, env, tmp_path):
         r = _run(env, tmp_path, *_base(tmp_path, *_vcfs(tmp_path), extra=("--bogus",)))
         assert r.returncode != 0 and "--bogus" in r.stderr
+
+
+class TestVcfListFile:
+    """--vcf-list <file>: the VCF paths live in a text file, one per line."""
+
+    def _list(self, tmp_path, text, name="vcf_list.txt"):
+        f = tmp_path / name
+        f.write_text(text)
+        return str(f)
+
+    def _written(self, tmp_path):
+        return (tmp_path / "out" / "vcf_list.txt").read_text().splitlines()
+
+    def test_the_files_in_the_list_become_the_tasks_in_order(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        lst = self._list(tmp_path, "\n".join(v) + "\n")
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", lst]))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert self._written(tmp_path) == v
+        assert "#SBATCH --array=1-3%3" in (tmp_path / "out" / "transform.sbatch").read_text()
+
+    def test_blank_lines_comments_indentation_and_windows_line_endings_are_ignored(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        text = f"# the cohort\r\n\r\n  {v[0]}  \r\n   # second one next\r\n{v[1]}\t\r\n\n"
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", self._list(tmp_path, text)]))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert self._written(tmp_path) == [v[0], v[1]]
+
+    def test_a_last_line_without_a_trailing_newline_is_still_read(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        lst = self._list(tmp_path, f"{v[0]}\n{v[1]}")          # no newline after the last path
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", lst]))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert self._written(tmp_path) == [v[0], v[1]]
+
+    def test_it_combines_with_paths_on_the_command_line_list_first(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        lst = self._list(tmp_path, f"{v[0]}\n{v[1]}\n")
+        r = _run(env, tmp_path, *_base(tmp_path, v[2], extra=["--vcf-list", lst]))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert self._written(tmp_path) == v
+
+    def test_it_can_be_given_more_than_once(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        a = self._list(tmp_path, f"{v[0]}\n", "a.txt")
+        b = self._list(tmp_path, f"{v[1]}\n", "b.txt")
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", a, "--vcf-list", b]))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert self._written(tmp_path) == [v[0], v[1]]
+
+    def test_a_relative_path_in_the_list_is_relative_to_where_you_run_the_command(self, env, tmp_path):
+        _vcfs(tmp_path)
+        lst = self._list(tmp_path, "vcfs/chr1.vcf.gz\n")
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", lst]))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert self._written(tmp_path) == [str(tmp_path / "vcfs" / "chr1.vcf.gz")]
+
+    def test_a_missing_list_file_is_refused_and_named(self, env, tmp_path):
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", str(tmp_path / "nope.txt")]))
+        assert r.returncode == 2
+        assert "nope.txt" in r.stderr
+        assert _calls(env) == []
+
+    def test_a_list_with_nothing_but_comments_is_the_same_as_no_files(self, env, tmp_path):
+        lst = self._list(tmp_path, "# nothing here\n\n")
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", lst]))
+        assert r.returncode == 2
+        assert "at least one" in r.stderr
+        assert _calls(env) == []
+
+    def test_a_missing_vcf_in_the_list_names_the_file_and_the_line(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        lst = self._list(tmp_path, f"# header\n{v[0]}\n{tmp_path}/vcfs/gone.vcf.gz\n")
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", lst]))
+        assert r.returncode == 2
+        assert "gone.vcf.gz" in r.stderr and "vcf_list.txt" in r.stderr and "line 3" in r.stderr
+        assert _calls(env) == []
+
+    def test_the_same_name_in_the_list_and_on_the_command_line_is_refused(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        other = tmp_path / "elsewhere"
+        other.mkdir()
+        (other / "chr1.vcf.gz").write_text("")
+        lst = self._list(tmp_path, f"{v[0]}\n")
+        r = _run(env, tmp_path, *_base(tmp_path, str(other / "chr1.vcf.gz"), extra=["--vcf-list", lst]))
+        assert r.returncode == 2
+        assert "same folder" in r.stderr
+
+    def test_a_path_with_a_space_in_the_list_is_refused(self, env, tmp_path):
+        d = tmp_path / "my vcfs"
+        d.mkdir()
+        (d / "chr1.vcf.gz").write_text("")
+        lst = self._list(tmp_path, f"{d}/chr1.vcf.gz\n")
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", lst]))
+        assert r.returncode == 2
+        assert "space" in r.stderr
+
+    def test_import_only_reads_the_same_list(self, env, tmp_path):
+        v = _vcfs(tmp_path)
+        lst = self._list(tmp_path, "\n".join(v) + "\n")
+        r = _run(env, tmp_path, *_base(tmp_path, extra=["--vcf-list", lst, "--import-only"]))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert self._written(tmp_path) == v
+        assert len([c for c in _calls(env) if c.startswith("JOB")]) == 1

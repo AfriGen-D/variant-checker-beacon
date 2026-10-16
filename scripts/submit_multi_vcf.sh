@@ -15,6 +15,10 @@
 #   scripts/submit_multi_vcf.sh --dataset-file dataset.yaml \
 #       --container /cbio/users/$USER/beacon-tools.sif  /path/to/vcfs/*.vcf.gz
 #
+#   or keep the file names in a text file (one path per line) and pass that:
+#   scripts/submit_multi_vcf.sh --dataset-file dataset.yaml \
+#       --container /cbio/users/$USER/beacon-tools.sif  --vcf-list vcf_files.txt
+#
 # Run it from a shell where `sbatch` works (a login or compute node on the cluster).
 # -e: stop on the first failing command; -u: an unset variable is an error;
 # pipefail: a pipeline fails if any stage fails.
@@ -35,15 +39,20 @@ MAX_PARALLEL=4; CPUS=4; MEM="32G"; TIME="1-00:00:00"
 # DO_IMPORT: transform, then import. IMPORT_ONLY: import output that already exists.
 # DRY_RUN: write the job scripts but submit nothing.
 SBATCH_ARGS=""; DO_IMPORT=false; IMPORT_ONLY=false; DRY_RUN=false
-VCFS=()
+VCFS=()          # VCF paths given on the command line
+LISTS=()         # text files (--vcf-list) that name more VCF paths
 
 # Report a usage problem and stop. Exit code 2 means "bad arguments", not "job failed".
 die() { echo "Error: $*" >&2; exit 2; }
 
 usage() {
     cat <<'USAGE'
-Usage: submit_multi_vcf.sh [options] VCF [VCF ...]
+Usage: submit_multi_vcf.sh [options] [VCF ...]
 
+  --vcf-list <file>       A text file with one VCF path per line (blank lines and lines
+                          starting with # are ignored). Repeatable; can be combined with
+                          VCF paths on the command line. Relative paths are relative to
+                          the folder you run this from.
   --dataset-file <file>   dataset.yaml (id, name, ...). Preferred.
   --dataset-id <id>       The dataset id, when you have no dataset file.
   --container <image>     The tools image (.sif, docker:// URI, or a Docker image).
@@ -66,6 +75,7 @@ USAGE
 # --- Read the command line. Anything that is not an option is a VCF file ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --vcf-list)     LISTS+=("${2:?--vcf-list needs a file name}"); shift 2 ;;
         --dataset-file) DATASET_FILE="${2:?--dataset-file needs a value}"; shift 2 ;;
         --dataset-id)   DATASET_ID="${2:?--dataset-id needs a value}"; shift 2 ;;
         --container)    CONTAINER="${2:?--container needs a value}"; shift 2 ;;
@@ -88,7 +98,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Validate everything before writing or submitting anything ---
-[[ ${#VCFS[@]} -gt 0 ]] || die "give at least one VCF file (see --help)"
 [[ -n "$DATASET_FILE" || -n "$DATASET_ID" ]] || die "a dataset is required: --dataset-file dataset.yaml (preferred) or --dataset-id <id>"
 [[ -n "$CONTAINER" ]] || die "--container is required: the tools image the jobs run (a .sif file, or an image name)"
 # These two go straight into the #SBATCH header, so they must be plain numbers.
@@ -113,10 +122,30 @@ fi
 # line, so a space would split them into two words.
 [[ "$OUT" != *[[:space:]]* ]] || die "the --output path must not contain a space: $OUT"
 
+# Gather every VCF to load into ENTRIES, remembering where each one was named
+# (WHERE) so an error can point at the right line. Files from --vcf-list come first,
+# in the order given, then the paths from the command line.
+ENTRIES=(); WHERE=()
+for lf in ${LISTS[@]+"${LISTS[@]}"}; do
+    [[ -f "$lf" ]] || die "VCF list not found: $lf"
+    lineno=0
+    # `|| [[ -n $line ]]` also reads a last line that has no trailing newline.
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        lineno=$((lineno + 1))
+        line="${line#"${line%%[![:space:]]*}"}"               # trim leading blanks
+        line="${line%"${line##*[![:space:]]}"}"               # trim trailing blanks (and a Windows \r)
+        if [[ -z "$line" || "$line" == \#* ]]; then continue; fi   # blank or comment
+        ENTRIES+=("$line"); WHERE+=("line $lineno of $lf")
+    done < "$lf"
+done
+for v in ${VCFS[@]+"${VCFS[@]}"}; do ENTRIES+=("$v"); WHERE+=("the command line"); done
+[[ ${#ENTRIES[@]} -gt 0 ]] || die "give at least one VCF file, on the command line or with --vcf-list (see --help)"
+
 # Check every VCF and collect its absolute path (ABS) and folder name (NAMES).
 ABS=(); NAMES=()
-for v in "${VCFS[@]}"; do
-    [[ -f "$v" ]] || die "VCF not found: $v"
+for i in "${!ENTRIES[@]}"; do
+    v="${ENTRIES[$i]}"
+    [[ -f "$v" ]] || die "VCF not found: $v (named on ${WHERE[$i]})"
     a="$(abspath "$v")"
     [[ "$a" != *[[:space:]]* ]] || die "a VCF path must not contain a space: $a"
     n="$(name_of "$a")"
