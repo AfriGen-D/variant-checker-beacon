@@ -16,17 +16,28 @@
 #       --container /cbio/users/$USER/beacon-tools.sif  /path/to/vcfs/*.vcf.gz
 #
 # Run it from a shell where `sbatch` works (a login or compute node on the cluster).
+# -e: stop on the first failing command; -u: an unset variable is an error;
+# pipefail: a pipeline fails if any stage fails.
 set -euo pipefail
 
+# The jobs run scripts/run_ilifu_pipeline.sh from the repository this script lives
+# in, so find that repository from the script's own location.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# --- Defaults. Every one can be changed with the option of the same name ---
+# What to load, and how to run the tools.
 DATASET_FILE=""; DATASET_ID=""; CONTAINER=""; RUNTIME=""; ASSEMBLY=""
+# Work folder: one sub-folder per VCF, plus logs/ and the generated job scripts.
 OUT="/cbio/users/${USER:-$(id -un)}/beacon_multi"
+# Slurm resources for ONE transform task (the import job has its own fixed size).
 MAX_PARALLEL=4; CPUS=4; MEM="32G"; TIME="1-00:00:00"
+# DO_IMPORT: transform, then import. IMPORT_ONLY: import output that already exists.
+# DRY_RUN: write the job scripts but submit nothing.
 SBATCH_ARGS=""; DO_IMPORT=false; IMPORT_ONLY=false; DRY_RUN=false
 VCFS=()
 
+# Report a usage problem and stop. Exit code 2 means "bad arguments", not "job failed".
 die() { echo "Error: $*" >&2; exit 2; }
 
 usage() {
@@ -52,6 +63,7 @@ Nothing is written to a database unless you pass --import or --import-only.
 USAGE
 }
 
+# --- Read the command line. Anything that is not an option is a VCF file ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dataset-file) DATASET_FILE="${2:?--dataset-file needs a value}"; shift 2 ;;
@@ -69,6 +81,7 @@ while [[ $# -gt 0 ]]; do
         --import-only)  IMPORT_ONLY=true; shift ;;
         --dry-run)      DRY_RUN=true; shift ;;
         -h|--help)      usage; exit 0 ;;
+        # An unknown option is an error, not a file name (catches typos such as --max-paralel).
         -*)             die "unknown option: $1 (see --help)" ;;
         *)              VCFS+=("$1"); shift ;;
     esac
@@ -78,11 +91,17 @@ done
 [[ ${#VCFS[@]} -gt 0 ]] || die "give at least one VCF file (see --help)"
 [[ -n "$DATASET_FILE" || -n "$DATASET_ID" ]] || die "a dataset is required: --dataset-file dataset.yaml (preferred) or --dataset-id <id>"
 [[ -n "$CONTAINER" ]] || die "--container is required: the tools image the jobs run (a .sif file, or an image name)"
+# These two go straight into the #SBATCH header, so they must be plain numbers.
 [[ "$MAX_PARALLEL" =~ ^[1-9][0-9]*$ ]] || die "--max-parallel must be a positive whole number, got '$MAX_PARALLEL'"
 [[ "$CPUS" =~ ^[1-9][0-9]*$ ]] || die "--cpus must be a positive whole number, got '$CPUS'"
+# --import transforms first, --import-only does not: asking for both is ambiguous.
 if [[ "$IMPORT_ONLY" == true && "$DO_IMPORT" == true ]]; then die "--import and --import-only contradict each other"; fi
 
+# Absolute path of a file. The jobs start in the repository folder, so a relative
+# path given here would point somewhere else when the job runs.
 abspath() { ( cd "$(dirname "$1")" 2>/dev/null && printf '%s/%s\n' "$(pwd)" "$(basename "$1")" ) || printf '%s\n' "$1"; }
+# The folder name for a VCF: its file name without .gz / .vcf / .bcf
+# (chr1.vcf.gz -> chr1). The job scripts compute the same name the same way.
 name_of() { local n; n="$(basename "$1")"; n="${n%.gz}"; n="${n%.vcf}"; n="${n%.bcf}"; printf '%s' "$n"; }
 
 if [[ -n "$DATASET_FILE" ]]; then
@@ -90,23 +109,32 @@ if [[ -n "$DATASET_FILE" ]]; then
     DATASET_FILE="$(abspath "$DATASET_FILE")"
     [[ "$DATASET_FILE" != *[[:space:]]* ]] || die "the dataset file path must not contain a space: $DATASET_FILE"
 fi
+# The paths are written unquoted into the job scripts and the pipeline command
+# line, so a space would split them into two words.
 [[ "$OUT" != *[[:space:]]* ]] || die "the --output path must not contain a space: $OUT"
 
+# Check every VCF and collect its absolute path (ABS) and folder name (NAMES).
 ABS=(); NAMES=()
 for v in "${VCFS[@]}"; do
     [[ -f "$v" ]] || die "VCF not found: $v"
     a="$(abspath "$v")"
     [[ "$a" != *[[:space:]]* ]] || die "a VCF path must not contain a space: $a"
     n="$(name_of "$a")"
+    # Two inputs with the same base name would write to the same folder and overwrite
+    # each other, e.g. a/chr1.vcf.gz and b/chr1.vcf.gz. (${arr[@]+...} keeps the
+    # empty first round working on bash 3.2 with `set -u`.)
     for seen in ${NAMES[@]+"${NAMES[@]}"}; do
         [[ "$seen" != "$n" ]] || die "two files would write to the same folder ('$n'): $a — rename one"
     done
     ABS+=("$a"); NAMES+=("$n")
 done
 N=${#ABS[@]}
+# Never ask for more parallel slots than there are files (the array is 1..N).
 PAR=$MAX_PARALLEL; (( PAR > N )) && PAR=$N
 
 # --- Arguments every pipeline call shares ---
+# The transform tasks and the import job must describe the dataset and the tools the
+# same way, so the options are built once, here, and pasted into both job scripts.
 COMMON=""
 if [[ -n "$DATASET_FILE" ]]; then COMMON+=" --dataset-file $DATASET_FILE"; fi
 if [[ -n "$DATASET_ID" ]]; then COMMON+=" --dataset-id $DATASET_ID"; fi
@@ -115,7 +143,12 @@ if [[ -n "$RUNTIME" ]]; then COMMON+=" --runtime $RUNTIME"; fi
 if [[ -n "$ASSEMBLY" ]]; then COMMON+=" --assembly $ASSEMBLY"; fi
 
 # --- Write the job scripts ---
+# The unquoted JOB heredocs below expand the ${...} values now, when this script
+# runs. Anything that Slurm must expand when the job runs (the array task number,
+# the VCF name) is written with a backslash: \$VAR.
 mkdir -p "$OUT/logs"
+# One path per line. Task K of the array handles line K, so the order here is the
+# task numbering.
 printf '%s\n' "${ABS[@]}" > "$OUT/vcf_list.txt"
 
 cat > "$OUT/transform.sbatch" <<JOB
@@ -134,6 +167,8 @@ NAME=\$(basename "\$VCF"); NAME=\${NAME%.gz}; NAME=\${NAME%.vcf}; NAME=\${NAME%.
 ./scripts/run_ilifu_pipeline.sh "\$VCF"${COMMON} --skip-import --output "${OUT}/\$NAME"
 JOB
 
+# The import job is only written when something will import: a transform-only run
+# must leave nothing behind that could be submitted by mistake.
 if [[ "$DO_IMPORT" == true || "$IMPORT_ONLY" == true ]]; then
 cat > "$OUT/import.sbatch" <<JOB
 #!/bin/bash
@@ -155,6 +190,7 @@ JOB
 fi
 
 # --- Submit ---
+# --sbatch-args "a b" becomes the words a and b, added to every sbatch call below.
 EXTRA=(); if [[ -n "$SBATCH_ARGS" ]]; then read -r -a EXTRA <<< "$SBATCH_ARGS"; fi
 
 if [[ "$DRY_RUN" == true ]]; then
@@ -162,6 +198,9 @@ if [[ "$DRY_RUN" == true ]]; then
     exit 0
 fi
 
+# Stage 1: the transform array. Skipped with --import-only (output already exists).
+# --parsable prints just the job id (and ";cluster" on multi-cluster setups, which
+# the next line strips).
 ARRAY_ID=""
 if [[ "$IMPORT_ONLY" != true ]]; then
     ARRAY_ID="$(sbatch --parsable ${EXTRA[@]+"${EXTRA[@]}"} "$OUT/transform.sbatch")"
@@ -169,6 +208,11 @@ if [[ "$IMPORT_ONLY" != true ]]; then
     echo "Submitted transform array $ARRAY_ID: $N file(s), at most $PAR at a time."
 fi
 
+# Stage 2: the import job.
+#   --import       wait for the whole array: afterok means "only if EVERY task
+#                  succeeded"; --kill-on-invalid-dep=yes cancels this job when that
+#                  can no longer happen, instead of leaving it pending forever.
+#   --import-only  nothing to wait for, the output was produced by an earlier run.
 IMPORT_ID=""
 if [[ "$DO_IMPORT" == true ]]; then
     IMPORT_ID="$(sbatch --parsable --dependency=afterok:"$ARRAY_ID" --kill-on-invalid-dep=yes \
