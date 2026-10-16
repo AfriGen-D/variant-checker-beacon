@@ -19,7 +19,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [4.7 Step 7: Import to Production MongoDB](#47-step-7-import-to-production-mongodb)
   - [4.8 Step 8: Verify](#48-step-8-verify)
 - [5. Step-by-Step Guide (Multi VCF Files)](#5-step-by-step-guide-multi-vcf-files)
-  - [5.1 Step 1: Get a Node where `sbatch` Works](#51-step-1-get-a-node-where-sbatch-works)
+  - [5.1 Step 1: Get a Shell where `sbatch` Works](#51-step-1-get-a-shell-where-sbatch-works)
   - [5.2 Step 2: Install the Tools](#52-step-2-install-the-tools)
   - [5.3 Step 3: List the VCF Files](#53-step-3-list-the-vcf-files)
   - [5.4 Step 4: Preview the Jobs (Optional)](#54-step-4-preview-the-jobs-optional)
@@ -616,15 +616,16 @@ goes through one SSH tunnel and a full pipeline run closes the tunnel it opened.
 The dataset record counts the variants it finds, so it is written after the last
 import.
 
-### 5.1 Step 1: Get a Node where `sbatch` Works
+### 5.1 Step 1: Get a Shell where `sbatch` Works
 
-Any login or compute node on the cluster works, as long as `sbatch` is on your
-`PATH`. The jobs themselves run on whichever nodes Slurm picks, so you do not
-need to ask for many CPUs here.
+The jobs run on whichever nodes Slurm picks, so you do not need many CPUs for this
+shell. Any login or compute node of the cluster works, as long as `sbatch` is
+found.
 
 ```bash
-# If you are on a compute node from section 4.1 you are already set.
-# On a shell that does not find the Slurm commands, start a login shell:
+ssh <your-ilifu-username>@slurm.ilifu.ac.za   # or: ssh ilifu
+
+# Start a login shell so the Slurm commands are on your PATH
 bash -l
 
 command -v sbatch      # expect: a path such as /opt/slurm/bin/sbatch
@@ -632,14 +633,39 @@ command -v sbatch      # expect: a path such as /opt/slurm/bin/sbatch
 
 ### 5.2 Step 2: Install the Tools
 
-Do Step 2 of section 4 (4.2): get the repository and pull the tools image. If
-you did this already, update the repository so you have the current scripts:
+The tools (`bcftools`, the Python scripts and their libraries) are not installed
+on the cluster. They come in a container image that the jobs run through
+Singularity. You need the repository (it holds the scripts) and the image file.
 
 ```bash
-cd /cbio/users/$USER/variant-checker-beacon
-git pull --ff-only
-ls scripts/submit_multi_vcf.sh      # expect: the file name
-ls /cbio/users/$USER/beacon-tools.sif
+cd /cbio/users/$USER
+
+# The repository: clone it the first time, update it afterwards
+git clone https://github.com/AfriGen-D/variant-checker-beacon.git 2>/dev/null \
+    || git -C variant-checker-beacon pull --ff-only
+
+# The image, once: a single .sif file in your own space
+[ -f beacon-tools.sif ] || singularity pull beacon-tools.sif \
+    docker://ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
+
+# Verify
+ls variant-checker-beacon/scripts/submit_multi_vcf.sh    # expect: the file name
+singularity exec --bind /cbio,/scratch3 beacon-tools.sif \
+    bcftools --version | head -1
+```
+
+Expect a `bcftools` version line. The image is public, so no login is needed.
+
+For the by-hand import in Step 7 you also want a short command `beacon` that runs
+a program inside the image. Define it in every shell where you use it, or put the
+two lines in your `~/.bashrc`:
+
+```bash
+beacon() {
+    singularity exec --bind /cbio,/scratch3 \
+        "/cbio/users/$USER/beacon-tools.sif" "$@"
+}
+TOOLS=/opt/beacon-tools
 ```
 
 ### 5.3 Step 3: List the VCF Files
@@ -647,12 +673,53 @@ ls /cbio/users/$USER/beacon-tools.sif
 Put the VCF paths in a text file, one per line. Keeping the list in a file makes
 the run repeatable and avoids typing out long file lists.
 
-```bash
-cd /cbio/users/$USER/variant-checker-beacon
-ls /path/to/vcfs/*.vcf.gz > vcf_files.txt
+The commands below use the example data, split in two files, so you can try the
+whole section first. They download the example, cut it into two VCF files
+(`part_a` and `part_b`) and write the list. The later steps use the folder in
+`EX`; each of them sets it again, so you can use a new shell.
 
-wc -l vcf_files.txt                 # expect: the number of files you want to load
-head -3 vcf_files.txt               # expect: full paths, one per line
+```bash
+EX=/cbio/users/$USER/beacon_example
+mkdir -p $EX/split
+cd $EX
+BASE=https://raw.githubusercontent.com/AfriGen-D/variant-checker-beacon/main/examples
+for f in 1000G_chr22_subset.vcf.gz 1000G_chr22_subset.vcf.gz.tbi dataset.yaml; do
+    curl -sSLO $BASE/$f
+done
+SIF=/cbio/users/$USER/beacon-tools.sif
+singularity exec --bind /cbio $SIF bcftools view -r chr22:1-16309092 \
+    1000G_chr22_subset.vcf.gz -Oz -o split/part_a.vcf.gz
+singularity exec --bind /cbio $SIF bcftools view -r chr22:16309093-999999999 \
+    1000G_chr22_subset.vcf.gz -Oz -o split/part_b.vcf.gz
+
+# The list: one full path per line
+ls $EX/split/*.vcf.gz > $EX/vcf_files.txt
+
+wc -l $EX/vcf_files.txt       # expect: 2
+head -3 $EX/vcf_files.txt     # expect: .../split/part_a.vcf.gz and .../split/part_b.vcf.gz
+```
+
+For your own data, skip the download and the two `bcftools` lines and write the
+list from your own folder (the folder name is the one value to change):
+
+```bash
+ls /cbio/users/$USER/my_vcfs/*.vcf.gz > $EX/vcf_files.txt
+wc -l $EX/vcf_files.txt       # expect: the number of files you want to load
+```
+
+Your data needs a `dataset.yaml` that names it. The example one is downloaded
+above. For your own data, write one with your own id (there is no default, so data
+is never filed under someone else's dataset by accident) and use it in place of
+`$EX/dataset.yaml` in the next steps:
+
+```bash
+cat > $EX/dataset.yaml <<'EOF'
+dataset:
+  id: MY_DATASET
+  name: My dataset
+  description: What this data is.
+  assembly: GRCh38
+EOF
 ```
 
 Rules for the list:
@@ -663,19 +730,18 @@ Rules for the list:
   and the paths must not contain spaces, because each file gets its own output
   folder named after it.
 
-Then write your `dataset.yaml` (see section 3.1), or use the example one to try
-the steps first.
-
 ### 5.4 Step 4: Preview the Jobs (Optional)
 
 `--dry-run` writes the job scripts and shows what would be submitted, without
 submitting anything:
 
 ```bash
+EX=/cbio/users/$USER/beacon_example
+cd /cbio/users/$USER/variant-checker-beacon
 ./scripts/submit_multi_vcf.sh \
-    --dataset-file dataset.yaml \
+    --dataset-file $EX/dataset.yaml \
     --container /cbio/users/$USER/beacon-tools.sif \
-    --vcf-list vcf_files.txt --dry-run
+    --vcf-list $EX/vcf_files.txt --dry-run
 
 less /cbio/users/$USER/beacon_multi/transform.sbatch
 ```
@@ -683,10 +749,12 @@ less /cbio/users/$USER/beacon_multi/transform.sbatch
 ### 5.5 Step 5: Submit the Transform and Validate Jobs
 
 ```bash
+EX=/cbio/users/$USER/beacon_example
+cd /cbio/users/$USER/variant-checker-beacon
 ./scripts/submit_multi_vcf.sh \
-    --dataset-file dataset.yaml \
+    --dataset-file $EX/dataset.yaml \
     --container /cbio/users/$USER/beacon-tools.sif \
-    --vcf-list vcf_files.txt \
+    --vcf-list $EX/vcf_files.txt \
     --max-parallel 4 --cpus 4 --mem 32G --time 1-00:00:00
 ```
 
@@ -715,16 +783,23 @@ list again.
 
 ### 5.7 Step 7: Import and Register the Dataset
 
-When every task is `COMPLETED`, submit the import job. It opens an SSH tunnel to
-the Beacon server, so `BEACON_HOST` must be set, and your SSH key must work
+**Do not import the example data into a production Beacon.** The phenotypes are
+made up. To practise this step, use a development Beacon, or stop after Step 6.
+
+The import writes to the Beacon's MongoDB, which runs in Docker on the Beacon
+server. The import job opens an SSH tunnel to that server on its own, so
+`BEACON_HOST` must be the SSH alias of the server, and your SSH key must work
 without a passphrase prompt.
 
 ```bash
-export BEACON_HOST=<your-ssh-alias>      # the Beacon server, as in section 4.7
+EX=/cbio/users/$USER/beacon_example
+cd /cbio/users/$USER/variant-checker-beacon
+export BEACON_HOST=<your-ssh-alias>      # the Beacon server
+
 ./scripts/submit_multi_vcf.sh \
-    --dataset-file dataset.yaml \
+    --dataset-file $EX/dataset.yaml \
     --container /cbio/users/$USER/beacon-tools.sif \
-    --vcf-list vcf_files.txt --import-only
+    --vcf-list $EX/vcf_files.txt --import-only
 
 squeue --me
 tail /cbio/users/$USER/beacon_multi/logs/import.log
@@ -736,10 +811,19 @@ the import job then waits for the array, and is cancelled without importing
 anything if any task fails.
 
 **If you cannot use the import job** (for example your SSH key needs a passphrase),
-import by hand from your own session, one file after the other, through the
-tunnel from section 4.7:
+import by hand from your own session, one file after the other. First open the
+tunnel, in its own terminal or in tmux, and check it:
 
 ```bash
+ssh -f -N -L 27017:localhost:27017 <your-ssh-alias>
+
+nc -z localhost 27017 && echo "Tunnel OK" || echo "Tunnel FAILED"
+```
+
+Then, with the `beacon` and `TOOLS` lines from Step 2 defined in the same shell:
+
+```bash
+EX=/cbio/users/$USER/beacon_example
 OUT=/cbio/users/$USER/beacon_multi
 MONGO_URI="mongodb://localhost:27017/"
 
@@ -759,19 +843,43 @@ beacon python $TOOLS/data_import/import_to_mongo.py \
 # 2. Register the dataset (the sample count is in the transform summary)
 SAMPLES=$(grep -o '"individuals_found": [0-9]*' \
     $first/vcf_output/transformation_summary.json | grep -o '[0-9]*$')
-beacon python $TOOLS/data_import/register_dataset.py $PWD/dataset.yaml \
+beacon python $TOOLS/data_import/register_dataset.py $EX/dataset.yaml \
     --db beacon_db --mongo-uri "$MONGO_URI" --samples $SAMPLES
 ```
 
-If the files hold **different samples** (split by group rather than by chromosome),
-import each file's `individuals.json` inside the loop as well, and pass the total
-number of distinct samples to `--samples`.
+Registering creates the dataset's record, so the dataset appears in the Beacon's
+dataset list; it refuses an id that no imported variant carries, and running it
+again updates the same record. If the files hold **different samples** (split by
+group rather than by chromosome), import each file's `individuals.json` inside
+the loop as well, and pass the total number of distinct samples to `--samples`.
 
 ### 5.8 Step 8: Verify
 
-Verify as in section 4.8: flush the Redis cache, then check that `/api/datasets`
-lists your dataset with the total variant count, and query a variant from one of
-the files.
+```bash
+# Flush the Redis cache (old data may be cached)
+ssh <your-ssh-alias> "docker exec beacon-redis redis-cli FLUSHDB"
+
+# Where is the Beacon API? Use the first line from your own computer or from
+# ILIFU, and the second when you are logged in on the machine where the Beacon
+# runs. The port is the one the API publishes (see `docker ps`):
+# 8000 on the production host, 8080 on the development VM.
+BEACON_URL=http://<your-server-ip>:8000
+BEACON_URL=http://localhost:8000
+
+# The dataset is listed, with the total number of variants of all the files
+curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
+
+# A variant from the example data (chr22, 0-based start): expect "exists": true
+curl -s "$BEACON_URL/api/g_variants?assemblyId=GRCh38&referenceName=22\
+&start=16021004&referenceBases=G&alternateBases=C" | python3 -m json.tool
+
+# Counts in MongoDB: variants of all the files, and the samples
+ssh <your-ssh-alias> "docker exec beacon-mongodb mongosh beacon_db --eval 'db.variants.countDocuments({})'"
+ssh <your-ssh-alias> "docker exec beacon-mongodb mongosh beacon_db --eval 'db.individuals.countDocuments({})'"
+```
+
+For the example data the variant count is 4231 (2116 + 2115) and there are 9
+samples.
 
 ## 6. Performance Tuning
 
