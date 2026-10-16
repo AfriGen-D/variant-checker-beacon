@@ -12,6 +12,7 @@ Use these for slides, papers, or contexts where Mermaid won't render.
 | `query-lifecycle` | Request flow: rate-limit → cache → Mongo → audit log | Devs, perf / ops |
 | `deployment-topology` | Two ILIFU VMs + Cloudflare tunnel + UCT forwarder | Ops, infra |
 | `tech-stack` | All technologies in use, grouped by layer (edge/FE/BE/data/infra/test/obs) | All — onboarding, RFPs, papers |
+| `ilifu-data-loading-architecture` | VCF to MongoDB, 2 routes (SVG) | Loaders |
 
 Each stem is available in three formats:
 
