@@ -498,6 +498,40 @@ beacon python $TOOLS/validation/validate_json.py \
 **Do not import the example data into a production Beacon.** The phenotypes are
 made up. To practise this step, use a development Beacon, or stop after Step 6.
 
+**Check that the Beacon is running before you import.** An import into a Beacon
+that is down, or into the wrong one, wastes the run. From your own computer:
+
+```bash
+ssh <your-ssh-alias> "docker ps --format '{{.Names}}  {{.Status}}' | grep beacon"
+```
+
+Expect one line per container (the API, MongoDB, Redis, and on production also
+the web front end and nginx), every one ending `(healthy)`. Then ask the API
+itself, with the address of the Beacon you mean to import into:
+
+```bash
+BEACON_URL=https://api-beacon-dev.afrigen-d.dev
+curl -s -o /dev/null -w "%{http_code}\n" $BEACON_URL/api/health
+curl -s $BEACON_URL/api/info | python3 -c "import json,sys; print(json.load(sys.stdin)['response']['environment'])"
+```
+
+Expect `200`, then the environment: `dev` for a development Beacon, `prod` for
+production. (For production use `BEACON_URL=https://beacon.afrigen-d.org`.) If it
+says `prod` and you are practising with the example data, stop here.
+
+If the containers are not up, start the ones that exist (they keep their data):
+
+```bash
+LABEL='{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+F=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
+ssh <your-ssh-alias> "docker compose -f $F start"
+```
+
+If `docker compose up` says a container name is already in use or a port is
+already allocated, a different compose project owns them. Run `docker compose ls`
+on the server and use the project that already holds your data volume; do not
+delete a volume to make the error go away.
+
 MongoDB runs inside Docker on the beacon server (<your-server-ip>). You need an SSH tunnel.
 
 ```bash
@@ -594,6 +628,31 @@ ssh <your-ssh-alias> \
 ssh <your-ssh-alias> \
     "docker exec beacon-mongodb mongosh beacon_db --eval 'db.individuals.countDocuments({})'"
 ```
+
+#### Stop the Beacon's containers (optional)
+
+To stop every container of the Beacon's compose project (API, MongoDB, Redis and,
+on production, the front end and nginx) in one command, from your own computer:
+
+```bash
+LABEL='{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+F=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
+ssh <your-ssh-alias> "docker compose -f $F stop"
+```
+
+The first two lines find the compose file the running containers were started
+from, so the same lines work on the development VM and on production. Check
+that they stopped (expect no output):
+
+```bash
+ssh <your-ssh-alias> "docker ps --format '{{.Names}}' | grep beacon"
+```
+
+`stop` keeps the containers and the data volumes. Start them again with the
+same three lines and `start` in place of `stop`. **Stopping the production
+Beacon takes the website and its API offline for everyone.** Do not use
+`docker compose down -v`: `-v` deletes the data volumes, including the MongoDB
+data.
 
 ## 5. Step-by-Step Guide (Multi VCF Files)
 
@@ -800,8 +859,42 @@ route A is the one to use.
 
 #### Route A: copy the results to the Beacon server and import there
 
-Three short hops. Replace `<your-ilifu-username>` and `<your-ssh-alias>` with your
-own.
+**Check that the Beacon is running before you import.** An import into a Beacon
+that is down, or into the wrong one, wastes the run. From your own computer:
+
+```bash
+ssh <your-ssh-alias> "docker ps --format '{{.Names}}  {{.Status}}' | grep beacon"
+```
+
+Expect one line per container (the API, MongoDB, Redis, and on production also
+the web front end and nginx), every one ending `(healthy)`. Then ask the API
+itself, with the address of the Beacon you mean to import into:
+
+```bash
+BEACON_URL=https://api-beacon-dev.afrigen-d.dev
+curl -s -o /dev/null -w "%{http_code}\n" $BEACON_URL/api/health
+curl -s $BEACON_URL/api/info | python3 -c "import json,sys; print(json.load(sys.stdin)['response']['environment'])"
+```
+
+Expect `200`, then the environment: `dev` for a development Beacon, `prod` for
+production. (For production use `BEACON_URL=https://beacon.afrigen-d.org`.) If it
+says `prod` and you are practising with the example data, stop here.
+
+If the containers are not up, start the ones that exist (they keep their data):
+
+```bash
+LABEL='{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+F=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
+ssh <your-ssh-alias> "docker compose -f $F start"
+```
+
+If `docker compose up` says a container name is already in use or a port is
+already allocated, a different compose project owns them. Run `docker compose ls`
+on the server and use the project that already holds your data volume; do not
+delete a volume to make the error go away.
+
+Then three short hops. Replace `<your-ilifu-username>` and `<your-ssh-alias>`
+with your own.
 
 1. On **your own computer**, download the results of Step 5 and the dataset file:
 
@@ -927,6 +1020,31 @@ ssh <your-ssh-alias> "docker exec beacon-mongodb mongosh beacon_db --eval 'db.in
 
 For the example data the variant count is 4231 (2116 + 2115) and there are 9
 samples.
+
+#### Stop the Beacon's containers when you are done (optional)
+
+To stop every container of the Beacon's compose project (API, MongoDB, Redis and,
+on production, the front end and nginx) in one command, from your own computer:
+
+```bash
+LABEL='{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+F=$(ssh <your-ssh-alias> "docker inspect -f '$LABEL' beacon-api-boolean")
+ssh <your-ssh-alias> "docker compose -f $F stop"
+```
+
+The first two lines find the compose file the running containers were started
+from, so the same lines work on the development VM and on production. Check
+that they stopped (expect no output):
+
+```bash
+ssh <your-ssh-alias> "docker ps --format '{{.Names}}' | grep beacon"
+```
+
+`stop` keeps the containers and the data volumes. Start them again with the
+same three lines and `start` in place of `stop`. **Stopping the production
+Beacon takes the website and its API offline for everyone.** Do not use
+`docker compose down -v`: `-v` deletes the data volumes, including the MongoDB
+data.
 
 ## 6. Performance Tuning
 
