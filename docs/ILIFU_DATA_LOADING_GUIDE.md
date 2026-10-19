@@ -52,6 +52,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.12 The disk is full](#1012-the-disk-is-full-compress-the-source-files)
   - [10.13 Start the Beacon again](#1013-start-the-beacon-again-after-it-was-stopped)
   - [10.14 Worked example: fix a doubled dataset](#1014-worked-example-fix-a-doubled-dataset-start-to-finish)
+  - [10.15 Give every dataset a real name and description](#1015-give-every-dataset-a-real-name-and-description)
 
 ## 1. Architecture Overview
 
@@ -1150,6 +1151,37 @@ squeue --me
 tail /cbio/users/$USER/beacon_multi/logs/import.log
 ```
 
+**Check that every file was imported.** The log has one `=== importing <name>`
+line for each file in the list, and the last `Registered dataset` line carries the
+total of the whole dataset. Also confirm the tunnel opened, and that the job
+ended `COMPLETED` on a compute node:
+
+```bash
+grep -E "=== importing|SSH tunnel established|Registered dataset" /cbio/users/$USER/beacon_multi/logs/import.log
+```
+
+```bash
+sacct -j <the job id> --format=JobID,JobName,State,Elapsed,ExitCode,NodeList
+```
+
+For the example data expect `=== importing part_a`, `=== importing part_b`, the
+tunnel line after each, and the last line `Registered dataset
+'EXAMPLE_1000G_CHR22' (...): 4231 variants, 9 samples`. If only the first file
+appears, the copy of the repository on the cluster is older than the fix: before
+it, the import job read the list from standard input and the pipeline it called
+swallowed the rest, so only the first file was imported while the job still ended
+`COMPLETED 0:0`. Update the repository folder on the cluster and import again:
+
+```bash
+cd /cbio/users/$USER/variant-checker-beacon && git pull --ff-only origin main
+```
+
+**Do not import a dataset that is already in the Beacon without removing it
+first.** A dataset loaded earlier with `mongoimport` (random `_id` per record)
+and imported again with this job (the variant `id` as `_id`) is stored twice, and
+the dataset record counts both copies (the example data showed 6,347 variants
+instead of 4,231). Remove the dataset (10.5), then import it once.
+
 Use the same list again: it tells the job which folders to import. To do Steps 5
 and 7 in one go, add `--import` to the Step 5 command instead of running Step 7:
 the import job then waits for the array, and is cancelled without importing
@@ -2217,7 +2249,8 @@ Expect `TSI_DATASET` with `variantCount` 6240864 and `sampleCount` 107. Look at
 the other datasets in the same list: LWK should show `sampleCount` 99. If a
 sample count is wrong, run the command in 10.11 for that dataset.
 
-**Step 10. Give the dataset a real name and description.** The dataset file still
+**Step 10. Give the dataset a real name and description** (10.15 does it for every
+dataset at once). The dataset file still
 holds the template text, which is why the record says `My dataset`. Edit `name`,
 `description` and `contact` in it (for example with `nano`), then repeat the
 `register_dataset.py` command from step 5:
@@ -2232,3 +2265,72 @@ Expect the same line as in step 5, now with your name in the brackets.
 in place; the recovery is to load the source file again (steps 4 to 8). The
 source file `variants_batch.jsonl` must still exist (or be restored with
 `gunzip`, see 10.12), so do not delete it before step 9 shows the right number.
+
+### 10.15 Give every dataset a real name and description
+
+A dataset record shows `My dataset` and `What this data is.` when its
+`dataset_*.yaml` file still holds the template text. The name and description come
+from that file, so the fix is to edit the file and register the dataset again:
+registering again updates the same record, keeps the variants, and counts them
+from the database. Do this for every dataset in the Beacon.
+
+For each dataset, set `name`, `description` and `contact` in its file. Example
+for the TSI dataset (the text a real record needs: what the people are, the file
+they came from, the chromosomes, the assembly):
+
+```bash
+nano ~/vcf_samples/vcf_TSI_output/dataset_TSI.yaml
+```
+
+```yaml
+dataset:
+  id: TSI_DATASET
+  name: 1000 Genomes TSI (Toscani in Italia), chromosomes 20, 21 and 22
+  description: >-
+    Variants of 107 Toscani in Italia individuals from the 1000 Genomes Project
+    phase 3 (snps_TSI.vcf.gz), chromosomes 20, 21 and 22, GRCh38.
+  assembly: GRCh38
+  contact:
+    name: AfriGen-D Beacon team
+    email: beacon@afrigen-d.org
+```
+
+Keep the `id` as it is: it is what the variants carry. Take the number of
+individuals from `individuals.json`, and the chromosomes from the data, so the
+description is true (10.2 shows the variants; this lists the chromosomes of one
+dataset, and prints `["20","21","22"]` for TSI):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'print(JSON.stringify(db.variants.distinct("reference_name", {dataset_ids: ["TSI_DATASET"]})))'
+```
+
+Then register again. One dataset (`--samples` is the number of individuals):
+
+```bash
+beacon-docker python $TOOLS/data_import/register_dataset.py $DATA/vcf_TSI_output/dataset_TSI.yaml --db beacon_db --mongo-uri "$MONGO_URI" --samples 107
+```
+
+Expect `Registered dataset 'TSI_DATASET' (1000 Genomes TSI ...): 6240864 variants, 107 samples`.
+
+Several datasets at once, each with the sample count read from its own
+`individuals.json` (edit the list of populations to yours, after editing each
+file):
+
+```bash
+for p in CEU ESN FIN GBR GWD IBS LWK MSL TSI YRI; do beacon-docker python $TOOLS/data_import/register_dataset.py $DATA/vcf_${p}_output/dataset_${p}.yaml --db beacon_db --mongo-uri "$MONGO_URI" --samples $(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" $DATA/vcf_${p}_output/individuals.json); done
+```
+
+Each registration counts the variants of its dataset, so the loop takes a few
+minutes for datasets of millions of variants. Clear the cache and check the list
+(no `My dataset` is left):
+
+```bash
+docker exec $R redis-cli FLUSHDB
+```
+
+```bash
+curl -s http://localhost:8000/api/datasets | python3 -c "import json,sys; [print(d['id'], '|', d['name']) for d in json.load(sys.stdin)['response']['resultSets'][0]['results']]"
+```
+
+**ROLLBACK:** this is not part of the steps above. Each file you edit can be put
+back from your own copy, then registered again as above; nothing else changes.
