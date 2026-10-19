@@ -1782,8 +1782,16 @@ curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
 file stores every variant twice. The dataset record then shows twice the variants,
 because the registration counts the documents in the database. Example: a dataset
 of 6,240,864 variants that shows 12,481,728. Do not try to delete half of them:
-remove the dataset's variants and import the file once with `import_to_mongo.py`,
-which writes each variant under its own id, so running it again never duplicates.
+remove the dataset's variants and load the file once, the same way as the other
+datasets in this database.
+
+**Use `mongoimport` again if the other datasets were loaded with it.** A variant's
+`id` is its position and alleles (`20:60070:G:A`), the same in every dataset.
+`import_to_mongo.py` stores that `id` as the document's `_id`, so when two
+datasets share a variant, the second load replaces the first one's copy and the
+first dataset silently loses it. `mongoimport` keeps one copy per dataset, so it
+is the right tool here, run once. Use `import_to_mongo.py` only when the database
+holds one dataset, or when the files are the chromosomes of one dataset.
 
 Set the dataset id, and the names from section 10.1:
 
@@ -1811,9 +1819,9 @@ df -h $HOME
 ```
 
 Remove the dataset's variants and its record with the five commands in 10.5
-(delete, pull, `deleteOne`, flush the cache, check for `0`). Then import the file
-once and register the dataset again. Set the three variables first, and define
-`beacon-docker` as in section 7.3:
+(delete, pull, `deleteOne`, flush the cache, check for `0`). Then load the
+variants once, as in Step 7. Set the variables first, and define `beacon-docker`
+as in section 7.3:
 
 ```bash
 DATA=$HOME/vcf_samples
@@ -1828,8 +1836,23 @@ MONGO_URI="mongodb://localhost:27017/"
 ```
 
 ```bash
-beacon-docker python $TOOLS/data_import/import_to_mongo.py $DATA/vcf_TSI_output/variants_batch.jsonl --db beacon_db --collection variants --mongo-uri "$MONGO_URI"
+docker exec -i $M mongoimport --db beacon_db --collection variants --type json --file /dev/stdin < $DATA/vcf_TSI_output/variants_batch.jsonl
 ```
+
+The same `mongoimport` run loaded `individuals.json` twice, so the individuals
+may be doubled as well. They are few, so remove the extra copies and keep one per
+id. Count first: the second number is the number of different ids, and the first
+is larger when they are doubled (if they are equal, skip the next command):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'print(db.individuals.countDocuments({}), db.individuals.distinct("id").length)'
+```
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'db.individuals.aggregate([{$group: {_id: "$id", keep: {$first: "$_id"}, n: {$sum: 1}}}, {$match: {n: {$gt: 1}}}]).forEach(d => db.individuals.deleteMany({id: d._id, _id: {$ne: d.keep}}))'
+```
+
+Run the count again: the two numbers are now equal. Then register the dataset.
 
 Always give `--samples` when you register: a record registered without it loses
 its sample count. Replace 107 with the number of samples in your VCF:
@@ -1844,9 +1867,6 @@ shows the right number (expect `6240864` here, not `12481728`):
 ```bash
 curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
 ```
-
-The individuals are stored by their own id, so importing `individuals.json` twice
-does not duplicate them.
 
 **ROLLBACK:** none once the variants are deleted. The files you imported from are
 the copy, so import them again as above.
