@@ -37,6 +37,16 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [7.3 The Beacon itself: build, containers and queries](#73-the-beacon-itself-build-containers-and-queries)
 - [8. Tool Reference](#8-tool-reference)
 - [9. Verification Checklist](#9-verification-checklist)
+- [10. Extra Commands](#10-extra-commands)
+  - [10.1 Set the container names](#101-set-the-container-names-once-per-shell)
+  - [10.2 See what is in the database](#102-see-what-is-in-the-database)
+  - [10.3 Back up before you change anything](#103-back-up-before-you-change-anything)
+  - [10.4 Start fresh: empty the Beacon database](#104-start-fresh-empty-the-beacon-database-deletes)
+  - [10.5 Remove one dataset only](#105-remove-one-dataset-only-deletes)
+  - [10.6 Rebuild the indexes after adding data](#106-rebuild-the-indexes-after-adding-data)
+  - [10.7 Clear the cache](#107-clear-the-cache)
+  - [10.8 Restore a backup](#108-restore-a-backup-deletes-what-is-there-now)
+  - [10.9 Check the Beacon after any of these](#109-check-the-beacon-after-any-of-these)
 
 ## 1. Architecture Overview
 
@@ -1473,3 +1483,279 @@ After completing the pipeline, verify:
 - [ ] Beacon API returns results for real variants
 - [ ] Frontend displays real datasets (not `[Test]` prefixed)
 - [ ] Redis cache flushed
+
+## 10. Extra Commands
+
+Commands you need after the data is loaded: look inside the database, back it up,
+empty it to start fresh, remove one dataset, rebuild the indexes, and clear the
+cache. Run them **on the Beacon server** (`ssh <your-ssh-alias>`), not on ILIFU.
+Every command is a single line, so each one can be copied on its own.
+
+**The commands that delete data are marked DELETES.** Back up first (10.3) and
+never run them on a Beacon that real users query unless that is what you mean.
+
+### 10.1 Set the container names (once per shell)
+
+The containers have different names on the production host and on the
+development VM. Run `docker ps --format '{{.Names}}'` and use the pair that
+matches, then every command below works as written.
+
+Production:
+
+```bash
+M=beacon-mongodb
+```
+
+```bash
+R=beacon-redis
+```
+
+Development VM (`afrigend-all-dev`):
+
+```bash
+M=beacon-dev-mongodb
+```
+
+```bash
+R=beacon-dev-redis
+```
+
+The API container is called `beacon-api-boolean` on both:
+
+```bash
+A=beacon-api-boolean
+```
+
+### 10.2 See what is in the database
+
+How many documents each collection holds:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'db.getCollectionNames().forEach(c => print(c, db[c].countDocuments({})))'
+```
+
+The datasets that are registered (this is what `/api/datasets` lists):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'db.datasets.find({}, {name: 1, dataset_size: 1}).forEach(printjson)'
+```
+
+How many variants carry each dataset id:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'db.variants.aggregate([{$unwind: "$dataset_ids"}, {$group: {_id: "$dataset_ids", n: {$sum: 1}}}]).forEach(printjson)'
+```
+
+How big the data is:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'print(Math.round(db.stats().dataSize / 1048576) + " MB data")'
+```
+
+### 10.3 Back up before you change anything
+
+Check there is room first. The backup is compressed and is written straight to a
+file in your home folder on the server, so it needs a few GB for a large Beacon:
+
+```bash
+df -h $HOME
+```
+
+Back up the whole `beacon_db`:
+
+```bash
+F=$HOME/beacon_db_$(date +%F).archive
+```
+
+```bash
+docker exec $M mongodump --db beacon_db --archive --gzip > $F
+```
+
+Check the file is not empty (expect a size in MB or GB, not 0):
+
+```bash
+ls -lh $F
+```
+
+### 10.4 Start fresh: empty the Beacon database (DELETES)
+
+This removes every variant, individual and dataset, so the Beacon lists nothing.
+It keeps `filtering_terms` and `query_logs`. Do the backup in 10.3 first.
+
+Drop the data collections. Each one prints `true`, or `false` if it did not exist:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'for (const c of ["variants", "individuals", "datasets", "variant_in_dataset", "biosamples", "analyses", "cohorts"]) { print(c, db[c].drop()) }'
+```
+
+Dropping a collection drops its indexes too, so rebuild them (10.6) before the
+next import, and clear the cache:
+
+```bash
+docker exec $A python manage.py create_indexes --settings=beacon_project.settings_boolean
+```
+
+```bash
+docker exec $R redis-cli FLUSHDB
+```
+
+Check it is empty (expect every count `0`, or the collection missing):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'db.getCollectionNames().forEach(c => print(c, db[c].countDocuments({})))'
+```
+
+Then load the data again with Step 7 of section 4 or 5.
+
+**ROLLBACK:** this is not part of the steps above. It puts the backup back, so
+set `F` to the file you made in 10.3 and run it only to undo the wipe (10.8).
+
+### 10.5 Remove one dataset only (DELETES)
+
+Set the dataset id (the `id` in its `dataset.yaml`, as listed by 10.2):
+
+```bash
+ID=CEU_DATASET
+```
+
+Count first. The first number is the variants only this dataset uses (they will
+be deleted); the second is the variants shared with another dataset (they keep
+existing and only lose this id):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: ['$ID']}))"
+```
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: '$ID', \$expr: {\$gt: [{\$size: '\$dataset_ids'}, 1]}}))"
+```
+
+Delete the variants only this dataset uses (a large dataset takes minutes):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.variants.deleteMany({dataset_ids: ['$ID']}))"
+```
+
+Take this dataset's id off the variants that are shared:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.variants.updateMany({dataset_ids: '$ID'}, {\$pull: {dataset_ids: '$ID'}}))"
+```
+
+Remove the dataset record, so `/api/datasets` stops listing it:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.deleteOne({_id: '$ID'}))"
+```
+
+Clear the cache (the dataset list is cached for 1 hour):
+
+```bash
+docker exec $R redis-cli FLUSHDB
+```
+
+Check (expect `0`):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: '$ID'}))"
+```
+
+The individuals are not tied to a dataset in the database, so this leaves them in
+place. Delete them only if every individual belongs to the dataset you removed:
+`db.individuals.deleteMany({})`.
+
+**ROLLBACK:** none for a single dataset. Restore the backup from 10.3 (10.8), or
+import the dataset again with Step 7 and register it.
+
+### 10.6 Rebuild the indexes after adding data
+
+The importers do not build the indexes the position queries need, so run this
+after every large import. It is safe to repeat: it never drops anything.
+
+Preview what is missing:
+
+```bash
+docker exec $A python manage.py create_indexes --dry-run --settings=beacon_project.settings_boolean
+```
+
+Build it (about two minutes for 6 million variants; it ends with `Done.`):
+
+```bash
+docker exec $A python manage.py create_indexes --settings=beacon_project.settings_boolean
+```
+
+Only the variants, which is the slow one:
+
+```bash
+docker exec $A python manage.py create_indexes --model Variant --settings=beacon_project.settings_boolean
+```
+
+Check the variants collection has all its indexes (expect `variant_locus_overlap`,
+`variant_exact_allele` and `variant_dataset_ids` among them):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'db.variants.getIndexes().forEach(i => print(i.name))'
+```
+
+If one index looks wrong and you want it rebuilt from nothing, drop the variant
+indexes (DELETES the indexes, not the data) and build them again with the second
+command above. Expect the API to answer slowly, or with HTTP 503, until the
+build ends:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'db.variants.dropIndexes()'
+```
+
+### 10.7 Clear the cache
+
+Do this after any import, removal or restore. Datasets are cached for 1 hour and
+query answers for 5 minutes, so the Beacon shows old numbers until you do:
+
+```bash
+docker exec $R redis-cli FLUSHDB
+```
+
+### 10.8 Restore a backup (DELETES what is there now)
+
+Set `F` to the backup file (the one from 10.3, or an older one):
+
+```bash
+F=$HOME/beacon_db_2026-10-19.archive
+```
+
+```bash
+ls -lh $F
+```
+
+`--drop` replaces each collection with the one in the backup:
+
+```bash
+docker exec -i $M mongorestore --archive --gzip --drop < $F
+```
+
+Then clear the cache and check the counts as in 10.7 and 10.2:
+
+```bash
+docker exec $R redis-cli FLUSHDB
+```
+
+### 10.9 Check the Beacon after any of these
+
+Where the API is: use `http://localhost:8000` on the production host and
+`http://localhost:8080` on the development VM, from the server itself.
+
+```bash
+BEACON_URL=http://localhost:8080
+```
+
+Expect `200`:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" $BEACON_URL/api/health
+```
+
+The datasets it lists now:
+
+```bash
+curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
+```
