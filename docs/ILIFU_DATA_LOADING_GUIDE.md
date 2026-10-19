@@ -49,6 +49,8 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.9 Check the Beacon after any of these](#109-check-the-beacon-after-any-of-these)
   - [10.10 A dataset was loaded twice](#1010-a-dataset-was-loaded-twice-the-variant-count-is-doubled)
   - [10.11 Wrong sample count, or registered twice](#1011-a-dataset-has-the-wrong-sample-count-or-was-registered-twice)
+  - [10.12 The disk is full](#1012-the-disk-is-full-compress-the-source-files)
+  - [10.13 Start the Beacon again](#1013-start-the-beacon-again-after-it-was-stopped)
 
 ## 1. Architecture Overview
 
@@ -1810,8 +1812,9 @@ docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocument
 wc -l < $HOME/vcf_samples/vcf_TSI_output/variants_batch.jsonl
 ```
 
-The source files stay where they are, so a backup (10.3) is optional here. Check
-there is room: MongoDB reuses the space of the variants you delete for the new
+The source files stay where they are, so a backup (10.3) is optional here. If the
+disk is nearly full, free space first (10.12), and start the Beacon if it is down
+(10.13). Check there is room: MongoDB reuses the space of the variants you delete for the new
 import, so the disk use does not grow much, but a full disk stops the import.
 
 ```bash
@@ -1909,3 +1912,98 @@ docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.deleteOne
 The name and description show `My dataset` and `What this data is.` when the
 dataset file still holds the template text. Edit `name`, `description` and
 `contact` in the dataset file, then register again as above.
+
+### 10.12 The disk is full: compress the source files
+
+A full disk stops MongoDB and every other service on the machine. On the
+development VM the usual cause is the folder of loaded files: each population's
+`variants_batch.jsonl` is about 2.5 GB and stays there after the import.
+Compressing them is lossless and shrinks each to a small fraction (a 200 MB
+sample of one file compressed to 11 MB).
+
+See how much room there is and what is large:
+
+```bash
+df -h / | tail -1
+```
+
+```bash
+du -sh ~/vcf_samples/* | sort -h | tail -12
+```
+
+Compress the files of the datasets that are already loaded and correct. Leave out
+the dataset you are about to reload, and any file an import is reading right now.
+One file at a time needs only the compressed size free, so it works even when the
+disk is nearly full (replace the list with your populations):
+
+```bash
+for p in CEU ESN FIN GBR GWD IBS LWK MSL YRI; do gzip -v ~/vcf_samples/vcf_${p}_output/variants_batch.jsonl; done
+```
+
+Check (expect 15 GB or more free for ten 2.5 GB files, up from almost nothing):
+
+```bash
+df -h / | tail -1
+```
+
+To load a compressed file again, stream it; nothing is written to disk
+(`mongoimport` as in Step 7):
+
+```bash
+zcat ~/vcf_samples/vcf_GBR_output/variants_batch.jsonl.gz | docker exec -i $M mongoimport --db beacon_db --collection variants --type json --file /dev/stdin
+```
+
+**ROLLBACK:** this is not part of the steps above. To get a file back as it was,
+run `gunzip` on it (it needs 2.5 GB free for each file):
+
+```bash
+gunzip ~/vcf_samples/vcf_GBR_output/variants_batch.jsonl.gz
+```
+
+### 10.13 Start the Beacon again after it was stopped
+
+On the development VM the Beacon runs from a compose file in the repository
+clone. `docker compose down` removes its containers but keeps the data volume
+(`compose_beacon_dev_mongodb_data`), so nothing is lost; do not add `-v` to
+`down`, which deletes the volume and the data with it.
+
+Check it is down (expect no output) and that there is room (10.12; MongoDB needs a
+few GB free to start):
+
+```bash
+docker ps -a --format '{{.Names}}  {{.Status}}' | grep beacon
+```
+
+```bash
+df -h / | tail -1
+```
+
+Start it from the same folder as before, so the same data volume is used:
+
+```bash
+cd ~/variant-checker-beacon
+```
+
+```bash
+docker compose -f compose/docker-compose.dev.yml up -d --build mongodb redis beacon-api
+```
+
+Check (expect `beacon-dev-mongodb`, `beacon-dev-redis` and `beacon-api-boolean`,
+each `(healthy)` after about a minute):
+
+```bash
+docker ps --format '{{.Names}}  {{.Status}}' | grep beacon
+```
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/health
+```
+
+Expect `200`. Then clear the cache (10.7) and list the datasets (10.9).
+
+**ROLLBACK:** this is not part of the steps above. To stop it again and keep the
+data:
+
+```bash
+docker compose -f compose/docker-compose.dev.yml down
+```
