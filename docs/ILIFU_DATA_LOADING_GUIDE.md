@@ -47,6 +47,8 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.7 Clear the cache](#107-clear-the-cache)
   - [10.8 Restore a backup](#108-restore-a-backup-deletes-what-is-there-now)
   - [10.9 Check the Beacon after any of these](#109-check-the-beacon-after-any-of-these)
+  - [10.10 A dataset was loaded twice](#1010-a-dataset-was-loaded-twice-the-variant-count-is-doubled)
+  - [10.11 Wrong sample count, or registered twice](#1011-a-dataset-has-the-wrong-sample-count-or-was-registered-twice)
 
 ## 1. Architecture Overview
 
@@ -230,12 +232,13 @@ git clone https://github.com/AfriGen-D/variant-checker-beacon.git
 ```
 
 Then choose how to run the container: Singularity on ILIFU (A1) or Docker on a
-server or workstation (A2). Each ends by defining a small shell function
-`beacon`, which runs a program inside the container, and the variable `$TOOLS`,
-which says where the tools live. Every later step is written with them, so the
-commands are the same whichever you choose (a function rather than a variable, so
-it behaves the same in bash and zsh). Define them again in each new shell
-session, or put the lines in your `~/.bashrc`.
+server or workstation (A2). Each ends by defining a small shell function that
+runs a program inside the container (`beacon-sing` for Singularity,
+`beacon-docker` for Docker), and the variable `$TOOLS`, which says where the
+tools live (a function rather than a variable, so it behaves the same in bash
+and zsh). The steps below are written for ILIFU and say `beacon-sing`; if you
+chose Docker, type `beacon-docker` instead. Define the function again in each
+new shell session, or put the lines in your `~/.bashrc`.
 
 #### 4.2.1 The tools run from a container
 
@@ -255,22 +258,25 @@ cd /cbio/users/$USER
 singularity pull beacon-tools.sif docker://ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
 
 # In every shell session:
-beacon() { singularity exec --bind /cbio,/scratch3 "/cbio/users/$USER/beacon-tools.sif" "$@"; }
+beacon-sing() {
+    singularity exec --bind /cbio,/scratch3 \
+        "/cbio/users/$USER/beacon-tools.sif" "$@"
+}
 TOOLS=/opt/beacon-tools
 
 # Verify installation
-beacon bcftools --version | head -1
-beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
+beacon-sing bcftools --version | head -1
+beacon-sing python $TOOLS/vcf_transform/vcf_to_beacon.py --help
 ```
 
 **What the two "every shell session" lines do.** The tools are not installed on
 the cluster; `bcftools` and the Python scripts live inside the file
 `beacon-tools.sif`, and `singularity exec` runs a command inside it. The first
-line creates a shortcut named `beacon` so you do not type that out each time:
-`beacon bcftools --version` means `singularity exec --bind /cbio,/scratch3
+line creates a shortcut named `beacon-sing` so you do not type that out each
+time: `beacon-sing bcftools --version` means `singularity exec --bind /cbio,/scratch3
 beacon-tools.sif bcftools --version` (`--bind` makes `/cbio` and `/scratch3`
 visible inside, so the tools can read your VCFs and write their output, and
-`"$@"` stands for whatever you type after `beacon`). The second line,
+`"$@"` stands for whatever you type after `beacon-sing`). The second line,
 `TOOLS=/opt/beacon-tools`, stores the folder inside the container where the
 scripts are, which keeps later commands short. Both are forgotten when you log
 out or start a new `srun`, so paste them again at the start of each session, or
@@ -289,12 +295,16 @@ docker pull ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
 
 # In every shell session:
 DATA=$HOME/beacon_data
-beacon() { docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$DATA:$DATA" -w "$DATA" --entrypoint= ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest "$@"; }
+beacon-docker() {
+    docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp \
+        -v "$DATA:$DATA" -w "$DATA" --entrypoint= \
+        ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest "$@"
+}
 TOOLS=/opt/beacon-tools
 
 # Verify installation
-beacon bcftools --version | head -1
-beacon python $TOOLS/vcf_transform/vcf_to_beacon.py --help
+beacon-docker bcftools --version | head -1
+beacon-docker python $TOOLS/vcf_transform/vcf_to_beacon.py --help
 ```
 
 The image is rebuilt and published from this repository's `main` branch. Pull it
@@ -334,7 +344,8 @@ singularity build beacon-tools.sif docker-archive://beacon-tools.tar
 ```
 
 Keep the archive a plain `.tar`: Singularity rejects a gzipped one with
-`invalid tar header`. From here the `beacon()` function in A1 works unchanged.
+`invalid tar header`. From here the `beacon-sing()` function in A1 works
+unchanged.
 
 ### 4.3 Step 3: Locate Your VCF Files
 
@@ -352,8 +363,9 @@ for f in 1000G_chr22_subset.vcf.gz 1000G_chr22_subset.vcf.gz.tbi \
 done
 ```
 
-Then set three variables, and define the `beacon` shortcut from Step 2 again if
-this is a new shell. To use your own files instead, change the variables:
+Then set three variables, and define the `beacon-sing` shortcut from Step 2
+again if this is a new shell. To use your own files instead, change the
+variables:
 
 ```bash
 EXAMPLE=/cbio/users/$USER/beacon_example
@@ -372,8 +384,8 @@ find /cbio/projects/ -name "*.vcf.gz" -type f 2>/dev/null | head -20
 
 # Check a VCF file header to confirm assembly and samples.
 # bcftools is inside the container.
-beacon bcftools view -h $VCF | head -30
-beacon bcftools query -l $VCF | wc -l   # count samples (example: 9)
+beacon-sing bcftools view -h $VCF | head -30
+beacon-sing bcftools query -l $VCF | wc -l   # count samples (example: 9)
 ```
 
 **Use bcftools to inspect and prepare the VCF before transforming it.** It is
@@ -382,17 +394,17 @@ whole pipeline in minutes before committing to a full run:
 
 ```bash
 # Contigs the file uses, with their variant counts (needs a .tbi/.csi index)
-beacon bcftools index -s $VCF     # example: chr22 and 4231 variants
+beacon-sing bcftools index -s $VCF     # example: chr22 and 4231 variants
 
 # Create the index if the file has none
-beacon bcftools index -t $VCF
+beacon-sing bcftools index -t $VCF
 
 # A small test slice: one region, PASS variants only, compressed and indexed.
 # Use the contig name exactly as `index -s` printed it above (this file uses
 # chr22; some files use 22).
-beacon bcftools view -f PASS -r chr22:16000000-17000000 $VCF \
+beacon-sing bcftools view -f PASS -r chr22:16000000-17000000 $VCF \
     -Oz -o /cbio/users/$USER/test_slice.vcf.gz
-beacon bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
+beacon-sing bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
 ```
 
 ### 4.4 Step 4: Transform VCF to Beacon JSON
@@ -413,7 +425,7 @@ dataset:
 ```
 
 ```bash
-beacon python $TOOLS/vcf_transform/vcf_to_beacon.py $VCF \
+beacon-sing python $TOOLS/vcf_transform/vcf_to_beacon.py $VCF \
     --output /cbio/users/$USER/beacon_output/vcf_output \
     --assembly GRCh38 \
     --dataset-id EXAMPLE_1000G_CHR22 \
@@ -456,7 +468,8 @@ Note: `start` uses 0-based coordinates (VCF POS is 1-based, so `start = POS - 1`
 If you have clinical/phenotype data (CSV/TSV/XLSX):
 
 ```bash
-beacon python $TOOLS/phenotype_transform/phenotype_to_beacon.py $PHENOTYPES \
+beacon-sing python $TOOLS/phenotype_transform/phenotype_to_beacon.py \
+    $PHENOTYPES \
     --output /cbio/users/$USER/beacon_output/phenotype_output \
     --individuals /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --config $TOOLS/config/settings.yaml \
@@ -480,17 +493,17 @@ The transformer auto-detects column names and normalizes them.
 
 ```bash
 # Validate variants (strict mode = stop on first error)
-beacon python $TOOLS/validation/validate_json.py \
+beacon-sing python $TOOLS/validation/validate_json.py \
     /cbio/users/$USER/beacon_output/vcf_output/variants_batch.jsonl \
     --schema-type variant --strict
 
 # Validate individuals
-beacon python $TOOLS/validation/validate_json.py \
+beacon-sing python $TOOLS/validation/validate_json.py \
     /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --schema-type individual --strict
 
 # Validate phenotypes (if generated)
-beacon python $TOOLS/validation/validate_json.py \
+beacon-sing python $TOOLS/validation/validate_json.py \
     /cbio/users/$USER/beacon_output/phenotype_output/phenotypes.json \
     --schema-type phenotype --strict
 ```
@@ -554,19 +567,19 @@ nc -z localhost 27017 && echo "Tunnel OK" || echo "Tunnel FAILED"
 MONGO_URI="mongodb://localhost:27017/"
 
 # Import variants
-beacon python $TOOLS/data_import/import_to_mongo.py \
+beacon-sing python $TOOLS/data_import/import_to_mongo.py \
     /cbio/users/$USER/beacon_output/vcf_output/variants_batch.jsonl \
     --db beacon_db --collection variants \
     --mongo-uri "$MONGO_URI" --verbose
 
 # Import individuals
-beacon python $TOOLS/data_import/import_to_mongo.py \
+beacon-sing python $TOOLS/data_import/import_to_mongo.py \
     /cbio/users/$USER/beacon_output/vcf_output/individuals.json \
     --db beacon_db --collection individuals \
     --mongo-uri "$MONGO_URI" --verbose
 
 # Import phenotypes (if available)
-beacon python $TOOLS/data_import/import_to_mongo.py \
+beacon-sing python $TOOLS/data_import/import_to_mongo.py \
     /cbio/users/$USER/beacon_output/phenotype_output/phenotypes.json \
     --db beacon_db --collection phenotypes \
     --mongo-uri "$MONGO_URI" --verbose
@@ -579,7 +592,7 @@ refuses an id that no imported variant carries, and running it again updates the
 same record:
 
 ```bash
-beacon python $TOOLS/data_import/register_dataset.py $DATASET \
+beacon-sing python $TOOLS/data_import/register_dataset.py $DATASET \
     --db beacon_db --mongo-uri "$MONGO_URI" --samples 9
 ```
 
@@ -836,12 +849,12 @@ singularity exec --bind /cbio,/scratch3 beacon-tools.sif \
 
 Expect a `bcftools` version line. The image is public, so no login is needed.
 
-For the by-hand import in Step 7 you also want a short command `beacon` that runs
-a program inside the image. Define it in every shell where you use it, or put the
-two lines in your `~/.bashrc`:
+For the by-hand import in Step 7 you also want a short command `beacon-sing`
+that runs a program inside the image. Define it in every shell where you use
+it, or put the two lines in your `~/.bashrc`:
 
 ```bash
-beacon() {
+beacon-sing() {
     singularity exec --bind /cbio,/scratch3 \
         "/cbio/users/$USER/beacon-tools.sif" "$@"
 }
@@ -1051,28 +1064,29 @@ with your own.
    # when the server holds an old ghcr.io login that the registry now rejects.
    mkdir -p $HOME/.emptydocker && echo '{}' > $HOME/.emptydocker/config.json
    DOCKER_CONFIG=$HOME/.emptydocker docker pull $IMAGE
-   beacon() {
+   beacon-docker() {
        docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp \
            -v "$DATA:$DATA" -w "$DATA" --entrypoint= $IMAGE "$@"
    }
 
    # 1. Variants of every file
    for d in $OUT/part_*/; do
-       beacon python $TOOLS/data_import/import_to_mongo.py \
+       beacon-docker python $TOOLS/data_import/import_to_mongo.py \
            $d/vcf_output/variants_batch.jsonl \
            --db beacon_db --collection variants --mongo-uri "$MONGO_URI"
    done
 
    # The samples are the same in every chromosome file, so import them once
    first=$(ls -d $OUT/part_*/ | head -1)
-   beacon python $TOOLS/data_import/import_to_mongo.py \
+   beacon-docker python $TOOLS/data_import/import_to_mongo.py \
        $first/vcf_output/individuals.json \
        --db beacon_db --collection individuals --mongo-uri "$MONGO_URI"
 
    # 2. Register the dataset (the sample count is in the transform summary)
    SAMPLES=$(grep -o '"individuals_found": [0-9]*' \
        $first/vcf_output/transformation_summary.json | grep -o '[0-9]*$')
-   beacon python $TOOLS/data_import/register_dataset.py $EX/dataset.yaml \
+   beacon-docker python $TOOLS/data_import/register_dataset.py \
+       $EX/dataset.yaml \
        --db beacon_db --mongo-uri "$MONGO_URI" --samples $SAMPLES
    ```
 
@@ -1410,8 +1424,8 @@ exists for them. `mongoimport` never creates one; register it with
 for an hour.
 
 **`ERROR: dataset file not found: dataset_CEU.yaml` (or a variants file "not
-found") when the file is plainly there.** The `beacon` helper runs the tools in
-a container, and the container sees only the folder mounted with `-v
+found") when the file is plainly there.** The `beacon-docker` helper runs the
+tools in a container, and the container sees only the folder mounted with `-v
 "$DATA:$DATA"`. If `DATA` still points at an earlier folder (for example
 `$HOME/beacon_import`), a file in another folder, such as
 `~/vcf_samples/vcf_CEU_output/`, does not exist inside the container. Names are
@@ -1424,18 +1438,18 @@ DATA=$HOME/vcf_samples
 ```
 
 ```bash
-beacon() {
+beacon-docker() {
     docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp \
         -v "$DATA:$DATA" -w "$DATA" --entrypoint= $IMAGE "$@"
 }
 ```
 
 ```bash
-beacon ls $DATA/vcf_CEU_output/dataset_CEU.yaml
+beacon-docker ls $DATA/vcf_CEU_output/dataset_CEU.yaml
 ```
 
 ```bash
-beacon python $TOOLS/data_import/register_dataset.py \
+beacon-docker python $TOOLS/data_import/register_dataset.py \
     $DATA/vcf_CEU_output/dataset_CEU.yaml \
     --db beacon_db --mongo-uri "$MONGO_URI" --samples 99
 ```
@@ -1660,6 +1674,8 @@ Check (expect `0`):
 docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: '$ID'}))"
 ```
 
+If the dataset's variant count is double what it should be, see 10.10.
+
 The individuals are not tied to a dataset in the database, so this leaves them in
 place. Delete them only if every individual belongs to the dataset you removed:
 `db.individuals.deleteMany({})`.
@@ -1759,3 +1775,117 @@ The datasets it lists now:
 ```bash
 curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
 ```
+
+### 10.10 A dataset was loaded twice (the variant count is doubled)
+
+`mongoimport` gives every record a random `_id`, so running it twice for the same
+file stores every variant twice. The dataset record then shows twice the variants,
+because the registration counts the documents in the database. Example: a dataset
+of 6,240,864 variants that shows 12,481,728. Do not try to delete half of them:
+remove the dataset's variants and import the file once with `import_to_mongo.py`,
+which writes each variant under its own id, so running it again never duplicates.
+
+Set the dataset id, and the names from section 10.1:
+
+```bash
+ID=TSI_DATASET
+```
+
+Confirm the cause. This is the number in the database; it should be exactly twice
+the number of lines in the dataset's `variants_batch.jsonl`:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: ['$ID']}))"
+```
+
+```bash
+wc -l < $HOME/vcf_samples/vcf_TSI_output/variants_batch.jsonl
+```
+
+The source files stay where they are, so a backup (10.3) is optional here. Check
+there is room: MongoDB reuses the space of the variants you delete for the new
+import, so the disk use does not grow much, but a full disk stops the import.
+
+```bash
+df -h $HOME
+```
+
+Remove the dataset's variants and its record with the five commands in 10.5
+(delete, pull, `deleteOne`, flush the cache, check for `0`). Then import the file
+once and register the dataset again. Set the three variables first, and define
+`beacon-docker` as in section 7.3:
+
+```bash
+DATA=$HOME/vcf_samples
+```
+
+```bash
+TOOLS=/opt/beacon-tools
+```
+
+```bash
+MONGO_URI="mongodb://localhost:27017/"
+```
+
+```bash
+beacon-docker python $TOOLS/data_import/import_to_mongo.py $DATA/vcf_TSI_output/variants_batch.jsonl --db beacon_db --collection variants --mongo-uri "$MONGO_URI"
+```
+
+Always give `--samples` when you register: a record registered without it loses
+its sample count. Replace 107 with the number of samples in your VCF:
+
+```bash
+beacon-docker python $TOOLS/data_import/register_dataset.py $DATA/vcf_TSI_output/dataset_TSI.yaml --db beacon_db --mongo-uri "$MONGO_URI" --samples 107
+```
+
+Rebuild the indexes (10.6) and clear the cache (10.7). Check the dataset now
+shows the right number (expect `6240864` here, not `12481728`):
+
+```bash
+curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
+```
+
+The individuals are stored by their own id, so importing `individuals.json` twice
+does not duplicate them.
+
+**ROLLBACK:** none once the variants are deleted. The files you imported from are
+the copy, so import them again as above.
+
+### 10.11 A dataset has the wrong sample count, or was registered twice
+
+The record in `datasets` is keyed by the dataset id, so registering the same id
+again does not add a second record: it replaces the numbers in the first one. The
+variant count is counted from the database every time. The sample count is only
+what you pass, so a wrong `--samples` stays wrong until you register again with
+the right one.
+
+Fix the sample count (replace `LWK` and `99` with your dataset and its number of
+samples; the dataset file is the one you registered from):
+
+```bash
+beacon-docker python $TOOLS/data_import/register_dataset.py $DATA/vcf_LWK_output/dataset_LWK.yaml --db beacon_db --mongo-uri "$MONGO_URI" --samples 99
+```
+
+Check (expect `99` for `samples`):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.findOne({_id: 'LWK_DATASET'}, {dataset_size: 1}))"
+```
+
+Clear the cache, because the dataset list is cached for an hour (10.7).
+
+If the list shows two records for the same data, they have different ids (for
+example `LWK` and `LWK_DATASET`). List them with 10.2 and count the variants of each
+id. Keep the id the variants carry, and delete the other record only (DELETES
+one record, no variants):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.deleteOne({_id: 'LWK'}))"
+```
+
+**ROLLBACK:** register the deleted dataset again from its dataset file, with
+`--samples`.
+
+The name and description show `My dataset` and `What this data is.` when the
+dataset file still holds the template text. Edit `name`, `description` and
+`contact` in the dataset file, then register again as above.
