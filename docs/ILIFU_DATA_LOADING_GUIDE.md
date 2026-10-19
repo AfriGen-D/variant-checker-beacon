@@ -42,7 +42,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.2 See what is in the database](#102-see-what-is-in-the-database)
   - [10.3 Back up before you change anything](#103-back-up-before-you-change-anything)
   - [10.4 Start fresh: empty the Beacon database](#104-start-fresh-empty-the-beacon-database-deletes)
-  - [10.5 Remove one dataset only](#105-remove-one-dataset-only-deletes)
+  - [10.5 Remove a whole dataset with all its data](#105-remove-a-whole-dataset-with-all-its-data-deletes)
   - [10.6 Rebuild the indexes after adding data](#106-rebuild-the-indexes-after-adding-data)
   - [10.7 Clear the cache](#107-clear-the-cache)
   - [10.8 Restore a backup](#108-restore-a-backup-deletes-what-is-there-now)
@@ -52,7 +52,6 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.12 The disk is full](#1012-the-disk-is-full-compress-the-source-files)
   - [10.13 Start the Beacon again](#1013-start-the-beacon-again-after-it-was-stopped)
   - [10.14 Worked example: fix a doubled dataset](#1014-worked-example-fix-a-doubled-dataset-start-to-finish)
-  - [10.15 Remove a whole dataset with all its data](#1015-remove-a-whole-dataset-with-all-its-data)
 
 ## 1. Architecture Overview
 
@@ -1628,17 +1627,45 @@ Then load the data again with Step 7 of section 4 or 5.
 **ROLLBACK:** this is not part of the steps above. It puts the backup back, so
 set `F` to the file you made in 10.3 and run it only to undo the wipe (10.8).
 
-### 10.5 Remove one dataset only (DELETES)
+### 10.5 Remove a whole dataset with all its data (DELETES)
 
-Set the dataset id (the `id` in its `dataset.yaml`, as listed by 10.2):
+A dataset is spread over several places in the database, and they are linked in
+different ways. This is what was read on the development Beacon, and it decides
+how each part is removed:
+
+| Part | Where | Linked to the dataset by | How to remove it |
+| --- | --- | --- | --- |
+| The dataset record | `datasets` | its `_id` (the dataset id) | by `_id` |
+| The variants | `variants` | `dataset_ids`, a list on each variant | by `dataset_ids` |
+| The individuals | `individuals` | **nothing**: no dataset field | by their own `id` |
+| Biosamples, analyses, cohorts | `biosamples`, `analyses`, `cohorts` | not used by this Beacon (0 documents) | nothing to do; check the counts (10.2) |
+
+The individuals are the surprise: the database does not say which individuals
+belong to a dataset, so you cannot remove them with the dataset id. The people
+are listed in the dataset's own `individuals.json` file (for a loaded dataset), or
+have ids starting `ind_` (for the built-in test dataset).
+
+Back up first (10.3). Set the names (10.1) and the dataset id:
 
 ```bash
-ID=CEU_DATASET
+M=beacon-dev-mongodb
 ```
 
-Count first. The first number is the variants only this dataset uses (they will
-be deleted); the second is the variants shared with another dataset (they keep
-existing and only lose this id):
+```bash
+R=beacon-dev-redis
+```
+
+```bash
+ID=test_dataset_001
+```
+
+**Step 1. See what the dataset holds.** The record, then the variants that carry
+only this dataset's id (they will be deleted) and those shared with another
+dataset (they keep existing and only lose this id):
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.findOne({_id: '$ID'}))"
+```
 
 ```bash
 docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: ['$ID']}))"
@@ -1648,46 +1675,88 @@ docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocument
 docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: '$ID', \$expr: {\$gt: [{\$size: '\$dataset_ids'}, 1]}}))"
 ```
 
-Delete the variants only this dataset uses (a large dataset takes minutes):
+For `test_dataset_001` the record shows `variantCount: 100` and 50 samples, but
+both counts are `0`: the 100 and the 50 are only numbers written in the record,
+and it has no variants in the database. For a loaded dataset such as
+`TSI_DATASET` the first count is its number of variants (6240864).
+
+**Step 2. Delete the variants** that only this dataset uses (a large dataset takes
+several minutes), then take its id off any shared ones:
 
 ```bash
 docker exec $M mongosh beacon_db --quiet --eval "printjson(db.variants.deleteMany({dataset_ids: ['$ID']}))"
 ```
 
-Take this dataset's id off the variants that are shared:
-
 ```bash
 docker exec $M mongosh beacon_db --quiet --eval "printjson(db.variants.updateMany({dataset_ids: '$ID'}, {\$pull: {dataset_ids: '$ID'}}))"
 ```
 
-Remove the dataset record, so `/api/datasets` stops listing it:
+Expect `deletedCount` equal to the first count, and `modifiedCount: 0` when
+nothing was shared. For `test_dataset_001` both are `0`.
+
+**Step 3. Delete the individuals.** Pick the case that matches.
+
+*The built-in test dataset.* Its 50 individuals have ids `ind_0000` to `ind_0049`.
+Count, then delete:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'print(db.individuals.countDocuments({_id: /^ind_/}))'
+```
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'printjson(db.individuals.deleteMany({_id: /^ind_/}))'
+```
+
+Expect `50`, then `{ acknowledged: true, deletedCount: 50 }`.
+
+*A loaded dataset.* Take the ids from the dataset's `individuals.json` (a list
+of records, each with an `id` such as `NA20752`) and delete those individuals:
+
+```bash
+IDS=$(python3 -c "import json,sys; print(json.dumps([d['id'] for d in json.load(open(sys.argv[1]))]))" ~/vcf_samples/vcf_TSI_output/individuals.json)
+```
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "print(db.individuals.countDocuments({id: {\$in: $IDS}}))"
+```
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.individuals.deleteMany({id: {\$in: $IDS}}))"
+```
+
+Expect the count to be the number of people in the file (107 for TSI), or a
+multiple of it if the dataset was loaded more than once (all copies are
+deleted). **Check first that no other dataset shares these people:** two
+datasets built from the same samples (for example `CEU_DATASET` and
+`CHR20_CEU_DATASET`, both 99 people) use the same individuals, and deleting
+them removes them for both.
+
+**Step 4. Delete the dataset record**, so the Beacon stops listing it:
 
 ```bash
 docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.deleteOne({_id: '$ID'}))"
 ```
 
-Clear the cache (the dataset list is cached for 1 hour):
+Expect `{ acknowledged: true, deletedCount: 1 }`.
+
+**Step 5. Clear the cache** (the dataset list is cached for an hour) and check
+that the dataset is gone:
 
 ```bash
 docker exec $R redis-cli FLUSHDB
 ```
 
-Check (expect `0`):
-
 ```bash
-docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: '$ID'}))"
+curl -s http://localhost:8000/api/datasets | python3 -m json.tool
 ```
 
-If the dataset's variant count is double what it should be, see 10.10.
+Expect `OK`, and no entry with the dataset id in the list.
 
-To remove a whole dataset including its individuals, see 10.15.
+**ROLLBACK:** this is not part of the steps above. Deleting cannot be undone in
+place: restore the backup (10.8), or load the dataset again from its files
+(Step 7 of section 4 or 5, then register it).
 
-The individuals are not tied to a dataset in the database, so this leaves them in
-place. Delete them only if every individual belongs to the dataset you removed:
-`db.individuals.deleteMany({})`.
-
-**ROLLBACK:** none for a single dataset. Restore the backup from 10.3 (10.8), or
-import the dataset again with Step 7 and register it.
+If the dataset's variant count is double what it should be, see 10.10 instead.
 
 ### 10.6 Rebuild the indexes after adding data
 
@@ -1827,9 +1896,10 @@ df -h $HOME
 
 For the whole sequence as one numbered example, see 10.14.
 
-Remove the dataset's variants and its record with the five commands in 10.5
-(delete, pull, `deleteOne`, flush the cache, check for `0`). Then load the
-variants once, as in Step 7. Set the variables first, and define `beacon-docker`
+Remove the dataset's variants and its record with steps 2, 4 and 5 of 10.5
+(delete the variants, delete the record, flush the cache), and skip step 3: the
+individuals of a doubled dataset are handled below. Then load the variants once,
+as in Step 7. Set the variables first, and define `beacon-docker`
 as in section 7.3:
 
 ```bash
@@ -2162,132 +2232,3 @@ Expect the same line as in step 5, now with your name in the brackets.
 in place; the recovery is to load the source file again (steps 4 to 8). The
 source file `variants_batch.jsonl` must still exist (or be restored with
 `gunzip`, see 10.12), so do not delete it before step 9 shows the right number.
-
-### 10.15 Remove a whole dataset with all its data
-
-A dataset is spread over several places in the database, and they are linked in
-different ways. This is what was read on the development Beacon, and it decides
-how each part is removed:
-
-| Part | Where | Linked to the dataset by | How to remove it |
-| --- | --- | --- | --- |
-| The dataset record | `datasets` | its `_id` (the dataset id) | by `_id` |
-| The variants | `variants` | `dataset_ids`, a list on each variant | by `dataset_ids` |
-| The individuals | `individuals` | **nothing**: no dataset field | by their own `id` |
-| Biosamples, analyses, cohorts | `biosamples`, `analyses`, `cohorts` | not used by this Beacon (0 documents) | nothing to do; check the counts (10.2) |
-
-The individuals are the surprise: the database does not say which individuals
-belong to a dataset, so you cannot remove them with the dataset id. The people
-are listed in the dataset's own `individuals.json` file (for a loaded dataset), or
-have ids starting `ind_` (for the built-in test dataset).
-
-Back up first (10.3). Set the names (10.1) and the dataset id:
-
-```bash
-M=beacon-dev-mongodb
-```
-
-```bash
-R=beacon-dev-redis
-```
-
-```bash
-ID=test_dataset_001
-```
-
-**Step 1. See what the dataset holds.** The record, then the variants that carry
-only this dataset's id (they will be deleted) and those shared with another
-dataset (they keep existing and only lose this id):
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.findOne({_id: '$ID'}))"
-```
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: ['$ID']}))"
-```
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: '$ID', \$expr: {\$gt: [{\$size: '\$dataset_ids'}, 1]}}))"
-```
-
-For `test_dataset_001` the record shows `variantCount: 100` and 50 samples, but
-both counts are `0`: the 100 and the 50 are only numbers written in the record,
-and it has no variants in the database. For a loaded dataset such as
-`TSI_DATASET` the first count is its number of variants (6240864).
-
-**Step 2. Delete the variants** that only this dataset uses (a large dataset takes
-several minutes), then take its id off any shared ones:
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval "printjson(db.variants.deleteMany({dataset_ids: ['$ID']}))"
-```
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval "printjson(db.variants.updateMany({dataset_ids: '$ID'}, {\$pull: {dataset_ids: '$ID'}}))"
-```
-
-Expect `deletedCount` equal to the first count, and `modifiedCount: 0` when
-nothing was shared. For `test_dataset_001` both are `0`.
-
-**Step 3. Delete the individuals.** Pick the case that matches.
-
-*The built-in test dataset.* Its 50 individuals have ids `ind_0000` to `ind_0049`.
-Count, then delete:
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval 'print(db.individuals.countDocuments({_id: /^ind_/}))'
-```
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval 'printjson(db.individuals.deleteMany({_id: /^ind_/}))'
-```
-
-Expect `50`, then `{ acknowledged: true, deletedCount: 50 }`.
-
-*A loaded dataset.* Take the ids from the dataset's `individuals.json` (a list
-of records, each with an `id` such as `NA20752`) and delete those individuals:
-
-```bash
-IDS=$(python3 -c "import json,sys; print(json.dumps([d['id'] for d in json.load(open(sys.argv[1]))]))" ~/vcf_samples/vcf_TSI_output/individuals.json)
-```
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval "print(db.individuals.countDocuments({id: {\$in: $IDS}}))"
-```
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval "printjson(db.individuals.deleteMany({id: {\$in: $IDS}}))"
-```
-
-Expect the count to be the number of people in the file (107 for TSI), or a
-multiple of it if the dataset was loaded more than once (all copies are
-deleted). **Check first that no other dataset shares these people:** two
-datasets built from the same samples (for example `CEU_DATASET` and
-`CHR20_CEU_DATASET`, both 99 people) use the same individuals, and deleting
-them removes them for both.
-
-**Step 4. Delete the dataset record**, so the Beacon stops listing it:
-
-```bash
-docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.deleteOne({_id: '$ID'}))"
-```
-
-Expect `{ acknowledged: true, deletedCount: 1 }`.
-
-**Step 5. Clear the cache** (the dataset list is cached for an hour) and check
-that the dataset is gone:
-
-```bash
-docker exec $R redis-cli FLUSHDB
-```
-
-```bash
-curl -s http://localhost:8000/api/datasets | python3 -m json.tool
-```
-
-Expect `OK`, and no entry with the dataset id in the list.
-
-**ROLLBACK:** this is not part of the steps above. Deleting cannot be undone in
-place: restore the backup (10.8), or load the dataset again from its files
-(Step 7 of section 4 or 5, then register it).
