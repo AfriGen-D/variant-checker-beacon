@@ -1066,6 +1066,11 @@ with your own.
        --db beacon_db --mongo-uri "$MONGO_URI" --samples $SAMPLES
    ```
 
+   The container sees **only** the folder in `DATA`, so every file you name
+   (`variants_batch.jsonl`, `dataset.yaml`) must be somewhere under it. A file
+   anywhere else gives `dataset file not found` even though `ls` shows it
+   (see section 7.3).
+
    Expect `Errors: 0` for every file and a last line such as `Registered dataset
    'MY_DATASET' (...): 4231 variants, 9 samples`. The loop uses `part_*` for the
    example; for your own data use the pattern of your folder names (for example
@@ -1393,6 +1398,42 @@ Mode"), not your data.** The variants are in the database but no dataset record
 exists for them. `mongoimport` never creates one; register it with
 `register_dataset.py` (Step 7), then flush the cache because the list is cached
 for an hour.
+
+**`ERROR: dataset file not found: dataset_CEU.yaml` (or a variants file "not
+found") when the file is plainly there.** The `beacon` helper runs the tools in
+a container, and the container sees only the folder mounted with `-v
+"$DATA:$DATA"`. If `DATA` still points at an earlier folder (for example
+`$HOME/beacon_import`), a file in another folder, such as
+`~/vcf_samples/vcf_CEU_output/`, does not exist inside the container. Names are
+also case-sensitive: `dataset_CEU.yaml` is not `dataset_ceu.yaml`. Point `DATA`
+at a folder that contains your files, redefine the helper so it mounts that
+folder, check the container sees the file, and give the full path:
+
+```bash
+DATA=$HOME/vcf_samples
+```
+
+```bash
+beacon() {
+    docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp \
+        -v "$DATA:$DATA" -w "$DATA" --entrypoint= $IMAGE "$@"
+}
+```
+
+```bash
+beacon ls $DATA/vcf_CEU_output/dataset_CEU.yaml
+```
+
+```bash
+beacon python $TOOLS/data_import/register_dataset.py \
+    $DATA/vcf_CEU_output/dataset_CEU.yaml \
+    --db beacon_db --mongo-uri "$MONGO_URI" --samples 99
+```
+
+The first command redefines `DATA`; the second redefines the helper, which reads
+`DATA` and `IMAGE` when it runs, so define both again in a new shell. The `ls`
+must print the file name. Also replace the placeholder `name`, `description`
+and `contact` in the yaml before registering: the Beacon shows them to users.
 
 **HTTP 429 `Request was throttled. Expected available in N seconds.`** You sent
 more than about 50 requests in an hour from one address. Wait the `N` seconds
