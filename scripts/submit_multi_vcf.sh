@@ -215,7 +215,10 @@ cd "${REPO_DIR}"
 while IFS= read -r VCF; do
     NAME=\$(basename "\$VCF"); NAME=\${NAME%.gz}; NAME=\${NAME%.vcf}; NAME=\${NAME%.bcf}
     echo "=== importing \$NAME"
-    ./scripts/run_ilifu_pipeline.sh "\$VCF"${COMMON} --import-only --output "${OUT}/\$NAME"
+    # </dev/null: the pipeline (ssh, singularity) reads standard input, which here is the
+    # file list, so without it the first call swallowed the remaining files and only the
+    # first was imported while the job still ended with exit 0.
+    ./scripts/run_ilifu_pipeline.sh "\$VCF"${COMMON} --import-only --output "${OUT}/\$NAME" </dev/null
 done < "${OUT}/vcf_list.txt"
 JOB
 fi

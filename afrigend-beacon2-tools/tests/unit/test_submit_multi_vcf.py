@@ -151,6 +151,31 @@ class TestImportJob:
         assert 'done < "' + str(tmp_path / "out" / "vcf_list.txt") + '"' in s
         assert (tmp_path / "out" / "vcf_list.txt").read_text().split() == vcfs
 
+    def test_every_listed_file_is_imported_even_when_the_pipeline_reads_stdin(self, env, tmp_path):
+        # The import script reads the file list line by line. The pipeline it calls
+        # (ssh, singularity) reads standard input, so without a guard the first call
+        # swallowed the rest of the list: only the first file was imported and the job
+        # still ended with exit 0. Run the generated script against a stand-in pipeline
+        # that reads stdin the same way and check that every file reaches it.
+        vcfs = _vcfs(tmp_path)
+        r = _run(env, tmp_path, *_base(tmp_path, *vcfs, extra=("--import-only", "--dry-run")))
+        assert r.returncode == 0, r.stdout + r.stderr
+        script = (tmp_path / "out" / "import.sbatch").read_text()
+
+        fake = tmp_path / "fakerepo"
+        (fake / "scripts").mkdir(parents=True)
+        log = tmp_path / "imported.log"
+        pipeline = fake / "scripts" / "run_ilifu_pipeline.sh"
+        pipeline.write_text('#!/bin/bash\ncat > /dev/null\necho "$1" >> "' + str(log) + '"\n')
+        pipeline.chmod(pipeline.stat().st_mode | stat.S_IEXEC)
+
+        lines = [f'cd "{fake}"' if line.startswith("cd ") else line for line in script.splitlines()]
+        run = tmp_path / "import_run.sh"
+        run.write_text("\n".join(lines) + "\n")
+        done = subprocess.run(["bash", str(run)], capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert log.read_text().split() == vcfs
+
     def test_import_only_submits_just_the_import_with_no_dependency(self, env, tmp_path):
         r = _run(env, tmp_path, *_base(tmp_path, *_vcfs(tmp_path), extra=("--import-only",)))
         assert r.returncode == 0, r.stdout + r.stderr
