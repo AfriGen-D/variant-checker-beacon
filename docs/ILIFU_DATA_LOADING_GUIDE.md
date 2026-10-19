@@ -51,6 +51,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.11 Wrong sample count, or registered twice](#1011-a-dataset-has-the-wrong-sample-count-or-was-registered-twice)
   - [10.12 The disk is full](#1012-the-disk-is-full-compress-the-source-files)
   - [10.13 Start the Beacon again](#1013-start-the-beacon-again-after-it-was-stopped)
+  - [10.14 Worked example: fix a doubled dataset](#1014-worked-example-fix-a-doubled-dataset-start-to-finish)
 
 ## 1. Architecture Overview
 
@@ -1821,6 +1822,8 @@ import, so the disk use does not grow much, but a full disk stops the import.
 df -h $HOME
 ```
 
+For the whole sequence as one numbered example, see 10.14.
+
 Remove the dataset's variants and its record with the five commands in 10.5
 (delete, pull, `deleteOne`, flush the cache, check for `0`). Then load the
 variants once, as in Step 7. Set the variables first, and define `beacon-docker`
@@ -2007,3 +2010,152 @@ data:
 ```bash
 docker compose -f compose/docker-compose.dev.yml down
 ```
+
+### 10.14 Worked example: fix a doubled dataset, start to finish
+
+A real case on the development VM: the TSI dataset was loaded with `mongoimport`
+twice, so `/api/datasets` showed **12,481,728** variants instead of **6,240,864**
+(its file has 6,240,864 lines) and the dataset record kept the template name
+`My dataset`. The same sequence fixes any dataset: replace `TSI` and `107` (its
+number of samples) with yours. Run it on the Beacon server, one command at a
+time, and read the "Expect" line before you go on.
+
+Before you start, the Beacon must be running (10.13) and the disk must have room
+(10.12). Define the names (10.1) and the dataset id once:
+
+```bash
+M=beacon-dev-mongodb
+```
+
+```bash
+R=beacon-dev-redis
+```
+
+```bash
+A=beacon-api-boolean
+```
+
+```bash
+ID=TSI_DATASET
+```
+
+**Step 1. Confirm the dataset is doubled.** Count the variants that carry only
+this dataset's id. A correct dataset gives the number of lines in its
+`variants_batch.jsonl`; a doubled one gives twice that.
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "print(db.variants.countDocuments({dataset_ids: ['$ID']}))"
+```
+
+Expect `12481728`. If you get the number of lines of the file, the dataset is
+not doubled: stop here.
+
+**Step 2. Delete the dataset's variants.** This removes only the variants of
+`TSI_DATASET`, not those of the other datasets. It takes several minutes for
+12 million documents.
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.variants.deleteMany({dataset_ids: ['$ID']}))"
+```
+
+Expect `{ acknowledged: true, deletedCount: 12481728 }`.
+
+**Step 3. Delete the dataset record**, so the Beacon stops listing the doubled
+number while you reload:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval "printjson(db.datasets.deleteOne({_id: '$ID'}))"
+```
+
+Expect `{ acknowledged: true, deletedCount: 1 }`.
+
+**Step 4. Load the variants once, with the same tool as the other datasets.** It
+takes several minutes: run it inside `tmux` (section 6.3) so a lost connection
+does not stop it.
+
+```bash
+docker exec -i $M mongoimport --db beacon_db --collection variants --type json --file /dev/stdin < ~/vcf_samples/vcf_TSI_output/variants_batch.jsonl
+```
+
+Expect `6240864 document(s) imported successfully. 0 document(s) failed to
+import.` Do not run this command twice: that is what doubled the dataset.
+
+**Step 5. Register the dataset again with the right sample count.** First define
+the variables and the `beacon-docker` helper (section 7.3), once per shell:
+
+```bash
+DATA=$HOME/vcf_samples; TOOLS=/opt/beacon-tools; MONGO_URI="mongodb://localhost:27017/"; IMAGE=ghcr.io/afrigen-d/variant-checker-beacon/beacon-tools:latest
+```
+
+```bash
+beacon-docker() { docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$DATA:$DATA" -w "$DATA" --entrypoint= $IMAGE "$@"; }
+```
+
+Then register. The variant count is read from the database; `--samples` is the
+number of samples in the VCF and must always be given:
+
+```bash
+beacon-docker python $TOOLS/data_import/register_dataset.py $DATA/vcf_TSI_output/dataset_TSI.yaml --db beacon_db --mongo-uri "$MONGO_URI" --samples 107
+```
+
+Expect `Registered dataset 'TSI_DATASET' (My dataset): 6240864 variants, 107 samples`.
+
+**Step 6. Check the individuals.** The same `mongoimport` run loaded
+`individuals.json` twice, so they may be doubled too. The two numbers should be
+equal:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'print(db.individuals.countDocuments({}), db.individuals.distinct("id").length)'
+```
+
+If the first number is larger, remove the extra copies (one per id is kept) and
+run the check again:
+
+```bash
+docker exec $M mongosh beacon_db --quiet --eval 'db.individuals.aggregate([{$group: {_id: "$id", keep: {$first: "$_id"}, n: {$sum: 1}}}, {$match: {n: {$gt: 1}}}]).forEach(d => db.individuals.deleteMany({id: d._id, _id: {$ne: d.keep}}))'
+```
+
+**Step 7. Rebuild the indexes** (safe to repeat; it never drops anything):
+
+```bash
+docker exec $A python manage.py create_indexes --settings=beacon_project.settings_boolean
+```
+
+Expect a last line starting `Done.`, for example `Done. 0 index(es) created, 9
+already present.`
+
+**Step 8. Clear the cache.** The dataset list is cached for an hour, so without
+this the Beacon keeps showing the old number:
+
+```bash
+docker exec $R redis-cli FLUSHDB
+```
+
+Expect `OK`. (The command is `redis-cli FLUSHDB` run inside the Redis
+container; the container name comes first.)
+
+**Step 9. Check the result** in the API:
+
+```bash
+curl -s http://localhost:8000/api/datasets | python3 -m json.tool
+```
+
+Expect `TSI_DATASET` with `variantCount` 6240864 and `sampleCount` 107. Look at
+the other datasets in the same list: LWK should show `sampleCount` 99. If a
+sample count is wrong, run the command in 10.11 for that dataset.
+
+**Step 10. Give the dataset a real name and description.** The dataset file still
+holds the template text, which is why the record says `My dataset`. Edit `name`,
+`description` and `contact` in it (for example with `nano`), then repeat the
+`register_dataset.py` command from step 5:
+
+```bash
+nano ~/vcf_samples/vcf_TSI_output/dataset_TSI.yaml
+```
+
+Expect the same line as in step 5, now with your name in the brackets.
+
+**ROLLBACK:** this is not part of the steps above. Steps 2 and 3 cannot be undone
+in place; the recovery is to load the source file again (steps 4 to 8). The
+source file `variants_batch.jsonl` must still exist (or be restored with
+`gunzip`, see 10.12), so do not delete it before step 9 shows the right number.
