@@ -4,13 +4,13 @@ services:
       context: ../frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_BEACON_API_URL: http://localhost:8000
+        NEXT_PUBLIC_BEACON_API_URL: http://localhost:${BEACON_API_HOST_PORT:-8086}
     container_name: beacon-frontend
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - BACKEND_API_URL=http://localhost:8000
+      - BACKEND_API_URL=http://localhost:${BEACON_API_HOST_PORT:-8086}
     restart: unless-stopped
     networks:
       - beacon-network
