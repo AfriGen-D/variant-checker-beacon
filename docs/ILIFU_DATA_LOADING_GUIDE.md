@@ -53,6 +53,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.13 Start the Beacon again](#1013-start-the-beacon-again-after-it-was-stopped)
   - [10.14 Worked example: fix a doubled dataset](#1014-worked-example-fix-a-doubled-dataset-start-to-finish)
   - [10.15 Give every dataset a real name and description](#1015-give-every-dataset-a-real-name-and-description)
+  - [10.16 The API port is already used by another service](#1016-the-api-port-is-already-used-by-another-service)
 
 ## 1. Architecture Overview
 
@@ -663,9 +664,10 @@ ssh <your-ssh-alias> \
 # Where is the Beacon API? Use the first line from your own computer or from
 # ILIFU, and the second when you are logged in on the machine where the Beacon
 # runs (no network address needed). The port is the one the API publishes:
-# 8000 on the production host, 8080 on the development VM (see `docker ps`).
+# 8000 on the production host, 8086 on the development VM (see `docker ps`, and
+# section 10.16 if that port is taken).
 BEACON_URL=http://<your-server-ip>:8000
-BEACON_URL=http://localhost:8000
+BEACON_URL=http://localhost:8086
 
 # Check datasets endpoint
 curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
@@ -1196,9 +1198,9 @@ ssh <your-ssh-alias> "docker exec beacon-redis redis-cli FLUSHDB"
 # Where is the Beacon API? Use the first line from your own computer or from
 # ILIFU, and the second when you are logged in on the machine where the Beacon
 # runs. The port is the one the API publishes (see `docker ps`):
-# 8000 on the production host, 8080 on the development VM.
+# 8000 on the production host, 8086 on the development VM (section 10.16).
 BEACON_URL=http://<your-server-ip>:8000
-BEACON_URL=http://localhost:8000
+BEACON_URL=http://localhost:8086
 
 # The dataset is listed, with the total number of variants of all the files
 curl -s "$BEACON_URL/api/datasets" | python3 -m json.tool
@@ -1441,7 +1443,7 @@ or the port. Find out which, and use that project instead of fighting it:
 ```bash
 docker compose ls
 docker ps -a --filter name=beacon --format '{{.Names}}  {{.Status}}'
-docker ps --format '{{.Names}}  {{.Ports}}' | grep ':8000->'
+docker ps --format '{{.Names}}  {{.Ports}}' | grep -E ':(8000|8086)->'
 ```
 
 Do not `docker rm` a Beacon someone is using, and never delete a volume to make
@@ -1779,7 +1781,7 @@ docker exec $R redis-cli FLUSHDB
 ```
 
 ```bash
-curl -s http://localhost:8000/api/datasets | python3 -m json.tool
+curl -s http://localhost:8086/api/datasets | python3 -m json.tool
 ```
 
 Expect `OK`, and no entry with the dataset id in the list.
@@ -1865,10 +1867,10 @@ docker exec $R redis-cli FLUSHDB
 ### 10.9 Check the Beacon after any of these
 
 Where the API is: use `http://localhost:8000` on the production host and
-`http://localhost:8080` on the development VM, from the server itself.
+`http://localhost:8086` on the development VM, from the server itself.
 
 ```bash
-BEACON_URL=http://localhost:8080
+BEACON_URL=http://localhost:8086
 ```
 
 Expect `200`:
@@ -2104,7 +2106,7 @@ docker ps --format '{{.Names}}  {{.Status}}' | grep beacon
 ```
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/health
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8086/api/health
 ```
 
 Expect `200`. Then clear the cache (10.7) and list the datasets (10.9).
@@ -2242,7 +2244,7 @@ container; the container name comes first.)
 **Step 9. Check the result** in the API:
 
 ```bash
-curl -s http://localhost:8000/api/datasets | python3 -m json.tool
+curl -s http://localhost:8086/api/datasets | python3 -m json.tool
 ```
 
 Expect `TSI_DATASET` with `variantCount` 6240864 and `sampleCount` 107. Look at
@@ -2329,8 +2331,73 @@ docker exec $R redis-cli FLUSHDB
 ```
 
 ```bash
-curl -s http://localhost:8000/api/datasets | python3 -c "import json,sys; [print(d['id'], '|', d['name']) for d in json.load(sys.stdin)['response']['resultSets'][0]['results']]"
+curl -s http://localhost:8086/api/datasets | python3 -c "import json,sys; [print(d['id'], '|', d['name']) for d in json.load(sys.stdin)['response']['resultSets'][0]['results']]"
 ```
 
 **ROLLBACK:** this is not part of the steps above. Each file you edit can be put
 back from your own copy, then registered again as above; nothing else changes.
+
+### 10.16 The API port is already used by another service
+
+On the development VM the Beacon API is published on host port **8086**
+(`127.0.0.1:8086`), because port 8000 belongs to another service there (the
+FedImpute web API). The container itself always listens on 8000; only the host
+side of the mapping is chosen, with the variable `BEACON_API_HOST_PORT`
+(default 8086). Production keeps 8000.
+
+Run these on the development VM (`afrigend-all-dev`).
+
+Find out who owns the port (expect one line naming a process or container):
+
+```bash
+ss -ltnp | grep ':8086'
+```
+
+If it is a service that must keep running, do not kill it. Choose another free
+port instead, and change only the host side. Pick the port (here 8087) and check
+it is free (expect no output):
+
+```bash
+ss -ltn | grep ':8087'
+```
+
+Start the Beacon API on it, from the repository clone, without rebuilding or
+touching MongoDB and Redis:
+
+```bash
+cd ~/variant-checker-beacon
+```
+
+```bash
+BEACON_API_HOST_PORT=8087 docker compose -f compose/docker-compose.dev.yml up -d --no-deps --no-build beacon-api
+```
+
+Check (expect `127.0.0.1:8087->8000/tcp` and then `200`):
+
+```bash
+docker ps --format '{{.Names}}  {{.Ports}}' | grep beacon-api-boolean
+```
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8087/api/health
+```
+
+To make the choice permanent, put `BEACON_API_HOST_PORT=8087` in
+`~/variant-checker-beacon/compose/.env` (compose reads it from there), so a later
+`up` does not move the port back.
+
+Then use the new port everywhere this guide says `8086`: set
+`BEACON_URL=http://localhost:8087` (10.9), and change the SSH tunnel that
+reaches the Beacon (`ssh -L <local-port>:localhost:8087 ...`) to the same port.
+The frontend reads the same variable (`compose/docker-compose-frontend.yml`) and
+`NEXT_PUBLIC_BEACON_API_URL` in `frontend/.env.local`.
+
+**Check that nothing else moved:** the other service must still answer on its own
+port, for example `ss -ltnp | grep ':8000'` still lists the FedImpute API.
+
+**ROLLBACK:** this is not part of the steps above. To go back to the default
+port, remove the line from `compose/.env` and run:
+
+```bash
+BEACON_API_HOST_PORT=8086 docker compose -f compose/docker-compose.dev.yml up -d --no-deps --no-build beacon-api
+```
