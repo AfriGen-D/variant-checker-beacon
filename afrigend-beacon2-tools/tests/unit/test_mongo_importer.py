@@ -292,6 +292,113 @@ class TestIdempotentImport:
 
 
 # ===================================================================
+# TestSharedVariantAcrossDatasets  (issue #123)
+# ===================================================================
+
+
+class _FakeCollection:
+    """Applies the bulk operations the importer sends, keyed on `_id`.
+
+    Enough of a collection to see what survives in the database: ReplaceOne with
+    upsert replaces or creates by `_id`, InsertOne adds a document with a fresh id.
+    """
+
+    def __init__(self):
+        self.docs = {}
+        self._auto = 0
+
+    def bulk_write(self, operations, ordered=True):
+        for op in operations:
+            kind = type(op).__name__
+            if kind == "ReplaceOne":
+                self.docs[op._filter["_id"]] = dict(op._doc)
+            elif kind == "InsertOne":
+                self._auto += 1
+                self.docs[f"auto{self._auto}"] = dict(op._doc)
+            else:  # pragma: no cover - a new op type must be handled here
+                raise AssertionError(f"unexpected operation {kind}")
+
+
+class TestSharedVariantAcrossDatasets:
+    """Two datasets that share a variant must each keep their own document."""
+
+    def _load(self, tmp_path, coll, records, name):
+        fp = tmp_path / name
+        fp.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+        imp = _make_importer()
+        imp.client = MagicMock()
+        imp.client.__getitem__.return_value.__getitem__.return_value = coll
+        assert imp.import_json_file(str(fp), "db", "variants") is True
+
+    @staticmethod
+    def _variant(dataset, af=0.1, vid="20:60070:G:A"):
+        return {"id": vid, "dataset_ids": [dataset], "allele_frequency": af}
+
+    def test_two_datasets_sharing_a_variant_both_survive(self, tmp_path):
+        coll = _FakeCollection()
+        self._load(tmp_path, coll, [self._variant("TSI")], "tsi.jsonl")
+        self._load(tmp_path, coll, [self._variant("YRI")], "yri.jsonl")
+        assert len(coll.docs) == 2
+        assert sorted(d["dataset_ids"][0] for d in coll.docs.values()) == ["TSI", "YRI"]
+
+    def test_each_dataset_keeps_its_own_allele_frequency(self, tmp_path):
+        """A merged document would report one dataset's frequency for the other."""
+        coll = _FakeCollection()
+        self._load(tmp_path, coll, [self._variant("TSI", af=0.02)], "tsi.jsonl")
+        self._load(tmp_path, coll, [self._variant("YRI", af=0.31)], "yri.jsonl")
+        af = {d["dataset_ids"][0]: d["allele_frequency"] for d in coll.docs.values()}
+        assert af == {"TSI": 0.02, "YRI": 0.31}
+
+    def test_second_run_of_the_same_dataset_replaces_in_place(self, tmp_path):
+        coll = _FakeCollection()
+        self._load(tmp_path, coll, [self._variant("TSI", af=0.02)], "run1.jsonl")
+        self._load(tmp_path, coll, [self._variant("TSI", af=0.05)], "run2.jsonl")
+        assert len(coll.docs) == 1
+        assert next(iter(coll.docs.values()))["allele_frequency"] == 0.05
+
+    def test_a_dataset_with_two_variants_keeps_both(self, tmp_path):
+        coll = _FakeCollection()
+        records = [
+            self._variant("TSI", vid="1:100:A:T"),
+            self._variant("TSI", vid="1:200:C:G"),
+        ]
+        self._load(tmp_path, coll, records, "tsi.jsonl")
+        assert len(coll.docs) == 2
+
+    def test_one_dataset_key_is_scoped_and_the_id_field_is_unchanged(self, tmp_path):
+        coll = _FakeCollection()
+        self._load(tmp_path, coll, [self._variant("TSI")], "tsi.jsonl")
+        ((key, doc),) = coll.docs.items()
+        assert key == "TSI:20:60070:G:A"
+        assert doc["id"] == "20:60070:G:A"
+
+    def test_dataset_id_order_and_repeats_do_not_change_the_key(self):
+        key = MongoImporter._document_key
+        a = key({"id": "1:1:A:T", "dataset_ids": ["B", "A"]})
+        b = key({"id": "1:1:A:T", "dataset_ids": ["A", "B", "A"]})
+        assert a == b == "A+B:1:1:A:T"
+
+    @pytest.mark.parametrize(
+        "dataset_ids", [None, [], "TSI", ["TSI", 7], [""], {"a": 1}]
+    )
+    def test_missing_or_malformed_dataset_ids_fall_back_to_the_natural_key(
+        self, dataset_ids
+    ):
+        record = {"id": "1:1:A:T"}
+        if dataset_ids is not None:
+            record["dataset_ids"] = dataset_ids
+        assert MongoImporter._document_key(record) == "1:1:A:T"
+
+    def test_records_without_dataset_ids_keep_their_keys(self):
+        key = MongoImporter._document_key
+        assert key({"id": "SAMPLE1"}) == "SAMPLE1"
+        assert key({"individual_id": "S1", "phenotype_id": "HP:1"}) == "S1:HP:1"
+
+    def test_a_record_with_no_key_at_all_still_has_none(self):
+        assert MongoImporter._document_key({"dataset_ids": ["TSI"]}) is None
+
+
+# ===================================================================
 # TestImportDirectory
 # ===================================================================
 

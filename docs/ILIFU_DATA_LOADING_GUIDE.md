@@ -1180,7 +1180,7 @@ cd /cbio/users/$USER/variant-checker-beacon && git pull --ff-only origin main
 
 **Do not import a dataset that is already in the Beacon without removing it
 first.** A dataset loaded earlier with `mongoimport` (random `_id` per record)
-and imported again with this job (the variant `id` as `_id`) is stored twice, and
+and imported again with this job (the dataset id and variant `id` as `_id`) is stored twice, and
 the dataset record counts both copies (the example data showed 6,347 variants
 instead of 4,231). Remove the dataset (10.5), then import it once.
 
@@ -1894,13 +1894,19 @@ of 6,240,864 variants that shows 12,481,728. Do not try to delete half of them:
 remove the dataset's variants and load the file once, the same way as the other
 datasets in this database.
 
-**Use `mongoimport` again if the other datasets were loaded with it.** A variant's
-`id` is its position and alleles (`20:60070:G:A`), the same in every dataset.
-`import_to_mongo.py` stores that `id` as the document's `_id`, so when two
-datasets share a variant, the second load replaces the first one's copy and the
-first dataset silently loses it. `mongoimport` keeps one copy per dataset, so it
-is the right tool here, run once. Use `import_to_mongo.py` only when the database
-holds one dataset, or when the files are the chromosomes of one dataset.
+**Use the same tool the other datasets were loaded with.** A variant's `id` is its
+position and alleles (`20:60070:G:A`), the same in every dataset, and each dataset
+keeps its own copy of the variant, because the allele frequency is stored per
+dataset. `mongoimport` gives each copy a random `_id`. `import_to_mongo.py` now
+stores the dataset id in front of the `id` (`TSI_DATASET:20:60070:G:A`), so a
+second dataset that shares a variant no longer replaces the first one's copy.
+Either tool is safe with several datasets in one database; run it once per dataset.
+
+**Older loads.** Before this change `import_to_mongo.py` stored the plain `id` as
+`_id`, and a second dataset sharing a variant replaced the first one's copy. A
+database loaded that way may be missing variants for the earlier datasets: reload
+those datasets (10.5, then import once). Importing such a dataset again, without
+removing it first, stores it twice.
 
 Set the dataset id, and the names from section 10.1:
 

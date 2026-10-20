@@ -172,12 +172,37 @@ class MongoImporter:
 
         return None
 
+    @classmethod
+    def _document_key(cls, record: Dict) -> Optional[Union[str, int]]:
+        """Return the value to store as the record's `_id`, or None if it has none.
+
+        A variant's natural key (CHROM:POS:REF:ALT) is the same in every dataset,
+        and each dataset needs its own document because the allele frequency and
+        annotations are stored, and reported, per dataset. So a record that names
+        its datasets is keyed `<dataset ids>:<natural key>`; otherwise two datasets
+        sharing a variant would replace each other's copy (issue #123). The ids are
+        de-duplicated and sorted so the key does not depend on their order. Records
+        with no usable `dataset_ids` (individuals, phenotypes, diseases) keep their
+        natural key.
+        """
+        natural_key = cls._natural_key(record)
+        if natural_key is None:
+            return None
+
+        dataset_ids = record.get('dataset_ids')
+        if (isinstance(dataset_ids, list) and dataset_ids
+                and all(isinstance(d, str) and d for d in dataset_ids)):
+            return f"{'+'.join(sorted(set(dataset_ids)))}:{natural_key}"
+
+        return natural_key
+
     def _write_batch(self, collection, batch: List[Dict]) -> bool:
         """Upsert a batch of records. Returns False if any record failed.
 
         Records are keyed on the natural key the transform already computes
         (`id` — CHROM:POS:REF:ALT for variants, the sample ID for individuals),
-        written to `_id` so that re-running the pipeline replaces documents
+        scoped to the dataset when the record names one (see `_document_key`),
+        and written to `_id` so that re-running the pipeline replaces documents
         instead of duplicating them. One bulk round trip per batch.
         """
         operations = []
@@ -188,10 +213,10 @@ class MongoImporter:
                 continue
 
             record.pop('_id', None)
-            natural_key = self._natural_key(record)
-            if natural_key is not None:
-                record['_id'] = natural_key
-                operations.append(ReplaceOne({'_id': natural_key}, record, upsert=True))
+            document_key = self._document_key(record)
+            if document_key is not None:
+                record['_id'] = document_key
+                operations.append(ReplaceOne({'_id': document_key}, record, upsert=True))
             else:
                 # Nothing to key on — insert, and say so rather than silently
                 # pretending the import was idempotent.
