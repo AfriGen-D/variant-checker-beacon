@@ -111,6 +111,16 @@ class VCFTransformer:
     # rather than being guessed at from allele-string lengths.
     _SYMBOLIC_TYPES = {'DEL', 'DUP', 'INS', 'INV', 'CNV'}
 
+    # Carrier check defaults. A beacon answers yes wherever it holds a record, so
+    # a record no sample carries makes the dataset say "this site is in the
+    # panel" instead of "someone here carries this allele". More than 1% of
+    # records with no carrier is far outside what a real cohort produces and what
+    # an uncut sample subset of a panel produces by the thousand. One record in
+    # every 1000 is checked against the genotypes, which is cheap and does not
+    # trust INFO.
+    _DEFAULT_WARN_AC_ZERO_FRACTION = 0.01
+    _DEFAULT_GENOTYPE_CHECK_EVERY = 1000
+
     # SnpEff's ANN layout, from the "VCF annotation format" spec (v1.0). Used
     # when the VCF header does not declare the field list itself.
     _DEFAULT_ANN_COLUMNS = [
@@ -138,16 +148,39 @@ class VCFTransformer:
     # An annotation with none of these carries no usable information.
     _ANNOTATION_CORE_FIELDS = ('gene_symbol', 'gene_id', 'molecular_consequence')
 
-    def __init__(self, config_path: str = None, dataset_id: str = None):
+    def __init__(self, config_path: str = None, dataset_id: str = None,
+                 warn_ac_zero_fraction: Optional[float] = None,
+                 genotype_check_every: Optional[int] = None):
         """Initialize the VCF transformer with configuration.
 
         `dataset_id` is the Beacon dataset every variant from this VCF belongs
         to. It falls back to `dataset.id` in the config file so a pipeline that
         only passes --config can still attribute its variants.
+
+        `warn_ac_zero_fraction` and `genotype_check_every` tune the carrier
+        check (see `_report_carrier_warnings`); None means "use the config's
+        `vcf.warn_ac_zero_fraction` / `vcf.genotype_check_every`, else the default".
         """
         self.config = self._load_config(config_path)
         self.dataset_id = dataset_id or (self.config.get('dataset') or {}).get('id')
         self._setup_logging()
+        vcf_config = self.config.get('vcf') or {}
+        if warn_ac_zero_fraction is None:
+            warn_ac_zero_fraction = vcf_config.get(
+                'warn_ac_zero_fraction', self._DEFAULT_WARN_AC_ZERO_FRACTION)
+        if genotype_check_every is None:
+            genotype_check_every = vcf_config.get(
+                'genotype_check_every', self._DEFAULT_GENOTYPE_CHECK_EVERY)
+        if not 0.0 <= float(warn_ac_zero_fraction) <= 1.0:
+            raise ValueError(
+                f"warn_ac_zero_fraction must be between 0 and 1, got {warn_ac_zero_fraction}")
+        if int(genotype_check_every) < 0:
+            raise ValueError(
+                f"genotype_check_every must be 0 (off) or positive, got {genotype_check_every}")
+        self.warn_ac_zero_fraction = float(warn_ac_zero_fraction)
+        self.genotype_check_every = int(genotype_check_every)
+        self.warnings: List[str] = []
+        self._records_seen = 0
         if not self.dataset_id:
             self.logger.warning(
                 "No --dataset-id given: these variants will belong to no dataset, "
@@ -162,7 +195,16 @@ class VCFTransformer:
             'skipped_reasons': {},
             'annotations_skipped': 0,
             'individuals_found': 0,
-            'errors': 0
+            'errors': 0,
+            # Carrier check: records whose alternate allele no sample carries.
+            'ac_checked': 0,
+            'ac_zero': 0,
+            'ac_missing': 0,
+            'genotype_checked': 0,
+            'genotype_ac_zero': 0,
+            'genotype_check_unavailable': 0,
+            'info_genotype_compared': 0,
+            'info_genotype_mismatch': 0,
         }
         # CSQ column order varies per VEP invocation, so it is read from the
         # VCF header rather than assumed. None means "no declared format" —
@@ -244,6 +286,7 @@ class VCFTransformer:
                     record = self._create_variant_record(variant, assembly_id, alt_index)
                     if record is None:
                         continue  # unrepresentable allele — counted in stats
+                    self._check_carriers(variant, alt_index)
                     yield record
                     self.stats['variants_processed'] += 1
 
@@ -259,6 +302,120 @@ class VCFTransformer:
             f"skipped alleles: {self.stats['variants_skipped']} "
             f"{self.stats['skipped_reasons'] or ''}"
         )
+        self._report_carrier_warnings()
+
+    # ------------------------------------------------------------------
+    # Carrier check: does some sample carry each record's alternate allele?
+    # ------------------------------------------------------------------
+
+    def _info_alt_count(self, variant, alt_index: int) -> Optional[int]:
+        """This ALT allele's INFO AC as a whole number, or None if absent or unusable."""
+        value = self._per_allele_value(self._info_get(variant, 'AC'), alt_index)
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number != number or number < 0 or number != int(number):
+            return None
+        return int(number)
+
+    @staticmethod
+    def _genotype_alt_count(variant, alt_index: int) -> Optional[int]:
+        """Copies of this ALT allele in the genotypes, or None if they cannot be read.
+
+        cyvcf2 gives one ``[allele, allele, ..., phased]`` list per sample, with
+        -1 for a missing call; a haploid call has one allele. Alleles are
+        compared by index (ALT 1 is allele 1), so multi-allelic sites count each
+        ALT separately.
+        """
+        genotypes = getattr(variant, 'genotypes', None)
+        if not isinstance(genotypes, (list, tuple)) or not genotypes:
+            return None  # sites-only VCF, or nothing readable
+        wanted = alt_index + 1
+        try:
+            return sum(1 for call in genotypes for allele in call[:-1] if allele == wanted)
+        except (TypeError, IndexError):
+            return None
+
+    def _check_carriers(self, variant, alt_index: int):
+        """Count records no sample carries: from INFO AC always, from genotypes sampled.
+
+        INFO AC is free to read but can be stale (counts inherited from a larger
+        cohort after samples were cut) or absent, so every Nth record is also
+        checked against the genotypes, which do not depend on it.
+        """
+        info_count = self._info_alt_count(variant, alt_index)
+        if info_count is None:
+            self.stats['ac_missing'] += 1
+        else:
+            self.stats['ac_checked'] += 1
+            if info_count == 0:
+                self.stats['ac_zero'] += 1
+
+        index = self._records_seen
+        self._records_seen += 1
+        if not self.genotype_check_every or index % self.genotype_check_every:
+            return
+
+        genotype_count = self._genotype_alt_count(variant, alt_index)
+        if genotype_count is None:
+            self.stats['genotype_check_unavailable'] += 1
+            return
+        self.stats['genotype_checked'] += 1
+        if genotype_count == 0:
+            self.stats['genotype_ac_zero'] += 1
+        if info_count is not None:
+            self.stats['info_genotype_compared'] += 1
+            if info_count != genotype_count:
+                self.stats['info_genotype_mismatch'] += 1
+
+    def _report_carrier_warnings(self):
+        """Warn, once per run, when many records have no carrier. Never fails the run."""
+        s = self.stats
+        limit = self.warn_ac_zero_fraction
+        fix = (
+            "A VCF cut to some samples keeps every site of the parent file, "
+            "including sites none of those samples carries, and a Beacon loaded "
+            "from it answers yes there. Cut the VCF so only sites that vary in "
+            "the samples remain, with counts recomputed: bcftools view -S "
+            "samples.txt -m2 -M2 -v snps FILE | bcftools +fill-tags -- -t "
+            "AN,AC,AF | bcftools view -c1. See 'Cutting a dataset from some of "
+            "the samples' in docs/ILIFU_DATA_LOADING_GUIDE.md."
+        )
+        found = []
+
+        if s['ac_checked'] and s['ac_zero'] / s['ac_checked'] > limit:
+            found.append(
+                f"{s['ac_zero']} of {s['ac_checked']} records "
+                f"({100 * s['ac_zero'] / s['ac_checked']:.1f}%) have INFO AC = 0, "
+                f"so no sample carries the alternate allele. {fix}")
+
+        if s['genotype_checked'] and s['genotype_ac_zero'] / s['genotype_checked'] > limit:
+            found.append(
+                f"{s['genotype_ac_zero']} of {s['genotype_checked']} sampled records "
+                f"({100 * s['genotype_ac_zero'] / s['genotype_checked']:.1f}%) have no "
+                f"carrier in the genotypes. {fix}")
+
+        compared = s['info_genotype_compared']
+        if compared and s['info_genotype_mismatch'] / compared > limit:
+            found.append(
+                f"INFO AC disagrees with the genotypes in {s['info_genotype_mismatch']} "
+                f"of {compared} sampled records "
+                f"({100 * s['info_genotype_mismatch'] / compared:.1f}%): the INFO counts "
+                "describe another cohort or were not recomputed after the samples were "
+                "cut. Recompute them with bcftools +fill-tags -- -t AN,AC,AF.")
+
+        if s['ac_checked'] == 0 and s['genotype_checked'] == 0 and s['variants_processed'] > 0:
+            found.append(
+                "No record has a usable INFO AC and no genotypes could be read, so "
+                "whether every record has a carrier could not be checked. A VCF cut "
+                "to some samples must keep only sites that vary in them.")
+
+        self.warnings = found
+        for message in found:
+            self.logger.warning(message)
 
     def _passes_quality_filters(self, variant) -> bool:
         """Check if variant passes quality filters."""
@@ -890,6 +1047,7 @@ class VCFTransformer:
             'assembly_id': assembly_id or self.config['vcf']['default_assembly'],
             'dataset_id': self.dataset_id,
             'statistics': self.stats,
+            'warnings': list(self.warnings),
             'files_created': [
                 'variants_batch.jsonl',
                 'individuals.json',
@@ -914,7 +1072,7 @@ class VCFTransformer:
             json.dump(data, f, indent=2, default=str)
 
 
-def main():
+def main(argv=None):
     """Main function for command-line interface."""
     parser = argparse.ArgumentParser(
         description="Transform VCF files to Beacon v2 format"
@@ -954,19 +1112,40 @@ def main():
     )
     
     parser.add_argument(
+        '--warn-ac-zero-fraction',
+        type=float,
+        default=None,
+        help='Warn when more than this share of records (0 to 1) has no carrier '
+             '(default: config vcf.warn_ac_zero_fraction, else 0.01)'
+    )
+
+    parser.add_argument(
+        '--genotype-check-every',
+        type=int,
+        default=None,
+        help='Check every Nth record against the genotypes; 0 turns the genotype '
+             'check off (default: config vcf.genotype_check_every, else 1000)'
+    )
+
+    parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='Enable verbose logging'
     )
     
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     
     # Set up logging
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
     
     # Initialize transformer
-    transformer = VCFTransformer(args.config, dataset_id=args.dataset_id)
+    transformer = VCFTransformer(
+        args.config,
+        dataset_id=args.dataset_id,
+        warn_ac_zero_fraction=args.warn_ac_zero_fraction,
+        genotype_check_every=args.genotype_check_every,
+    )
     
     try:
         # Transform VCF
@@ -979,6 +1158,8 @@ def main():
         
         print("VCF transformation completed successfully!")
         print(f"Statistics: {summary['statistics']}")
+        for warning in summary.get('warnings', []):
+            print(f"WARNING: {warning}")
         print(f"Output files: {summary['files_created']}")
         
     except Exception as e:

@@ -365,6 +365,25 @@ else
     fi
 fi
 
+# --- Repeat what the transformer warned about ---
+# A dataset cut from some of the samples of a larger VCF can load without a single
+# error and then answer yes at sites nobody in it carries. The transformer checks
+# for that and puts its warnings in transformation_summary.json; they are repeated
+# here, after the long transform output has scrolled by, and before any import.
+if [[ -f "$VCF_OUTPUT/transformation_summary.json" ]]; then
+    TRANSFORM_WARNINGS="$("${PY[@]}" -c \
+        "import json,sys; [print(w) for w in json.load(open(sys.argv[1])).get('warnings', [])]" \
+        "$VCF_OUTPUT/transformation_summary.json" 2>/dev/null || true)"
+    if [[ -n "$TRANSFORM_WARNINGS" ]]; then
+        log "WARNING: the transformer reported problems with this VCF:"
+        while IFS= read -r WARNING_LINE; do
+            log "  $WARNING_LINE"
+        done <<< "$TRANSFORM_WARNINGS"
+        log "WARNING: read them before you import. See 'Cutting a dataset from some of the samples'"
+        log "         in docs/ILIFU_DATA_LOADING_GUIDE.md."
+    fi
+fi
+
 # --- Transform phenotypes (optional) ---
 if [[ -n "$PHENOTYPE_FILE" && "$IMPORT_ONLY" != true ]]; then
     step 4 "Transforming phenotype data"

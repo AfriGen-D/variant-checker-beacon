@@ -143,3 +143,71 @@ class TestImportOnly:
         assert "validate_json.py" not in calls, calls
         assert "phenotype_to_beacon.py" not in calls, calls
         assert "import_to_mongo.py" in calls, r.stdout + r.stderr
+
+
+class TestTransformerWarnings:
+    """The transformer's carrier warnings are repeated where the user will see them.
+
+    A dataset cut from some of the samples of a larger VCF loads without an error and
+    then answers yes at sites nobody carries. The transformer warns, but its line is
+    buried in a long run, so the pipeline repeats the warnings from the summary.
+    """
+
+    def _prepare(self, tmp_path, warnings):
+        import json
+        out = tmp_path / "out" / "vcf_output"
+        out.mkdir(parents=True)
+        (out / "variants_batch.jsonl").write_text('{"id": "1"}\n')
+        (out / "transformation_summary.json").write_text(
+            json.dumps({"statistics": {"individuals_found": 4}, "warnings": warnings}))
+
+    def _run(self, tmp_path):
+        shim = tmp_path / "bin"
+        shim.mkdir(exist_ok=True)
+        # A stand-in runtime. `<runtime> exec --bind X IMAGE python -c CODE ARG` runs
+        # the code on the host; every other call (the --help start-up check, ...) is a no-op.
+        runtime = shim / "singularity"
+        runtime.write_text(
+            '#!/bin/sh\n'
+            'while [ "$#" -gt 0 ]; do\n'
+            '  if [ "$1" = python ]; then shift; if [ "$1" = -c ]; then exec python3 "$@"; fi; exit 0; fi\n'
+            '  shift\n'
+            'done\nexit 0\n')
+        runtime.chmod(0o755)
+        (shim / "nc").write_text("#!/bin/sh\nexit 0\n")
+        (shim / "nc").chmod(0o755)
+        (tmp_path / "image.sif").write_text("not a real image")
+        py = shutil.which("python3") or "/usr/bin/python3"
+        env = {k: v for k, v in os.environ.items() if k not in ("CONTAINER_BIND",)}
+        env["PATH"] = os.pathsep.join([str(shim), str(Path(py).parent), "/usr/bin:/bin"])
+        return subprocess.run(
+            ["bash", str(SCRIPT), str(VCF), "--dataset-id", "X", "--container", str(tmp_path / "image.sif"),
+             "--runtime", "singularity", "--output", str(tmp_path / "out"), "--import-only"],
+            capture_output=True, text=True, env=env, cwd=str(tmp_path), timeout=120)
+
+    def test_warnings_in_the_summary_are_repeated_with_what_to_do(self, tmp_path):
+        self._prepare(tmp_path, ["W-ONE has no carrier", "W-TWO INFO is stale"])
+        r = self._run(tmp_path)
+        text = r.stdout + r.stderr
+        assert "Using the existing transform output" in text, text
+        assert "W-ONE has no carrier" in text and "W-TWO INFO is stale" in text
+        assert "reported problems" in text
+        assert "Cutting a dataset from some of the samples" in text
+
+    def test_a_clean_summary_prints_nothing_extra(self, tmp_path):
+        self._prepare(tmp_path, [])
+        r = self._run(tmp_path)
+        text = r.stdout + r.stderr
+        assert "Using the existing transform output" in text, text   # it got past the step
+        assert "reported problems" not in text
+
+    def test_a_summary_from_an_older_transformer_has_no_warnings_key(self, tmp_path):
+        import json
+        self._prepare(tmp_path, [])
+        path = tmp_path / "out" / "vcf_output" / "transformation_summary.json"
+        path.write_text(json.dumps({"statistics": {"individuals_found": 4}}))
+        r = self._run(tmp_path)
+        text = r.stdout + r.stderr
+        assert "Using the existing transform output" in text, text
+        assert "reported problems" not in text
+        assert "Traceback" not in text
