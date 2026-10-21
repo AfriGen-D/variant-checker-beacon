@@ -471,6 +471,17 @@ On the example data, cutting four of the nine people (`NA18486 NA18488 NA18489
 NA18499`) keeps 3,014 of the 4,231 sites with `-c1`. Without it, 1,217 sites
 stay that none of the four carries, and the Beacon would answer yes at each.
 
+The transformer makes the same check for you. After a run it warns, in the log, in
+`transformation_summary.json` (`warnings`) and in the pipeline's own output, when
+more than 1% of records have `INFO AC = 0`, when a sample of records (every 1000th
+by default) has no carrier in the genotypes, or when the `INFO` counts disagree
+with the genotypes. The last two matter because `INFO` can be stale: a VCF cut
+with `bcftools view -S ... -I` keeps the parent cohort's counts and passes the
+`INFO` check while 30% or more of its records have no carrier. Tune it with
+`--warn-ac-zero-fraction` and `--genotype-check-every` (0 turns the genotype check
+off). A warning does not stop the run and does not change what is written: read it
+before you import.
+
 If the allele number takes several values, some genotypes are missing, and the
 sites no longer share one sample size. Decide how to treat them before loading.
 After the import, run the negative control in Step 8 (4.8): an allele that nobody
@@ -1622,7 +1633,7 @@ to pace itself. For a private test instance that must take many queries, see
 
 | Tool | Purpose | Input | Output |
 |---|---|---|---|
-| `vcf_to_beacon.py` | VCF → Beacon JSON | `.vcf.gz` | `variants_batch.jsonl`, `individuals.json` |
+| `vcf_to_beacon.py` | VCF → Beacon JSON; warns when records have no carrier | `.vcf.gz` | `variants_batch.jsonl`, `individuals.json`, `transformation_summary.json` |
 | `phenotype_to_beacon.py` | Phenotypes → Beacon JSON | `.csv`/`.tsv` | `phenotypes.json`, `diseases.json` |
 | `validate_json.py` | Validate against schemas | `.json`/`.jsonl` | PASS/FAIL report |
 | `import_to_mongo.py` | Import to MongoDB | `.json`/`.jsonl` | Records in MongoDB |

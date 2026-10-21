@@ -1160,3 +1160,313 @@ class TestQualityFilterInfoAccess:
 
     def test_unparseable_depth_does_not_filter(self):
         assert self.t._passes_quality_filters(_make_variant(qual=30, info={"DP": "n/a"})) is True
+
+
+# ===================================================================
+# TestCarrierCheck
+# ===================================================================
+
+def _carrier_transformer(**kwargs) -> VCFTransformer:
+    """A transformer whose carrier-check options come from the constructor."""
+    cfg = {
+        "vcf": {"default_assembly": "GRCh38", "quality_filters": {}},
+        "processing": {"batch_size": 100, "show_progress": False, "log_level": "WARNING"},
+    }
+    with patch.object(VCFTransformer, "_load_config", return_value=cfg):
+        return VCFTransformer(dataset_id="D", **kwargs)
+
+
+def _sites(n_zero, n_carried, genotypes_carried=None, genotypes_zero=None):
+    """``n_zero`` records no sample carries, then ``n_carried`` that some sample does."""
+    ref = genotypes_zero or [[0, 0, False], [0, 0, False]]
+    alt = genotypes_carried or [[0, 1, False], [0, 0, False]]
+    out = []
+    for i in range(n_zero):
+        out.append(_make_variant(pos=1000 + i, info={"AC": 0, "AN": 4}, genotypes=ref))
+    for j in range(n_carried):
+        out.append(_make_variant(pos=5000 + j, info={"AC": 1, "AN": 4}, genotypes=alt))
+    return out
+
+
+def _warnings(caplog, needle):
+    return [r.getMessage() for r in caplog.records
+            if r.levelno == logging.WARNING and needle in r.getMessage()]
+
+
+class TestCarrierCheckInfo:
+    """A record is only honest if some sample carries its alternate allele."""
+
+    def test_no_warning_when_every_record_has_a_carrier(self, caplog):
+        t = _carrier_transformer(genotype_check_every=0)
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, _sites(0, 50))
+        assert not _warnings(caplog, "AC = 0")
+        assert t.warnings == []
+        assert t.stats["ac_checked"] == 50 and t.stats["ac_zero"] == 0
+
+    def test_warns_when_the_share_of_ac_zero_exceeds_the_default_threshold(self, caplog):
+        t = _carrier_transformer(genotype_check_every=0)
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, _sites(2, 98))              # 2% > 1%
+        assert len(_warnings(caplog, "AC = 0")) == 1
+        assert len(t.warnings) == 1
+
+    def test_the_threshold_is_strictly_greater_than(self, caplog):
+        t = _carrier_transformer(genotype_check_every=0)
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, _sites(1, 99))              # exactly 1%
+        assert not _warnings(caplog, "AC = 0")
+
+    def test_the_threshold_is_configurable(self, caplog):
+        t = _carrier_transformer(warn_ac_zero_fraction=0.5, genotype_check_every=0)
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, _sites(30, 70))             # 30% < 50%
+        assert not _warnings(caplog, "AC = 0")
+
+    def test_the_threshold_can_come_from_the_config_file(self, caplog):
+        cfg = {
+            "vcf": {"default_assembly": "GRCh38", "quality_filters": {},
+                    "warn_ac_zero_fraction": 0.5, "genotype_check_every": 0},
+            "processing": {"batch_size": 100, "show_progress": False, "log_level": "WARNING"},
+        }
+        with patch.object(VCFTransformer, "_load_config", return_value=cfg):
+            t = VCFTransformer(dataset_id="D")
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, _sites(30, 70))
+        assert not _warnings(caplog, "AC = 0")
+        assert t.warn_ac_zero_fraction == 0.5
+
+    def test_zero_counts_in_every_numeric_form(self):
+        np = pytest.importorskip("numpy")
+        t = _carrier_transformer(genotype_check_every=0)
+        variants = [_make_variant(pos=100 + i, info={"AC": value})
+                    for i, value in enumerate([0, 0.0, np.int64(0), np.float32(0.0)])]
+        _run_parse(t, variants)
+        assert t.stats["ac_zero"] == 4
+
+    def test_a_multiallelic_site_counts_only_the_allele_with_no_carrier(self):
+        t = _carrier_transformer(genotype_check_every=0)
+        _run_parse(t, [_make_variant(alt=["A", "C"], info={"AC": (3, 0)})])
+        assert t.stats["ac_checked"] == 2
+        assert t.stats["ac_zero"] == 1
+
+    def test_a_record_without_ac_is_missing_not_zero(self):
+        t = _carrier_transformer(genotype_check_every=0)
+        _run_parse(t, [_make_variant(info={"DP": 20})])
+        assert t.stats["ac_missing"] == 1
+        assert t.stats["ac_checked"] == 0 and t.stats["ac_zero"] == 0
+
+    def test_a_non_numeric_ac_is_missing_not_zero(self):
+        t = _carrier_transformer(genotype_check_every=0)
+        _run_parse(t, [_make_variant(info={"AC": "n/a"})])
+        assert t.stats["ac_missing"] == 1 and t.stats["ac_zero"] == 0
+
+    def test_a_skipped_spanning_deletion_is_not_in_the_denominator(self):
+        t = _carrier_transformer(genotype_check_every=0)
+        _run_parse(t, [_make_variant(alt=["*", "T"], info={"AC": (0, 2)})])
+        assert t.stats["ac_checked"] == 1 and t.stats["ac_zero"] == 0
+
+    def test_a_record_dropped_by_the_quality_filter_is_not_counted(self):
+        t = _make_transformer()
+        _run_parse(t, [_make_variant(qual=5, info={"AC": 0})])
+        assert t.stats["ac_checked"] == 0
+
+    def test_zero_records_neither_crash_nor_warn(self, caplog):
+        t = _carrier_transformer()
+        with caplog.at_level(logging.WARNING):
+            assert _run_parse(t, []) == []
+        assert t.warnings == []
+
+    def test_no_ac_anywhere_and_no_genotypes_warns_the_check_could_not_run(self, caplog):
+        t = _carrier_transformer()
+        sites = [_make_variant(pos=100 + i, info={"DP": 20}) for i in range(5)]
+        for site in sites:
+            site.genotypes = []   # _make_variant treats [] as "use the default"
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, sites)
+        assert len(_warnings(caplog, "could not be checked")) == 1
+
+    def test_the_warning_names_the_cause_and_the_fix(self, caplog):
+        t = _carrier_transformer(genotype_check_every=0)
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, _sites(10, 90))
+        message = _warnings(caplog, "AC = 0")[0]
+        assert "10 of 100" in message and "10.0%" in message
+        assert "cut to some samples" in message
+        assert "bcftools view" in message and "-c1" in message
+        assert "Cutting a dataset from some of the samples" in message
+
+    def test_warning_does_not_change_what_is_emitted(self):
+        with_check = _run_parse(_carrier_transformer(), _sites(10, 90))
+        without = _run_parse(_carrier_transformer(genotype_check_every=0,
+                                                   warn_ac_zero_fraction=1.0),
+                             _sites(10, 90))
+        assert [r.id for r in with_check] == [r.id for r in without]
+        assert len(with_check) == 100
+
+
+class TestCarrierCheckGenotypes:
+    """INFO can be stale or absent, so a sample of records is checked against genotypes."""
+
+    def test_samples_the_first_and_every_nth_record(self):
+        t = _carrier_transformer(genotype_check_every=10)
+        _run_parse(t, _sites(0, 25))
+        assert t.stats["genotype_checked"] == 3        # records 0, 10, 20
+
+    def test_every_zero_turns_it_off(self):
+        t = _carrier_transformer(genotype_check_every=0)
+        _run_parse(t, _sites(0, 25))
+        assert t.stats["genotype_checked"] == 0
+
+    def test_genotypes_are_not_read_when_the_check_is_off(self):
+        t = _carrier_transformer(genotype_check_every=0)
+        v = _make_variant(info={"AC": 1})
+        touched = []
+        type(v).genotypes = PropertyMock(side_effect=lambda: touched.append(1) or [])
+        _run_parse(t, [v])
+        assert touched == []
+
+    def test_stale_info_is_caught_by_the_genotypes(self, caplog):
+        # INFO says 5 carriers, the genotypes say none: the counts describe
+        # another cohort, or were not recomputed after the samples were cut.
+        t = _carrier_transformer(genotype_check_every=1)
+        stale = [_make_variant(pos=100 + i, info={"AC": 5, "AN": 4},
+                               genotypes=[[0, 0, False], [0, 0, False]]) for i in range(20)]
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, stale)
+        assert t.stats["info_genotype_mismatch"] == 20
+        assert len(_warnings(caplog, "disagrees with the genotypes")) == 1
+        assert "not recomputed" in _warnings(caplog, "disagrees")[0]
+
+    def test_genotypes_catch_what_missing_info_hides(self, caplog):
+        t = _carrier_transformer(genotype_check_every=1)
+        sites = [_make_variant(pos=100 + i, info={"DP": 20},
+                               genotypes=[[0, 0, False], [0, 0, False]]) for i in range(20)]
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, sites)
+        assert t.stats["genotype_ac_zero"] == 20
+        assert len(_warnings(caplog, "no carrier in the genotypes")) == 1
+
+    def test_agreeing_info_and_genotypes_do_not_warn(self, caplog):
+        t = _carrier_transformer(genotype_check_every=1)
+        with caplog.at_level(logging.WARNING):
+            _run_parse(t, _sites(0, 20))
+        assert t.warnings == []
+        assert t.stats["info_genotype_mismatch"] == 0
+        assert t.stats["info_genotype_compared"] == 20
+
+    def test_multiallelic_genotypes_are_counted_by_allele_index(self):
+        t = _carrier_transformer(genotype_check_every=1)
+        v = _make_variant(alt=["A", "C"], info={"AC": (3, 1)},
+                          genotypes=[[1, 2, False], [1, 1, False], [0, 0, False]])
+        _run_parse(t, [v])
+        assert t.stats["genotype_checked"] == 2
+        assert t.stats["genotype_ac_zero"] == 0
+        assert t.stats["info_genotype_mismatch"] == 0
+
+    def test_haploid_and_missing_genotypes_are_handled(self):
+        t = _carrier_transformer(genotype_check_every=1)
+        v = _make_variant(info={"AC": 2},
+                          genotypes=[[1, False], [-1, -1, False], [0, 1, False]])
+        _run_parse(t, [v])
+        assert t.stats["info_genotype_mismatch"] == 0 and t.stats["genotype_ac_zero"] == 0
+
+    def test_a_sites_only_vcf_skips_the_check_without_crashing(self):
+        t = _carrier_transformer(genotype_check_every=1)
+        v = _make_variant(info={"AC": 1})
+        v.genotypes = []          # _make_variant treats [] as "use the default"
+        _run_parse(t, [v])
+        assert t.stats["genotype_checked"] == 0
+        assert t.stats["genotype_check_unavailable"] == 1
+
+    def test_unreadable_genotypes_skip_the_check_without_crashing(self):
+        t = _carrier_transformer(genotype_check_every=1)
+        v = _make_variant(info={"AC": 1})
+        v.genotypes = None
+        _run_parse(t, [v])
+        assert t.stats["genotype_check_unavailable"] == 1
+
+    def test_a_mismatch_is_not_counted_when_info_is_missing(self):
+        t = _carrier_transformer(genotype_check_every=1)
+        _run_parse(t, [_make_variant(info={"DP": 20})])
+        assert t.stats["info_genotype_compared"] == 0
+        assert t.stats["info_genotype_mismatch"] == 0
+
+
+    def test_the_phased_flag_is_not_an_allele(self):
+        # cyvcf2's last list entry is the phased flag; True == 1 would count it
+        # as a copy of the first ALT allele at every phased reference call.
+        t = _carrier_transformer(genotype_check_every=1)
+        v = _make_variant(info={"AC": 0}, genotypes=[[0, 0, True], [0, 0, True]])
+        _run_parse(t, [v])
+        assert t.stats["genotype_ac_zero"] == 1
+        assert t.stats["info_genotype_mismatch"] == 0
+
+    def test_info_lower_than_the_genotypes_is_a_mismatch_too(self):
+        t = _carrier_transformer(genotype_check_every=1)
+        v = _make_variant(info={"AC": 1},
+                          genotypes=[[1, 1, False], [0, 1, False]])      # three copies
+        _run_parse(t, [v])
+        assert t.stats["info_genotype_mismatch"] == 1
+
+
+class TestCarrierCheckReporting:
+    """The counters and warnings must reach the files and the screen people read."""
+
+    def _transform(self, tmp_path, variants, **kwargs):
+        t = _carrier_transformer(**kwargs)
+        out = tmp_path / "out"
+        with patch("vcf_transform.vcf_to_beacon.cyvcf2.VCF", return_value=FakeVCF(variants)):
+            summary = t.transform_vcf_to_beacon("fake.vcf", str(out))
+        return summary, out
+
+    def test_counters_and_warnings_land_in_the_summary_file(self, tmp_path):
+        summary, out = self._transform(tmp_path, _sites(10, 90), genotype_check_every=1)
+        on_disk = json.loads((out / "transformation_summary.json").read_text())
+        assert on_disk["statistics"]["ac_zero"] == 10
+        assert on_disk["statistics"]["ac_checked"] == 100
+        assert len(on_disk["warnings"]) == len(summary["warnings"]) >= 1
+        assert any("AC = 0" in w for w in on_disk["warnings"])
+
+    def test_a_clean_run_has_an_empty_warnings_list(self, tmp_path):
+        _, out = self._transform(tmp_path, _sites(0, 50), genotype_check_every=1)
+        assert json.loads((out / "transformation_summary.json").read_text())["warnings"] == []
+
+    def test_main_prints_the_warnings_after_the_statistics(self, capsys):
+        from vcf_transform import vcf_to_beacon
+        summary = {"statistics": {}, "files_created": [], "warnings": ["W-ONE", "W-TWO"]}
+        with patch.object(vcf_to_beacon, "VCFTransformer") as klass:
+            klass.return_value.transform_vcf_to_beacon.return_value = summary
+            vcf_to_beacon.main(["in.vcf", "-o", "out"])
+        printed = capsys.readouterr().out
+        assert "W-ONE" in printed and "W-TWO" in printed
+        assert printed.index("Statistics") < printed.index("W-ONE")
+
+    def test_main_passes_the_two_flags_to_the_transformer(self):
+        from vcf_transform import vcf_to_beacon
+        summary = {"statistics": {}, "files_created": [], "warnings": []}
+        with patch.object(vcf_to_beacon, "VCFTransformer") as klass:
+            klass.return_value.transform_vcf_to_beacon.return_value = summary
+            vcf_to_beacon.main(["in.vcf", "-o", "out", "--warn-ac-zero-fraction", "0.25",
+                                "--genotype-check-every", "50"])
+        kwargs = klass.call_args.kwargs
+        assert kwargs["warn_ac_zero_fraction"] == 0.25
+        assert kwargs["genotype_check_every"] == 50
+
+    def test_main_defaults_leave_the_choice_to_the_config(self):
+        from vcf_transform import vcf_to_beacon
+        summary = {"statistics": {}, "files_created": [], "warnings": []}
+        with patch.object(vcf_to_beacon, "VCFTransformer") as klass:
+            klass.return_value.transform_vcf_to_beacon.return_value = summary
+            vcf_to_beacon.main(["in.vcf", "-o", "out"])
+        kwargs = klass.call_args.kwargs
+        assert kwargs["warn_ac_zero_fraction"] is None
+        assert kwargs["genotype_check_every"] is None
+
+    def test_out_of_range_options_are_refused(self):
+        with pytest.raises(ValueError):
+            _carrier_transformer(warn_ac_zero_fraction=1.5)
+        with pytest.raises(ValueError):
+            _carrier_transformer(warn_ac_zero_fraction=-0.1)
+        with pytest.raises(ValueError):
+            _carrier_transformer(genotype_check_every=-1)
