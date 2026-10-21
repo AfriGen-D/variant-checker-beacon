@@ -13,6 +13,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [4.1 Step 1: Get a Compute Node](#41-step-1-get-a-compute-node)
   - [4.2 Step 2: Install the Tools](#42-step-2-install-the-tools)
   - [4.3 Step 3: Locate Your VCF Files](#43-step-3-locate-your-vcf-files)
+    - [Cutting a dataset from some of the samples](#cutting-a-dataset-from-some-of-the-samples)
   - [4.4 Step 4: Transform VCF to Beacon JSON](#44-step-4-transform-vcf-to-beacon-json)
   - [4.5 Step 5: Transform Phenotype Data (Optional)](#45-step-5-transform-phenotype-data-optional)
   - [4.6 Step 6: Validate](#46-step-6-validate)
@@ -54,6 +55,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.14 Worked example: fix a doubled dataset](#1014-worked-example-fix-a-doubled-dataset-start-to-finish)
   - [10.15 Give every dataset a real name and description](#1015-give-every-dataset-a-real-name-and-description)
   - [10.16 The API port is already used by another service](#1016-the-api-port-is-already-used-by-another-service)
+  - [10.17 Raise the query limit on a private test instance](#1017-raise-the-query-limit-on-a-private-test-instance)
 
 ## 1. Architecture Overview
 
@@ -146,6 +148,12 @@ Describe your dataset in a short `dataset.yaml`, then point the script at your
 VCF. The `id` is the name your data is listed under: choose your own, for
 example `AIBST_EXOMES`. There is no default, so data is never filed under
 someone else's dataset by accident.
+
+**If your dataset is some of the people in a larger VCF** (a population cut from
+a panel, a cohort from a consortium file), cut the VCF first so it keeps only the
+sites that vary in those people. Loading a plain sample cut makes the beacon
+answer yes at sites nobody in your dataset carries. See [Cutting a dataset from
+some of the samples](#cutting-a-dataset-from-some-of-the-samples).
 
 ```bash
 cd /cbio/users/$USER/variant-checker-beacon
@@ -411,6 +419,62 @@ beacon-sing bcftools view -f PASS -r chr22:16000000-17000000 $VCF \
     -Oz -o /cbio/users/$USER/test_slice.vcf.gz
 beacon-sing bcftools index -t /cbio/users/$USER/test_slice.vcf.gz
 ```
+
+#### Cutting a dataset from some of the samples
+
+Read this if the VCF holds more people than the dataset you are building: a
+population cut from a panel, a cohort taken from a larger consortium file.
+
+**A beacon answers yes wherever it holds a record, and the transformer writes a
+record for every site in the VCF it is given.** A VCF cut to some of the samples
+keeps every site of the parent file, including the sites none of those samples
+carries. Load it as it is and the dataset says "this site is in the panel", not
+"someone here carries this allele". Every dataset cut from the same panel then
+ends up with the same number of variants, and the beacon cannot tell its members
+from anyone else. Anything that relies on the answer meaning something, such
+as a privacy test or a count of rare variants, is then measuring nothing.
+
+Cut the VCF so that only sites that vary in the chosen samples remain, with the
+allele counts recomputed for them. `samples.txt` lists the sample ids, one per
+line:
+
+```bash
+beacon-sing bcftools view -S samples.txt -m2 -M2 -v snps $VCF -Ou | beacon-sing bcftools +fill-tags -Ou -- -t AN,AC,AF | beacon-sing bcftools view -c1 -Oz -o subset.vcf.gz
+beacon-sing bcftools index -t subset.vcf.gz
+```
+
+What each part does:
+
+- `-S samples.txt` keeps only those people.
+- `-m2 -M2 -v snps` keeps biallelic SNPs. A multi-allelic site can keep an allele
+  that none of the chosen samples carries, so either drop those sites, as here,
+  or split them first and filter each allele. Remove `-v snps` if indels belong
+  in your dataset.
+- `+fill-tags -t AN,AC,AF` recomputes the allele number, count and frequency for
+  the chosen samples. The `INFO` values in the parent VCF describe the parent
+  cohort, so they must not be trusted after a sample cut.
+- `-c1` keeps a site only if at least one chosen sample carries a non-reference
+  allele there. This is the step that is easy to forget. The example data was cut
+  with it (`examples/README.md` shows the command).
+
+Check the result before you transform it:
+
+```bash
+# Records no sample carries: expect 0
+beacon-sing bcftools query -f '%AC\n' subset.vcf.gz | awk '$1==0' | wc -l
+
+# Allele numbers: expect ONE value, twice the number of samples
+beacon-sing bcftools query -f '%AN\n' subset.vcf.gz | sort -u
+```
+
+On the example data, cutting four of the nine people (`NA18486 NA18488 NA18489
+NA18499`) keeps 3,014 of the 4,231 sites with `-c1`. Without it, 1,217 sites
+stay that none of the four carries, and the Beacon would answer yes at each.
+
+If the allele number takes several values, some genotypes are missing, and the
+sites no longer share one sample size. Decide how to treat them before loading.
+After the import, run the negative control in Step 8 (4.8): an allele that nobody
+in the dataset carries must answer `exists: false`.
 
 ### 4.4 Step 4: Transform VCF to Beacon JSON
 
@@ -685,6 +749,25 @@ ssh <your-ssh-alias> \
 ssh <your-ssh-alias> \
     "docker exec beacon-mongodb mongosh beacon_db --eval 'db.individuals.countDocuments({})'"
 ```
+
+#### Check that the Beacon says no when it should
+
+A positive check alone cannot tell a working beacon from one that answers yes to
+everything. Ask about an allele that nobody in the dataset carries: the same
+position as the known variant, with a different alternate base. Expect
+`"exists": false`.
+
+```bash
+curl -s "$BEACON_URL/api/g_variants?assemblyId=GRCh38&referenceName=22&start=16021004&referenceBases=G&alternateBases=T&datasetIds=EXAMPLE_1000G_CHR22" | python3 -m json.tool
+```
+
+If the dataset is a cut of a larger panel, also check that it does not list
+sites none of its samples carries (see [Cutting a dataset from some of the
+samples](#cutting-a-dataset-from-some-of-the-samples)): pick a site of the parent
+VCF that the cut dropped and expect `false` there too. And compare
+`variantCount` in `/api/datasets` across datasets that hold different people:
+identical counts mean the datasets list the same sites, which is the sign of an
+uncut panel.
 
 #### More example queries
 
@@ -1217,6 +1300,15 @@ ssh <your-ssh-alias> "docker exec beacon-mongodb mongosh beacon_db --eval 'db.in
 For the example data the variant count is 4231 (2116 + 2115) and there are 9
 samples.
 
+Then check that the Beacon says no when it should: ask for an allele nobody in
+the dataset carries (the same position, a different alternate base) and expect
+`"exists": false`. The commands, and the extra checks for a dataset cut from a
+larger panel, are under Step 8 of the single-file guide (4.8).
+
+```bash
+curl -s "$BEACON_URL/api/g_variants?assemblyId=GRCh38&referenceName=22&start=16021004&referenceBases=G&alternateBases=T&datasetIds=EXAMPLE_1000G_CHR22" | python3 -m json.tool
+```
+
 #### More example queries for many VCF files
 
 Run these after Step 8's `BEACON_URL` line. The first block defines a small helper
@@ -1413,6 +1505,19 @@ Fix: The individual schema expects uppercase sex values. Normalize your input da
 **Out of memory on compute node:**
 Fix: Request more memory (`--mem=64G`) or reduce batch size (`--batch-size 500`).
 
+**Datasets of different people have the same number of variants, or the Beacon
+answers yes for an allele nobody in the dataset carries:** the dataset was built
+from a VCF cut to some samples without dropping the sites that none of them
+carries, so it lists the whole parent panel. Check:
+
+```bash
+beacon-sing bcftools query -f '%AC\n' your.vcf.gz | awk '$1==0' | wc -l
+```
+
+A large number means sites no sample carries. Fix: cut the VCF as described under
+[Cutting a dataset from some of the samples](#cutting-a-dataset-from-some-of-the-samples),
+remove the dataset (10.5) and load it again.
+
 ### 7.2 Checking Pipeline Output
 
 ```bash
@@ -1499,7 +1604,8 @@ and `contact` in the yaml before registering: the Beacon shows them to users.
 **HTTP 429 `Request was throttled. Expected available in N seconds.`** You sent
 more than about 50 requests in an hour from one address. Wait the `N` seconds
 (also in the `Retry-After` header); a script that loops over many queries needs
-to pace itself.
+to pace itself. For a private test instance that must take many queries, see
+[10.17](#1017-raise-the-query-limit-on-a-private-test-instance).
 
 **A query that should match says `exists: false`.** Check these, in order:
 
@@ -1532,6 +1638,10 @@ After completing the pipeline, verify:
 - [ ] Validation passes in strict mode
 - [ ] Data imported to MongoDB (check counts)
 - [ ] Beacon API returns results for real variants
+- [ ] An allele nobody in the dataset carries answers `exists: false`
+- [ ] If the dataset is a cut of a larger VCF: no record has `AC = 0`, and the
+      allele number is twice the sample count at every site (4.3)
+- [ ] Datasets that hold different people do not all have the same variant count
 - [ ] Frontend displays real datasets (not `[Test]` prefixed)
 - [ ] Redis cache flushed
 
@@ -2401,9 +2511,76 @@ The frontend reads the same variable (`compose/docker-compose-frontend.yml`) and
 **Check that nothing else moved:** the other service must still answer on its own
 port, for example `ss -ltnp | grep ':8000'` still lists the FedImpute API.
 
+**A public hostname does not follow the port.** If the Beacon is also reached
+through a Cloudflare Tunnel, the tunnel forwards to one fixed port, written in
+its ingress rule (`service: http://localhost:<port>` in
+`/etc/cloudflared/config.yml`). Changing `BEACON_API_HOST_PORT` moves the API
+and not the tunnel, so the public hostname answers **502** while the API is
+healthy on its new port. On the development VM the ingress for the dev hostname
+pointed at 8080 while the API listened on 8086 (checked 2026-10-21), and every
+path of that hostname returned 502. Compare the two:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8086/api/health
+curl -s -o /dev/null -w "%{http_code}\n" https://<your-public-hostname>/api/health
+```
+
+The first should print `200`. If the second prints `502`, the ingress port is
+wrong: change it to the port you chose and restart `cloudflared`. Also check that
+`DJANGO_ALLOWED_HOSTS` in `.env.boolean` lists the public hostname, or Django
+will refuse requests that arrive under that name.
+
 **ROLLBACK:** this is not part of the steps above. To go back to the default
 port, remove the line from `compose/.env` and run:
 
 ```bash
 BEACON_API_HOST_PORT=8086 docker compose -f compose/docker-compose.dev.yml up -d --no-deps --no-build beacon-api
 ```
+
+### 10.17 Raise the query limit on a private test instance
+
+The query endpoints (`/api/g_variants` and its relatives) allow 50 requests an
+hour per client address by default. That is right for a public Beacon. A study
+that sends thousands of queries to its own copy, for example a privacy test, needs
+the limit raised on that copy only.
+
+**Only do this on an instance that nobody outside can reach.** The limit is part
+of the Beacon's protection. Raise it only where the API is bound to
+`127.0.0.1` and no tunnel or proxy forwards to it, and use an SSH tunnel
+(`ssh -L`) to reach it. Never raise it on production, or on any instance that has
+a public hostname.
+
+The value comes from the environment file the API container reads
+(`env_file: ../.env.boolean` in `compose/docker-compose.dev.yml`). See what it is
+now:
+
+```bash
+grep -n RATELIMIT ~/variant-checker-beacon/.env.boolean
+```
+
+```text
+38:RATELIMIT_DEFAULT=100/hour
+39:RATELIMIT_QUERY_ENDPOINT=50/hour
+```
+
+Change line 39 to the limit you need, then recreate only the API container so it
+reads the file again:
+
+```bash
+cd ~/variant-checker-beacon
+docker compose -f compose/docker-compose.dev.yml up -d --no-deps --force-recreate beacon-api
+```
+
+Check that the container has the new value (a restart does not re-read the file,
+so look at what the container holds):
+
+```bash
+docker inspect beacon-api-boolean -f '{{range .Config.Env}}{{println .}}{{end}}' | grep RATELIMIT
+```
+
+Counts are kept in Redis per client address, so flush them if you want a clean
+start (10.7). Pace your queries anyway and honour `Retry-After`: a loop that hammers
+a limiter can take a Beacon down.
+
+**ROLLBACK:** this is not part of the steps above. Put line 39 back to
+`RATELIMIT_QUERY_ENDPOINT=50/hour` and run the `--force-recreate` command again.
