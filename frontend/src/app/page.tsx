@@ -10,6 +10,8 @@ import { QueryConsole } from '@/components/query/QueryConsole';
 import { DatasetResults, type QueryStatus } from '@/components/results/DatasetResults';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { DatasetStats, type DatasetsStatus } from '@/components/dashboard/DatasetStats';
+import { DatasetRail } from '@/components/dashboard/DatasetRail';
 import type { VariantQuery, Dataset } from '@/lib/api/types';
 import type { VariantQueryFormData } from '@/lib/utils/validators';
 import type { QueryMode } from '@/lib/utils/constants';
@@ -30,6 +32,7 @@ function HomePageInner() {
   const [submittedQuery, setSubmittedQuery] = useState<VariantQuery | null>(null);
   const [filters, setFilters] = useState<string[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [datasetsStatus, setDatasetsStatus] = useState<DatasetsStatus>('loading');
   const [selectedDatasetIds, setSelectedDatasetIds] = useState<string[]>([]);
   const { addQuery } = useQueryStore();
 
@@ -38,9 +41,13 @@ function HomePageInner() {
   useEffect(() => {
     beaconApi
       .getDatasets()
-      .then(res => setDatasets(res.datasets ?? []))
+      .then(res => {
+        setDatasets(res.datasets ?? []);
+        setDatasetsStatus('ready');
+      })
       .catch(err => {
         console.error('Failed to load datasets:', err);
+        setDatasetsStatus('error');
         toast.error('Could not load available datasets');
       });
   }, []);
@@ -139,7 +146,10 @@ function HomePageInner() {
         </p>
       </div>
 
-      <div className="space-y-6">
+      <DatasetStats datasets={datasets} status={datasetsStatus} />
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+      <div className="min-w-0 space-y-6">
         <QueryConsole
           mode={mode}
           onModeChange={setMode}
@@ -199,6 +209,9 @@ function HomePageInner() {
             status={status}
           />
         </div>
+      </div>
+
+      <DatasetRail datasets={datasets} status={datasetsStatus} />
       </div>
     </Container>
   );

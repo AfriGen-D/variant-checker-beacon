@@ -1,4 +1,5 @@
 import { beaconClient } from './client';
+import { variantQueryParams } from '@/lib/utils/variantParams';
 import type {
   BeaconResponse,
   BeaconInfo,
@@ -103,23 +104,9 @@ export const beaconApi = {
    * @returns Beacon response with variant results
    */
   queryVariants: async (query: VariantQuery): Promise<BeaconResponse<GenomicVariant>> => {
-    const params = new URLSearchParams();
-
-    // Beacon v2 spec uses 0-based half-open coordinates. The UI/URL accepts
-    // 1-based positions (the convention every public variant database uses)
-    // and we convert here. start_0 = start_1 - 1; end stays the same because
-    // 1-based inclusive end equals 0-based exclusive end.
-    Object.entries(query).forEach(([key, value]) => {
-      if (value === undefined || value === null || value === '') return;
-      const out = key === 'start' ? Number(value) - 1 : value;
-      params.append(key, out.toString());
-    });
-
-    // Always request aggregated granularity so allele frequencies come back
-    // when the beacon has them (it returns a boolean response otherwise).
-    if (!params.has('requestedGranularity')) {
-      params.append('requestedGranularity', 'aggregated');
-    }
+    // 1-based UI positions become Beacon v2's 0-based start in one shared
+    // builder, so the command shown to the user is the request actually sent.
+    const params = variantQueryParams(query);
 
     const response = await beaconClient.get(`/g_variants?${params.toString()}`);
     const raw = response.data as any;
