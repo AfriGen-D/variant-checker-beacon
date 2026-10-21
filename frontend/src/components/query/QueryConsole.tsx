@@ -2,7 +2,6 @@
 
 import { useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Separator } from '@/components/ui/Separator';
 import { Badge } from '@/components/ui/Badge';
 import { VariantQueryForm } from '@/components/query/VariantQueryForm';
 import { RegionQueryForm } from '@/components/query/RegionQueryForm';
@@ -133,13 +132,6 @@ export function QueryConsole({
             </p>
           )}
         </div>
-
-        <Separator className="mt-6" />
-        <p className="text-sm text-muted-foreground mt-4">
-          This is a privacy-preserving lookup: it reports <strong>whether</strong> a variant is
-          present in each dataset — not who carries it. Use the database links on the results to
-          jump to allele frequencies and clinical detail.
-        </p>
       </CardContent>
     </Card>
   );

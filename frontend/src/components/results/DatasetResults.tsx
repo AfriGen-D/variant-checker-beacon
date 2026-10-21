@@ -7,6 +7,7 @@ import { RecordHead } from './RecordHead';
 import { Button } from '@/components/ui/Button';
 import type { DatasetAlleleResponse, Dataset, VariantQuery, Handover } from '@/lib/api/types';
 import { exportCsv, exportJson } from '@/lib/utils/exportResults';
+import { variantQueryParams } from '@/lib/utils/variantParams';
 import { ExternalDbLinks } from '@/components/results/ExternalDbLinks';
 import { ExternalLink } from 'lucide-react';
 
@@ -33,15 +34,15 @@ function formatQuery(query: VariantQuery): string {
 }
 
 function buildApiUrl(query: VariantQuery): string {
-  const params = new URLSearchParams();
-  Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') params.append(key, String(value));
-  });
-  return `${getApiDisplayBase()}/g_variants?${params.toString()}`;
+  // The same builder the request uses (0-based start, aggregated granularity),
+  // so the copied command returns the answer shown above it.
+  return `${getApiDisplayBase()}/g_variants?${variantQueryParams(query).toString()}`;
 }
 
 function ApiQueryBlock({ query }: { query: VariantQuery }) {
-  const [open, setOpen] = useState(false);
+  // Open by default: the command that reproduces a result outside the website
+  // should not need a click to find. Still collapsible.
+  const [open, setOpen] = useState(true);
   const url = buildApiUrl(query);
   const [copied, setCopied] = useState(false);
   const panelId = useId();
