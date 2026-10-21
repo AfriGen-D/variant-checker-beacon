@@ -361,6 +361,33 @@ curl -s 'http://localhost:8000/api/g_variants?assemblyId=GRCh38&referenceName=1&
 A negative control is not optional here. A beacon that answers `true` to
 everything looks identical to a working one until someone checks.
 
+That check asks about a position with no record at all. A harder one asks about
+a position that **has** a record, for an allele that nobody carries: the same
+position with a different alternate base. This is the question a beacon exists
+to answer ("does anyone here carry this allele?"), and it is the one that catches
+a dataset which lists sites its members do not carry. Capture the stored alleles
+the same way as `$POS`, then pick a base that is neither of them:
+
+```bash
+REF=$(docker compose -f compose/docker-compose.dev.yml exec -T mongodb mongo beacon_db --quiet --eval 'print(db.variants.findOne().reference_bases)' | tr -d '\r\n')
+ALT=$(docker compose -f compose/docker-compose.dev.yml exec -T mongodb mongo beacon_db --quiet --eval 'print(db.variants.findOne().alternate_bases)' | tr -d '\r\n')
+for b in A C G T; do if [ "$b" != "$REF" ] && [ "$b" != "$ALT" ]; then WRONG=$b; break; fi; done
+echo "stored $REF>$ALT, asking about $REF>$WRONG"
+```
+
+```bash
+curl -s "http://localhost:8000/api/g_variants?assemblyId=GRCh38&referenceName=1&start=$POS&referenceBases=$REF&alternateBases=$WRONG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["responseSummary"])'
+```
+
+```text
+{'exists': False, 'numTotalResults': 0}
+```
+
+The stored allele answers `True` and the other three answer `False`. When you
+later load a dataset you cut from a larger file, run this check on it too: see
+the guide section on cutting a dataset from some of the samples in
+[ILIFU_DATA_LOADING_GUIDE.md](../ILIFU_DATA_LOADING_GUIDE.md#cutting-a-dataset-from-some-of-the-samples).
+
 ## Step 9 — See the vocabulary handling
 
 `hg38` and `GRCh38` are the **same genome build** in different vocabularies —

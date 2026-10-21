@@ -34,6 +34,13 @@ bcftools index -t 1000G_chr22_subset.vcf.gz
 where `samples.txt` lists `NA18486 NA18488 NA18489 NA18499 NA19017 NA19019
 NA19020 HG02922 HG02923`, and `-c1` keeps only sites that vary in those nine.
 
+**`-c1` is not optional when you cut a dataset from some of the samples.**
+Without it the VCF keeps every site of the parent file, including sites none of
+the nine carries, and a beacon loaded from it answers yes for alleles nobody in
+the dataset has. For your own cut, follow [Cutting a dataset from some of the
+samples](../docs/ILIFU_DATA_LOADING_GUIDE.md#cutting-a-dataset-from-some-of-the-samples):
+it also recomputes the allele counts and gives the checks to run before loading.
+
 **`phenotypes_example.csv` is made up.** 1000 Genomes has no clinical data, so the
 phenotype and disease rows were invented to exercise the phenotype transformer.
 They describe no real person. Do not cite them or load them into a Beacon that
