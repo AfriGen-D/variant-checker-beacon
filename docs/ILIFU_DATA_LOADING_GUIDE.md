@@ -55,6 +55,7 @@ This guide walks through transforming your VCF files (any cohort or dataset) int
   - [10.14 Worked example: fix a doubled dataset](#1014-worked-example-fix-a-doubled-dataset-start-to-finish)
   - [10.15 Give every dataset a real name and description](#1015-give-every-dataset-a-real-name-and-description)
   - [10.16 The API port is already used by another service](#1016-the-api-port-is-already-used-by-another-service)
+  - [10.17 Raise the query limit on a private test instance](#1017-raise-the-query-limit-on-a-private-test-instance)
 
 ## 1. Architecture Overview
 
@@ -1603,7 +1604,8 @@ and `contact` in the yaml before registering: the Beacon shows them to users.
 **HTTP 429 `Request was throttled. Expected available in N seconds.`** You sent
 more than about 50 requests in an hour from one address. Wait the `N` seconds
 (also in the `Retry-After` header); a script that loops over many queries needs
-to pace itself.
+to pace itself. For a private test instance that must take many queries, see
+[10.17](#1017-raise-the-query-limit-on-a-private-test-instance).
 
 **A query that should match says `exists: false`.** Check these, in order:
 
@@ -2509,9 +2511,76 @@ The frontend reads the same variable (`compose/docker-compose-frontend.yml`) and
 **Check that nothing else moved:** the other service must still answer on its own
 port, for example `ss -ltnp | grep ':8000'` still lists the FedImpute API.
 
+**A public hostname does not follow the port.** If the Beacon is also reached
+through a Cloudflare Tunnel, the tunnel forwards to one fixed port, written in
+its ingress rule (`service: http://localhost:<port>` in
+`/etc/cloudflared/config.yml`). Changing `BEACON_API_HOST_PORT` moves the API
+and not the tunnel, so the public hostname answers **502** while the API is
+healthy on its new port. On the development VM the ingress for the dev hostname
+pointed at 8080 while the API listened on 8086 (checked 2026-10-21), and every
+path of that hostname returned 502. Compare the two:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8086/api/health
+curl -s -o /dev/null -w "%{http_code}\n" https://<your-public-hostname>/api/health
+```
+
+The first should print `200`. If the second prints `502`, the ingress port is
+wrong: change it to the port you chose and restart `cloudflared`. Also check that
+`DJANGO_ALLOWED_HOSTS` in `.env.boolean` lists the public hostname, or Django
+will refuse requests that arrive under that name.
+
 **ROLLBACK:** this is not part of the steps above. To go back to the default
 port, remove the line from `compose/.env` and run:
 
 ```bash
 BEACON_API_HOST_PORT=8086 docker compose -f compose/docker-compose.dev.yml up -d --no-deps --no-build beacon-api
 ```
+
+### 10.17 Raise the query limit on a private test instance
+
+The query endpoints (`/api/g_variants` and its relatives) allow 50 requests an
+hour per client address by default. That is right for a public Beacon. A study
+that sends thousands of queries to its own copy, for example a privacy test, needs
+the limit raised on that copy only.
+
+**Only do this on an instance that nobody outside can reach.** The limit is part
+of the Beacon's protection. Raise it only where the API is bound to
+`127.0.0.1` and no tunnel or proxy forwards to it, and use an SSH tunnel
+(`ssh -L`) to reach it. Never raise it on production, or on any instance that has
+a public hostname.
+
+The value comes from the environment file the API container reads
+(`env_file: ../.env.boolean` in `compose/docker-compose.dev.yml`). See what it is
+now:
+
+```bash
+grep -n RATELIMIT ~/variant-checker-beacon/.env.boolean
+```
+
+```text
+38:RATELIMIT_DEFAULT=100/hour
+39:RATELIMIT_QUERY_ENDPOINT=50/hour
+```
+
+Change line 39 to the limit you need, then recreate only the API container so it
+reads the file again:
+
+```bash
+cd ~/variant-checker-beacon
+docker compose -f compose/docker-compose.dev.yml up -d --no-deps --force-recreate beacon-api
+```
+
+Check that the container has the new value (a restart does not re-read the file,
+so look at what the container holds):
+
+```bash
+docker inspect beacon-api-boolean -f '{{range .Config.Env}}{{println .}}{{end}}' | grep RATELIMIT
+```
+
+Counts are kept in Redis per client address, so flush them if you want a clean
+start (10.7). Pace your queries anyway and honour `Retry-After`: a loop that hammers
+a limiter can take a Beacon down.
+
+**ROLLBACK:** this is not part of the steps above. Put line 39 back to
+`RATELIMIT_QUERY_ENDPOINT=50/hour` and run the `--force-recreate` command again.
