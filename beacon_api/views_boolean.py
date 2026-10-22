@@ -81,8 +81,16 @@ def _read_page_request(request):
 
 
 class QueryRateThrottle(AnonRateThrottle):
-    """Custom throttle for query endpoints"""
-    rate = '50/hour'
+    """Throttle for query endpoints.
+
+    The rate comes from BEACON_RATE_LIMITS['query'] (RATELIMIT_QUERY_ENDPOINT),
+    default 50/hour. It used to be a hardcoded class attribute, so raising
+    RATELIMIT_QUERY_ENDPOINT on a loopback-only instance changed the middleware
+    limit but not this one, and the API kept answering 429.
+    """
+
+    def get_rate(self):
+        return getattr(settings, 'BEACON_RATE_LIMITS', {}).get('query') or '50/hour'
 
 
 @api_view(['GET', 'POST'])
