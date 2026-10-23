@@ -16,29 +16,28 @@ logger = logging.getLogger('beacon_api')
 
 def custom_exception_handler(exc, context):
     """
-    Custom exception handler that doesn't leak sensitive information
+    Turn every DRF-handled error into a Beacon v2 error envelope.
+
+    Previously a 429 was ``{"detail": ...}`` and a 400 ``{"error", "message"}``,
+    so a client parsing Beacon errors met a different shape per status. The
+    status code and any headers DRF set (``Retry-After`` on a throttle) are
+    kept; only the body changes. Exceptions DRF does not handle still return
+    None and surface as a Django 500.
     """
     response = exception_handler(exc, context)
-    
+
     if response is not None:
-        # Log the full error for debugging
         logger.error(f"API Error: {exc}", exc_info=True)
-        
-        # Don't leak stack traces in production
-        if not settings.DEBUG:
-            if response.status_code == 500:
-                response.data = {
-                    'error': 'Internal server error',
-                    'message': 'An error occurred processing your request'
-                }
-            elif response.status_code == 400:
-                # Keep validation errors but remove sensitive details
-                if 'detail' in response.data:
-                    response.data = {
-                        'error': 'Bad request',
-                        'message': str(response.data['detail'])
-                    }
-    
+
+        if response.status_code >= 500 and not settings.DEBUG:
+            # Never leak internals in production.
+            message = 'An error occurred processing your request'
+        else:
+            message = extract_error_message(
+                getattr(exc, 'detail', None), fallback='Request failed'
+            )
+        response.data = build_error_envelope(response.status_code, message)
+
     return response
 
 
@@ -330,15 +329,19 @@ def extract_error_message(detail, fallback='Invalid request'):
     return ' '.join(m if m.endswith(('.', '!', '?')) else f'{m}.' for m in messages)
 
 
-def build_error_envelope(error_code, error_message):
+def build_error_envelope(error_code, error_message, validated_params=None):
     """
     Beacon v2 error envelope: {meta, error: {errorCode, errorMessage}}.
 
-    Uses the same `meta` block as the success envelopes so a client can parse
-    `meta` uniformly regardless of outcome.
+    Uses the same `meta` block as the success envelopes, including
+    `receivedRequestSummary` (a required meta field), so a client can parse
+    `meta` uniformly regardless of outcome. `validated_params`, when the
+    caller has it, lets the summary echo a valid requestedGranularity.
     """
     return {
-        'meta': build_meta(),
+        'meta': build_meta(
+            received_request=build_received_request_summary(validated_params)
+        ),
         'error': {
             'errorCode': int(error_code),
             'errorMessage': str(error_message),

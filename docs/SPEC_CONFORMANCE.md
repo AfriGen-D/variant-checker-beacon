@@ -4,13 +4,11 @@ This document tracks the conformance of the AfriGen-D Beacon v2 (boolean
 public profile) against the [official GA4GH Beacon v2 specification](https://github.com/ga4gh-beacon/beacon-v2),
 verified using the official EGA tooling.
 
-**Last verified:** 2026-08-06
-**Endpoint tested:** `https://beacon.afrigen-d.org/api/` (the user-facing
-production node; the `api-beacon.afrigen-d.dev` sidecar is equivalent but was
-offline 2026-05-07 → 2026-08-06)
-**Verifier:** [`EGA-archive/beacon-verifier`](https://github.com/EGA-archive/beacon-verifier)
-v0.3.3 (Rust CLI · last upstream update Sep 2025)
-**Verdict:** ✅ **17 PASS / 0 FAIL / 0 NO-RESP** (full conformance)
+**Last verified:** 2026-10-23, release `v1.1.12`
+**Endpoint tested:** `https://beacon.afrigen-d.org/api/` (production)
+**Verifier:** [`EGA-archive/beacon-verifier`](https://github.com/EGA-archive/beacon-verifier) (Rust CLI)
+**Verdict:** **10 of 11 entities valid, 1 failed (`Dataset`)**. This is NOT full spec conformance: the verifier checks
+envelope shape only, and the gaps it cannot see are listed under "Known gaps" below.
 
 ## How to re-run the verifier
 
@@ -46,21 +44,45 @@ docker build -t beacon-verifier:latest /tmp/bv
 | `EGA-archive/beacon-verifier-v2` | Available | Heavier — Django + Celery + UI; more recent (Dec 2025) but overkill for one-shot validation |
 | `ga4gh-beacon/beacon-verifier` | Stale (2023) | Original GA4GH version; superseded by the EGA forks |
 
-## Current state — 17/17 checks passing
+## Current state: 10 of 11 entities valid (2026-10-23, v1.1.12)
 
 | Entity | Verdict | Endpoints |
 | --- | :---: | --- |
-| BeaconMap | ✅ | `/api/map` |
-| Bioinformatics analysis | ✅ | `/api/analyses` |
-| Biological Sample | ✅ | `/api/biosamples` |
-| Cohort | ✅ | `/api/cohorts` |
-| Configuration | ✅ | `/api/configuration` |
-| Dataset | ✅ | `/api/datasets`, `/api/datasets/{id}`, `/api/datasets/{id}/{entry_type}` (×5) |
-| EntryTypes | ✅ | `/api/entry_types` |
-| Genomic Variants | ✅ | `/api/g_variants` |
-| Individual | ✅ | `/api/individuals` |
-| Info | ✅ | `/api/info` |
-| Sequencing run | ✅ | `/api/runs` |
+| BeaconMap | pass | `/api/map` |
+| Bioinformatics analysis | pass | `/api/analyses` |
+| Biological Sample | pass | `/api/biosamples` |
+| Cohort | pass | `/api/cohorts` |
+| Configuration | pass | `/api/configuration` |
+| Dataset | **fail** | `/api/datasets`, `/api/datasets/{id}` pass; the five `/api/datasets/{id}/{entry_type}` routes answer 501 ("I cannot answer"), which the verifier reports as "did not respond" |
+| EntryTypes | pass | `/api/entry_types` |
+| Genomic Variants | pass | `/api/g_variants` |
+| Individual | pass | `/api/individuals` |
+| Info | pass | `/api/info` |
+| Sequencing run | pass | `/api/runs` |
+
+The 501 on the per-dataset routes is deliberate (answer honesty: "I cannot answer" is not "no"), so this entity stays red
+until those routes are implemented or the choice is revisited.
+
+## Known gaps (read against the Beacon v2 request-parameters schema and docs.genomebeacons.org, 2026-10-23)
+
+The verifier does not test these, so a green run does not cover them.
+
+1. **Query types.** The spec defines sequence, range, bracket, gene ID, genomic allele short form and amino acid change
+   queries. This beacon supports sequence and range queries. Gene ID, `aminoacidChange`, `genomicAlleleShortForm`,
+   bracket (array `start`/`end`) and `variantMinLength`/`variantMaxLength` are refused with HTTP 400 (v1.1.12;
+   `beacon_api/unsupported_params.py`), as is any unknown parameter. Before v1.1.12 they were silently dropped and answered
+   with a confident YES over the whole panel.
+2. **Point query without alleles (extension).** `referenceName` + `start` with no `alternateBases` is not a defined query
+   type: the schema prose says a lone `start` requires `alternateBases`, and the docs table lists both bases for a sequence
+   query. This beacon answers it as "is there any variant at this position?". It is kept deliberately, because the Beacon
+   Network form and this beacon's own frontend both let users leave alleles blank. The response does not say which question
+   was answered. Treat it as an extension, not as conformance.
+3. **Error bodies.** From the release carrying this change, every error body (400, 404, 429, 5xx, including the rate-limit
+   middleware's 429) is a Beacon error envelope with `receivedRequestSummary`; before it, a 429 was `{"detail": ...}` or
+   `{"error", "message"}`.
+4. **`/service-info`** returns the same Beacon info envelope as `/info` rather than a GA4GH `service-info` document.
+5. **Unrouted paths** (for example `/api/nosuchpath`) answer a Django HTML 404, not an envelope.
+6. **Per-dataset routes** answer 501 (see the Dataset row above).
 
 ## Fix history
 
