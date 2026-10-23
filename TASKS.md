@@ -15,7 +15,9 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   (`query`), so `/info` and `/datasets` polling no longer spends the `g_variants` budget. `X-Beacon-Aggregator` is deliberately
   not an exemption (any caller can send it). Still open: the 50 per hour per IP default, and `X-Forwarded-For` trust (untested).
   Raising the rate is a config choice (`RATELIMIT_QUERY_ENDPOINT`, #134).
-- [ ] **G6, OPEN (new 2026-10-23): stale cached answers after a deploy.** The query views sit behind `cache_page(60 * 5)`, so
+- [ ] **G6, OPEN (new 2026-10-23): stale cached answers after a deploy.** Also noted: the first v1.1.13 deploy failed in the
+  `validate` job (the deploy workflow installed Django without DRF, which the middleware now imports; fixed in PR 138, the gate
+  stopped it before anything was built or deployed). The query views sit behind `cache_page(60 * 5)`, so
   for up to 5 minutes after a deploy an identical URL is served from the old release. Measured: the pre-deploy probe
   `geneId=NOSUCHGENE_ZZZ&limit=1` still returned the old 200 YES minutes after v1.1.12 was live, and a fresh URL returned 400.
   Probe a new URL (change `limit` or add `_t`) after any deploy that changes answers; consider clearing the cache in the deploy.
@@ -26,11 +28,14 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   `.optional()`) and this beacon's own frontend both let users leave alleles blank; it is documented as an extension in
   `docs/SPEC_CONFORMANCE.md`. Still open: have the response say which question was answered (needs a spec-safe place for it). (b) The spec names are `aminoacidChange` (singular)
   and `genomicAlleleShortForm`; both are refused today. (c) done: documented in `docs/SPEC_CONFORMANCE.md` (G3, G4 fixed in the same PR).
-- [x] **G3, FIXED in the PR for `docs/beacon-v1.1.12-shipped` (not yet released).** Every error body is a Beacon error
-  envelope with `receivedRequestSummary`, including the DRF 429 (`Retry-After` kept) and the rate-limit middleware 429
-  (`beacon_api/test_error_envelopes.py`, now in the CI Django step). Still open under G3: `/service-info` equals `/info`,
-  and Django HTML 404 for unrouted paths.
-- [x] **G4, DONE in the same PR.** `docs/SPEC_CONFORMANCE.md` and the README badge now say 10 of 11 entities valid and list the
+- [x] **G3, SHIPPED AND VERIFIED ON PRODUCTION in v1.1.13 (tag on ecfd970, deployed 2026-10-23 16:09 SAST, run 39966231941,
+  about 6.9 minutes).** Every error body is a Beacon error envelope with `receivedRequestSummary`. Production, fresh URLs:
+  400 (`geneId`, unknown parameter) and 405 (`POST /info`) all return `{meta, error}` with `apiVersion`, `requestedGranularity`,
+  `requestedSchemas` and `pagination` in the summary; rs334 11:5227001 true, 5227000 false. NOT exercised on production: a real
+  429 (it would lock the tester's IP out of `g_variants` for an hour); the 429 bodies are covered by
+  `beacon_api/test_error_envelopes.py` (DRF throttle with `Retry-After`, and the rate-limit middleware). Still open under G3:
+  `/service-info` equals `/info`, and Django HTML 404 for unrouted paths.
+- [x] **G4, DONE (PR 137, in v1.1.13).** `docs/SPEC_CONFORMANCE.md` and the README badge now say 10 of 11 entities valid and list the
   known gaps. EGA verifier re-run on production v1.1.12 on 2026-10-23: 10 valid, `Dataset` failed (five per-dataset routes
   answer 501 by design). Still open: decide whether to keep 501 on those routes.
 - [ ] **G5, OPEN, other repo.** `african-beacon-network/backend/fixtures/conformance_known_issues.yaml` baselines AfriGen-D
