@@ -55,7 +55,7 @@ AGVD column is from `agvd-beacon/review-2026-10-22.md` and `findings-conformance
 
 ## Findings
 
-### G1. Parameters that are not in the serializer are dropped, and the answer is a confident YES. OPEN
+### G1. Parameters that are not in the serializer are dropped, and the answer is a confident YES. FIXED in code 2026-10-23 (not yet released)
 
 Measured: `geneId=HBB&assemblyId=GRCh38&limit=1` gives `exists:true, numTotalResults:42331932`, `resultSets: []`
 (`numTotalResults` is the whole catalogue total, `views_boolean.py` `QUERY_UNBOUNDED` branch). `geneId` is not a field of
@@ -70,7 +70,7 @@ parameters that `docs/TESTING.md` (lines 389 to 413, 505 to 517) advertises as s
 caller following `docs/TESTING.md` is. Fix: reject any parameter that is neither implemented nor on a short ignore list with a 400,
 or implement it; correct `docs/TESTING.md`.
 
-### G2. Throttle: 50 per hour per IP, one shared history across endpoints. OPEN
+### G2. Throttle: 50 per hour per IP, one shared history across endpoints. Shared history FIXED in code 2026-10-23 (not yet released)
 
 - `QueryRateThrottle` (`views_boolean.py`) is an `AnonRateThrottle` subclass, so it shares the cache key `throttle_anon_<ident>`
   with the default `anon` throttle on every other DRF view. Measured: about 50 accepted requests from my IP (7 metadata,

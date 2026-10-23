@@ -12,6 +12,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
 from .filters import UnsupportedFilters, reject_filters
+from .unsupported_params import UnsupportedParameters, reject_unsupported_params
 from .pagination import (
     DEFAULT_SKIP, InvalidPagination, MAX_SKIP, clamp_limit, parse_pagination,
 )
@@ -315,6 +316,13 @@ def validate_query_request(request_data):
     try:
         reject_filters(request_data if isinstance(request_data, dict) else {})
     except UnsupportedFilters as e:
+        raise ValidationError(str(e))
+
+    # Anything the serializer would silently drop (geneId, a misspelt name, an
+    # array start) is refused here, on the raw request, for the same reason.
+    try:
+        reject_unsupported_params(request_data)
+    except UnsupportedParameters as e:
         raise ValidationError(str(e))
 
     # Same reason for pagination: parse it off the raw request so a POST body

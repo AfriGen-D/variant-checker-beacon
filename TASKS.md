@@ -5,14 +5,18 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
 
 ## From the 2026-10-22 review
 
-- [ ] **G1, OPEN, wrong YES.** `geneId`, `aminoacidChanges`, `variantMinLength`, `variantMaxLength` and array `start`/`end` are
-  silently dropped by `BeaconQuerySerializer`; `geneId=HBB` returns `exists:true, numTotalResults:42331932`. Reject
-  unsupported parameters with a 400 (or implement them) and correct `docs/TESTING.md` lines 389 to 413 and 505 to 517. Test:
-  `geneId=NOSUCHGENE` must not be a 200 YES. Blocked on: nothing.
-- [ ] **G2, OPEN.** The query throttle is 50 per hour per IP, shared with every other API endpoint, and the network's health
-  polling (24 per hour) uses about half. Honour `X-Beacon-Aggregator` or give health polling its own budget; read the client
-  IP from a trusted proxy hop only. #134 (rate from `RATELIMIT_QUERY_ENDPOINT`) is merged but not deployed. Blocked on:
-  deciding the aggregator exemption (the user), then a deploy.
+- [x] **G1, FIXED in the PR for `fix/beacon-reject-unsupported-params` (not yet released).** `geneId`, `aminoacidChanges`,
+  `variantMinLength`, `variantMaxLength`, array `start`/`end` and any unknown parameter now give a 400 Beacon envelope naming
+  the parameter (`beacon_api/unsupported_params.py`). Sweep: the same drop existed on `/individuals` (`individual_query_boolean`
+  read only `sex` and `diseaseCode`); fixed the same way. Left as is: the list endpoints (`/datasets`, `/cohorts`,
+  `/filtering_terms`), which ignore unknown parameters but make no YES/NO claim. `docs/TESTING.md` corrected. Needs a tag
+  and deploy (the user names it); after deploy, probe `geneId=NOSUCHGENE_ZZZ` on production, expect 400.
+- [x] **G2, FIXED in the same PR (not yet released): the shared history is confirmed, not suspected.** `QueryRateThrottle`
+  now has its own cache scope (`query`), so metadata and health polling (`/info`, `/datasets`) no longer spend the
+  `g_variants` budget (test: spending the anon budget leaves the query budget whole). `X-Beacon-Aggregator` is deliberately
+  not used for an exemption, because any caller can send it. Still open: the 50 per hour per IP default is low for the
+  network's users, and `X-Forwarded-For` spoofing is untested. Raising it is a config choice (`RATELIMIT_QUERY_ENDPOINT`, #134)
+  for the user. Blocked on: a tag and deploy.
 - [ ] **G3, OPEN (low).** 429 bodies and error envelopes: 429 should be a Beacon error envelope; `build_error_envelope`
   should carry `receivedRequestSummary`; `/service-info` should be GA4GH service-info.
 - [ ] **G4, OPEN (docs).** `docs/SPEC_CONFORMANCE.md` says 17 of 17; the verifier now gives 10 valid, 1 failed (`Dataset`,
