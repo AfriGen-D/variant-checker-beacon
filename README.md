@@ -6,7 +6,7 @@
 [![Django](https://img.shields.io/badge/Django-4.0.10-green)](https://www.djangoproject.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-5.0-green)](https://www.mongodb.com/)
-[![Conformance](https://img.shields.io/badge/EGA%20verifier-17%2F17-brightgreen)](docs/SPEC_CONFORMANCE.md)
+[![Conformance](https://img.shields.io/badge/EGA%20verifier-10%2F11%20entities-yellow)](docs/SPEC_CONFORMANCE.md)
 
 ## What's in this repo
 
@@ -64,7 +64,7 @@ chromosome/position) + Redis 6 (response cache, rate-limit counters).
 
 Full topology in [`CLAUDE.md`](CLAUDE.md#production-deployment).
 
-**Spec conformance:** ✅ 17/17 EGA `beacon-verifier` checks pass — see [`docs/SPEC_CONFORMANCE.md`](docs/SPEC_CONFORMANCE.md).
+**Spec conformance:** 10 of 11 EGA `beacon-verifier` entities valid (2026-10-23); the verifier checks envelope shape only, and the known gaps are listed in [`docs/SPEC_CONFORMANCE.md`](docs/SPEC_CONFORMANCE.md).
 
 ## Features
 

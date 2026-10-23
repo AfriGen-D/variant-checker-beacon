@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.conf import settings
 
 from .privacy import anonymize_client_ip
+from .utils import build_error_envelope
 
 logger = logging.getLogger('beacon_api')
 
@@ -42,10 +43,12 @@ class RateLimitMiddleware:
             
             if not self.check_rate_limit(ip, endpoint_key, limit_config):
                 logger.warning(f"Rate limit exceeded for IP {ip} on endpoint {endpoint_key}")
-                return JsonResponse({
-                    'error': 'Rate limit exceeded',
-                    'message': f'Too many requests. Limit is {limit_config}',
-                }, status=429)
+                return JsonResponse(
+                    build_error_envelope(
+                        429, f'Too many requests. Limit is {limit_config}.'
+                    ),
+                    status=429,
+                )
         
         response = self.get_response(request)
         return response

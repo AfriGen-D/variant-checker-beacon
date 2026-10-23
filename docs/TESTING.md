@@ -382,7 +382,7 @@ parameter, rather than ignoring it (ignoring `geneId` answered a confident YES o
 
 | Parameter | Result |
 |-----------|--------|
-| `geneId`, `aminoacidChanges` | 400 |
+| `geneId`, `aminoacidChange` (spec name; the plural is refused too) | 400 |
 | `variantMinLength`, `variantMaxLength` | 400 |
 | `start` / `end` as an array or a comma list (`5000000,7676592`) | 400 (one integer each) |
 | `filters` | 400 (this beacon publishes no filtering terms) |
