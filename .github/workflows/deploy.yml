@@ -119,10 +119,12 @@ jobs:
 
       - name: Rate-limit middleware tests
         # Self-contained: configures its own settings and a locmem cache, so it
-        # needs neither MongoDB nor the full requirements set.
+        # needs neither MongoDB nor the full requirements set. DRF is installed
+        # because middleware.py builds its 429 through beacon_api.utils, which
+        # imports rest_framework (v1.1.13's first deploy failed here without it).
         run: |
-          pip install --quiet 'django==4.0.10'
-          python -m beacon_api.test_middleware
+          pip install --quiet 'django==4.0.10' 'djangorestframework==3.14.0'
+          python -m unittest beacon_api.test_middleware beacon_api.test_error_envelopes
 
   build:
     needs: [preflight, validate]
