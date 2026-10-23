@@ -49,5 +49,37 @@ class QueryRateThrottleTests(unittest.TestCase):
             self.assertEqual(QueryRateThrottle().rate, '50/hour')
 
 
+class QueryThrottleIsolationTests(unittest.TestCase):
+    """Review G2: the query throttle shared DRF's `throttle_anon_<ident>`
+    history with every metadata view, so the network's health polling
+    (/info, /datasets) spent the same budget as g_variants queries."""
+
+    class _Req:
+        META = {'REMOTE_ADDR': '203.0.113.9'}
+
+        class user:
+            is_authenticated = False
+
+    def test_query_history_is_not_the_anon_history(self):
+        from rest_framework.throttling import AnonRateThrottle
+
+        query_key = QueryRateThrottle().get_cache_key(self._Req(), None)
+        anon_key = AnonRateThrottle().get_cache_key(self._Req(), None)
+        self.assertIsNotNone(query_key)
+        self.assertNotEqual(query_key, anon_key)
+
+    def test_spending_the_anon_budget_leaves_the_query_budget_whole(self):
+        from django.core.cache import cache
+        from rest_framework.throttling import AnonRateThrottle
+
+        cache.clear()
+        req = self._Req()
+        anon = AnonRateThrottle()
+        for _ in range(anon.num_requests + 5):
+            anon.allow_request(req, None)
+        self.assertFalse(AnonRateThrottle().allow_request(req, None))
+        self.assertTrue(QueryRateThrottle().allow_request(req, None))
+
+
 if __name__ == '__main__':
     unittest.main()

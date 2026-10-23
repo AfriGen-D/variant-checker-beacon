@@ -361,8 +361,8 @@ curl -X POST http://localhost:8000/api/g_variants \
       "requestParameters": {
         "alternateBases": "G",
         "referenceBases": "A",
-        "start": [16050074],
-        "end": [16050568],
+        "start": 16050074,
+        "end": 16050568,
         "referenceName": "22",
         "assemblyId": "GRCh37"
       },
@@ -373,44 +373,28 @@ curl -X POST http://localhost:8000/api/g_variants \
   }'
 ```
 
-#### Bracket Query (Structural Variants)
+#### Parameters this beacon does not support
 
-Find deletions overlapping a region:
+These Beacon v2 query parameters are **not implemented**: variants are not annotated with genes or protein changes, and
+bracket (array) coordinates are not evaluated. The API answers **HTTP 400** with a Beacon error envelope naming the
+parameter, rather than ignoring it (ignoring `geneId` answered a confident YES over the whole panel; review G1,
+2026-10-22). Any other unrecognised parameter name is refused the same way.
 
-```bash
-curl "http://localhost:8000/api/g_variants?\
-referenceName=NC_000017.11&\
-variantType=DEL&\
-start=5000000,7676592&\
-end=7669607,10000000"
-```
-
-**Interpretation**: Find deletions where:
-- Start position is between 5,000,000 and 7,676,592
-- End position is between 7,669,607 and 10,000,000
-
-#### Gene-Based Query
+| Parameter | Result |
+|-----------|--------|
+| `geneId`, `aminoacidChanges` | 400 |
+| `variantMinLength`, `variantMaxLength` | 400 |
+| `start` / `end` as an array or a comma list (`5000000,7676592`) | 400 (one integer each) |
+| `filters` | 400 (this beacon publishes no filtering terms) |
+| any unknown name, for example `bogusParam` | 400 |
 
 ```bash
-curl "http://localhost:8000/api/g_variants?\
-assemblyId=GRCh38&\
-geneId=EIF4A1&\
-variantMaxLength=1000000&\
-variantType=DEL"
+curl -i "http://localhost:8000/api/g_variants?assemblyId=GRCh38&geneId=BRCA1"   # expect HTTP 400, body names geneId
 ```
 
-**Finds**: All deletions in the EIF4A1 gene up to 1Mb in length.
-
-#### Amino Acid Change Query
-
-```bash
-curl "http://localhost:8000/api/g_variants?\
-assemblyId=GRCh38&\
-geneId=BRCA1&\
-aminoacidChanges=M734V"
-```
-
-**Finds**: Variants causing the M734V amino acid substitution in BRCA1.
+Envelope keys such as `includeResultsetResponses`, `testMode`, `requestedSchemas`, `pagination` and a `_t` cache-buster are
+accepted and have no effect. The check lives in `beacon_api/unsupported_params.py` (tests:
+`beacon_api/test_unsupported_params.py`, `test_unsupported_params_validate.py`).
 
 ### Individual Queries
 
@@ -505,15 +489,11 @@ curl -X POST http://localhost:8000/api/biosamples \
 |-----------|------|----------|-------------|---------|
 | assemblyId | string | Yes | Reference genome assembly. `hg38`/`hg19` canonicalise; a recognised build with no data returns 501. | GRCh38 |
 | referenceName | string | Yes | Chromosome identifier | 1, 17, X, Y, MT, NC_000017.11 |
-| start | integer/array | Yes | Start position(s) | 7577120, [5000000, 7676592] |
-| end | integer/array | No | End position(s) | 7578641, [7669607, 10000000] |
+| start | integer | Yes | Start position (0-based) | 7577120 |
+| end | integer | No | End position (needs start) | 7578641 |
 | referenceBases | string | No | Reference allele | G, A, ATCG |
 | alternateBases | string | No | Alternate allele | T, C, -, ATCG |
 | variantType | string | No | Type of variant | SNV, DEL, DUP, INS, CNV |
-| geneId | string | No | Gene identifier (HGNC) | EIF4A1, BRCA1, TP53 |
-| aminoacidChanges | string | No | Protein change | M734V, R123*, p.Arg123Ter |
-| variantMinLength | integer | No | Minimum variant length (bp) | 1000 |
-| variantMaxLength | integer | No | Maximum variant length (bp) | 1000000 |
 
 #### Response Granularity Options
 

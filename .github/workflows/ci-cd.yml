@@ -59,6 +59,7 @@ jobs:
             beacon_api.test_release \
             beacon_api.test_environment \
             beacon_api.test_request_body \
+            beacon_api.test_unsupported_params \
             beacon_api.test_repo_hygiene \
             docs.developers.test_docs_json
 
@@ -72,6 +73,7 @@ jobs:
           pip install --quiet 'django==4.0.10' 'djangorestframework==3.14.0'
           python -m unittest \
             beacon_api.test_sanitizer_nested \
+            beacon_api.test_unsupported_params_validate \
             beacon_api.test_middleware
 
       - name: Install runtime + test dependencies

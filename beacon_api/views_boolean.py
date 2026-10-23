@@ -13,6 +13,9 @@ from django.views.decorators.cache import cache_page
 from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
+from .unsupported_params import (
+    INDIVIDUAL_IMPLEMENTED, UnsupportedParameters, reject_unsupported_params,
+)
 from .assembly import assembly_filter
 from .release import get_release
 from .request_body import flatten_beacon_request
@@ -87,7 +90,17 @@ class QueryRateThrottle(AnonRateThrottle):
     default 50/hour. It used to be a hardcoded class attribute, so raising
     RATELIMIT_QUERY_ENDPOINT on a loopback-only instance changed the middleware
     limit but not this one, and the API kept answering 429.
+
+    ``scope`` is its own cache namespace. Inherited from AnonRateThrottle it was
+    ``anon``, i.e. the same ``throttle_anon_<ip>`` history as every metadata
+    view, so the Beacon Network's health polling (/info, /datasets, 24 requests
+    an hour) spent half of the 50-query budget. Health polling now counts only
+    against the default anon throttle, and queries only against this one.
+    X-Beacon-Aggregator is deliberately NOT used to exempt anyone: any caller
+    can send it.
     """
+
+    scope = 'query'
 
     def get_rate(self):
         return getattr(settings, 'BEACON_RATE_LIMITS', {}).get('query') or '50/hour'
@@ -459,6 +472,10 @@ def individual_query_boolean(request):
         # endpoint's boolean answer into an oracle for binary-searching an
         # individual's disease code one character at a time, and
         # `{"sex": {...}}` would 500 on `.upper()`.
+        try:
+            reject_unsupported_params(query_params, allowed=INDIVIDUAL_IMPLEMENTED)
+        except UnsupportedParameters as e:
+            return _error_response(status.HTTP_400_BAD_REQUEST, str(e))
         try:
             reject_operator_keys(query_params)
             sex = scalar_query_value(query_params.get('sex'), 'sex')
