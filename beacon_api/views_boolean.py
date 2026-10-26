@@ -20,7 +20,7 @@ from .assembly import assembly_filter
 from .release import get_release
 from .request_body import flatten_beacon_request
 from .capabilities import (
-    is_assembly_served, is_dataset_scope_supported, served_assemblies,
+    describe_coverage, is_assembly_served, is_dataset_scope_supported, served_assemblies,
     unserved_assembly_message, unsupported_dataset_scope_message,
 )
 from .query_vocabulary import UnknownSex, canonical_sex, variant_type_filter
@@ -619,6 +619,11 @@ def datasets_boolean(request):
                 entry['variantCount'] = size['variants']
             if isinstance(size.get('samples'), int):
                 entry['sampleCount'] = size['samples']
+            # What this dataset can serve; omitted (not guessed) until the
+            # loader has stored it with `manage.py compute_coverage`.
+            coverage = describe_coverage(ds.coverage)
+            if coverage is not None:
+                entry['coverage'] = coverage
             results.append(entry)
 
         result_sets = []

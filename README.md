@@ -17,7 +17,7 @@ as separate containers behind one reverse proxy.
 | Path | Role | Stack | Production URL |
 |------|------|-------|----------------|
 | **`beacon_api/`** + **`beacon_project/`** | **Backend API** — Beacon v2 endpoints (`/api/g_variants`, `/api/datasets`, …) | Django 4.0 + DRF + MongoEngine | `https://api-beacon.afrigen-d.dev/api/` |
-| **`frontend/`** | **Web UI** — query form, results table, datasets browser | Next.js 14 (App Router) + TypeScript + Tailwind | `https://beacon.afrigen-d.org/` |
+| **`frontend/`** | **Web UI** — query form, results table, datasets browser | Next.js 16 (App Router) + TypeScript + Tailwind | `https://beacon.afrigen-d.org/` |
 | **`afrigend-beacon2-tools/`** | Data-loading toolkit — VCF→Beacon transformer, phenotype loader, MongoDB import/export | Python | (offline) |
 | **`compose/`** | Docker Compose stacks for dev / prod / frontend-only | YAML | — |
 | **`nginx/`** | Production reverse proxy config (the proxy actually serving prod today) | nginx | — |

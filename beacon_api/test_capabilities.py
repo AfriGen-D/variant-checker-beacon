@@ -118,3 +118,35 @@ class ServedAssemblyTests(unittest.TestCase):
         # It must never imply the variant is absent — that is the bug.
         self.assertNotIn("not found", low)
         self.assertNotIn("does not exist", low)
+
+
+class DescribeCoverageTests(unittest.TestCase):
+    """What a dataset says it can serve, for /datasets (never invented)."""
+
+    def test_nothing_stored_reports_nothing(self):
+        # Absent is "not reported", never "serves nothing" or "serves everything".
+        from beacon_api.capabilities import describe_coverage
+        self.assertIsNone(describe_coverage(None))
+        self.assertIsNone(describe_coverage({}))
+
+    def test_chromosomes_come_back_in_natural_order(self):
+        from beacon_api.capabilities import describe_coverage
+        out = describe_coverage({'chromosomes': ['10', '2', 'X', '1'], 'alleleFrequency': True})
+        self.assertEqual(out['chromosomes'], ['1', '2', '10', 'X'])
+
+    def test_allele_frequency_is_a_bool_and_defaults_to_false(self):
+        from beacon_api.capabilities import describe_coverage
+        self.assertIs(describe_coverage({'chromosomes': ['1'], 'alleleFrequency': True})['alleleFrequency'], True)
+        # Unproven frequency must not be advertised.
+        self.assertIs(describe_coverage({'chromosomes': ['1']})['alleleFrequency'], False)
+        self.assertIs(describe_coverage({'chromosomes': ['1'], 'alleleFrequency': 'yes'})['alleleFrequency'], False)
+
+    def test_junk_chromosomes_are_dropped_and_duplicates_collapsed(self):
+        from beacon_api.capabilities import describe_coverage
+        out = describe_coverage({'chromosomes': ['1', '1', '', None, 5, 'chr2']})
+        self.assertEqual(out['chromosomes'], ['1'])
+
+    def test_stored_but_unusable_reports_nothing(self):
+        from beacon_api.capabilities import describe_coverage
+        self.assertIsNone(describe_coverage({'chromosomes': 'not a list'}))
+        self.assertIsNone(describe_coverage({'chromosomes': []}))
