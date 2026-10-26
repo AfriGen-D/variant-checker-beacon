@@ -21,7 +21,7 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   for up to 5 minutes after a deploy an identical URL is served from the old release. Measured: the pre-deploy probe
   `geneId=NOSUCHGENE_ZZZ&limit=1` still returned the old 200 YES minutes after v1.1.12 was live, and a fresh URL returned 400.
   Probe a new URL (change `limit` or add `_t`) after any deploy that changes answers; consider clearing the cache in the deploy.
-  FIX IN PR (not yet deployed): the Redis `KEY_PREFIX` is now `beacon_boolean:<BEACON_RELEASE>` (`cache_key_prefix` in
+  FIX MERGED (PR 140, b73a55a), NOT YET TAGGED OR DEPLOYED: the Redis `KEY_PREFIX` is now `beacon_boolean:<BEACON_RELEASE>` (`cache_key_prefix` in
   `beacon_api/release.py`), so a new release never reads the previous release's cached answers. To verify after the next tag:
   probe the same URL before and after the deploy, expect the new release's answer on the first post-deploy request.
 - [ ] **G7, OPEN (new 2026-10-23): spec compliance gaps, read against the Beacon v2 request-parameters schema and the
@@ -30,7 +30,10 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   without saying so. DECIDED 2026-10-23: keep it, not a 400, because the Beacon Network form (`validators.ts`, alleles
   `.optional()`) and this beacon's own frontend both let users leave alleles blank; it is documented as an extension in
   `docs/SPEC_CONFORMANCE.md`. Still open: have the response say which question was answered (needs a spec-safe place for it). (b) The spec names are `aminoacidChange` (singular)
-  and `genomicAlleleShortForm`; both are refused today. (c) done: documented in `docs/SPEC_CONFORMANCE.md` (G3, G4 fixed in the same PR).
+  and `genomicAlleleShortForm`; both are refused today. Assessed 2026-10-27: `aminoacidChange` stays a 400 by design
+  (variants carry no protein annotation, see `beacon_api/unsupported_params.py`). Only `genomicAlleleShortForm` is
+  implementable: it needs an HGVS g. parser plus RefSeq accession to assembly mapping (NC_000011.10 is GRCh38, .9 is
+  GRCh37) and HGVS 1-based to stored 0-based conversion, with a positive control (rs334, 11:5227002 T>A) before shipping. (c) done: documented in `docs/SPEC_CONFORMANCE.md` (G3, G4 fixed in the same PR).
 - [x] **G3, SHIPPED AND VERIFIED ON PRODUCTION in v1.1.13 (tag on ecfd970, deployed 2026-10-23 16:09 SAST, run 39966231941,
   about 6.9 minutes).** Every error body is a Beacon error envelope with `receivedRequestSummary`. Production, fresh URLs:
   400 (`geneId`, unknown parameter) and 405 (`POST /info`) all return `{meta, error}` with `apiVersion`, `requestedGranularity`,
