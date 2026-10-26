@@ -111,6 +111,8 @@ class Dataset(me.Document):
     # Extended fields for Beacon v2
     dataset_type = me.StringField(default="genomics")
     dataset_size = me.DictField()  # For storing variant count, sample count, etc.
+    # {'chromosomes': [...], 'alleleFrequency': bool}, set by `manage.py compute_coverage`.
+    coverage = me.DictField()
     contact_info = me.DictField()
     
     # Metadata fields

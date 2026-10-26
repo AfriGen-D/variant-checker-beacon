@@ -60,7 +60,7 @@ The Beacon API provides **13 primary endpoints** organized into two categories:
 - `GET/POST /api/g_variants` - Genomic variants
 - `GET/POST /api/individuals` - Individuals
 - `GET/POST /api/biosamples` - Biosamples
-- `GET/POST /api/datasets` - Datasets
+- `GET/POST /api/datasets` - Datasets. Each entry may carry `coverage`: `{chromosomes: [...], alleleFrequency: bool}`, present only after `manage.py compute_coverage --apply` has stored it (absent means not reported, not none)
 - `GET/POST /api/cohorts` - Cohorts
 - `GET/POST /api/analyses` - Analyses
 - `GET/POST /api/filtering_terms` - Filtering terms

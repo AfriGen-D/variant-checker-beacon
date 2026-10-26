@@ -48,6 +48,7 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   no `start` (spec-strict, breaks chromosome-only checks the UI may use), (b) keep and have the network baseline it. Blocked on:
   the user, because it reverses the 2026-10-23 decision. Recommendation: (b) is the lesser change, (a) is spec-strict; confirm
   no frontend path sends a start-less query first (`grep -rn referenceName frontend/src`).
+- [ ] **COVERAGE, IN PR (user said go 2026-10-27).** `/api/datasets` entries carry `coverage` (chromosomes held, `alleleFrequency` bool) once stored; absent until then. Code: `describe_coverage` (`capabilities.py`, 5 tests), `Dataset.coverage`, `manage.py compute_coverage`. NOT done: running it on production (a write to the `datasets` document, the user names it; dry run first: `docker exec beacon-api-boolean python manage.py compute_coverage --settings=beacon_project.settings_boolean`), the UI "not covered" state and tile (frontend reads `coverage`), the network showing it per member (network session). View wiring is not unit-tested (no Django locally); verify on dev after deploy.
 - [ ] **G5, OPEN, other repo.** `african-beacon-network/backend/fixtures/conformance_known_issues.yaml` baselines AfriGen-D
   failures that no longer occur and would hide a real regression of `/configuration` or `/map`. Delete the stale entries
   (that repo's own rule). Not touched from here.

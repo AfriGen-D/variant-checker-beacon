@@ -105,3 +105,40 @@ def unserved_assembly_message(assembly, served):
         f'answer for that build. This is not a statement about whether the '
         f'variant exists. Data held: {held}.'
     )
+
+
+# ── Dataset coverage ────────────────────────────────────────────────────────
+#
+# Which chromosomes a dataset holds and whether it carries allele frequencies.
+# Stored on the Dataset by the loader (``manage.py compute_coverage``), never
+# guessed at request time: scanning ~42M variants per request is what the
+# precomputed ``dataset_size`` exists to avoid. Absent means "not reported",
+# which is different from "none" and from "all".
+
+import re
+
+_CHROMOSOME = re.compile(r'^(?:[1-9]|1\d|2[0-2]|X|Y|MT)$')
+
+
+def _chromosome_order(name):
+    return (0, int(name)) if name.isdigit() else (1, ['X', 'Y', 'MT'].index(name))
+
+
+def describe_coverage(stored):
+    """The coverage block for a dataset, or ``None`` when nothing usable is stored.
+
+    ``alleleFrequency`` is True only for a literal ``True``: a frequency that
+    was not proven is never advertised.
+    """
+    if not isinstance(stored, dict):
+        return None
+    raw = stored.get('chromosomes')
+    if not isinstance(raw, list):
+        return None
+    names = {c for c in raw if isinstance(c, str) and _CHROMOSOME.match(c)}
+    if not names:
+        return None
+    return {
+        'chromosomes': sorted(names, key=_chromosome_order),
+        'alleleFrequency': stored.get('alleleFrequency') is True,
+    }
