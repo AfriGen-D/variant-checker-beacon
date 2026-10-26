@@ -41,6 +41,13 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
 - [x] **G4, DONE (PR 137, in v1.1.13).** `docs/SPEC_CONFORMANCE.md` and the README badge now say 10 of 11 entities valid and list the
   known gaps. EGA verifier re-run on production v1.1.12 on 2026-10-23: 10 valid, `Dataset` failed (five per-dataset routes
   answer 501 by design). Still open: decide whether to keep 501 on those routes.
+- [ ] **G8, OPEN, DECISION CONFLICT (new 2026-10-27, from the network's admission gate).** The network's behavioural verifier
+  (`african-beacon-network` `behaviour_checks.py:257`, `params:missing-start`) expects HTTP 400 for a query with no `start`; this
+  beacon answers a true YES (G7a, decided 2026-10-23 to keep it because both frontends allow blank alleles/position). Today this
+  beacon would FAIL the network's gate (network TASKS.md line 37). Options: (a) 400 on a locus query with `referenceName` and
+  no `start` (spec-strict, breaks chromosome-only checks the UI may use), (b) keep and have the network baseline it. Blocked on:
+  the user, because it reverses the 2026-10-23 decision. Recommendation: (b) is the lesser change, (a) is spec-strict; confirm
+  no frontend path sends a start-less query first (`grep -rn referenceName frontend/src`).
 - [ ] **G5, OPEN, other repo.** `african-beacon-network/backend/fixtures/conformance_known_issues.yaml` baselines AfriGen-D
   failures that no longer occur and would hide a real regression of `/configuration` or `/map`. Delete the stale entries
   (that repo's own rule). Not touched from here.
