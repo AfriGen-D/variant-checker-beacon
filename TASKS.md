@@ -21,6 +21,9 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   for up to 5 minutes after a deploy an identical URL is served from the old release. Measured: the pre-deploy probe
   `geneId=NOSUCHGENE_ZZZ&limit=1` still returned the old 200 YES minutes after v1.1.12 was live, and a fresh URL returned 400.
   Probe a new URL (change `limit` or add `_t`) after any deploy that changes answers; consider clearing the cache in the deploy.
+  FIX IN PR (not yet deployed): the Redis `KEY_PREFIX` is now `beacon_boolean:<BEACON_RELEASE>` (`cache_key_prefix` in
+  `beacon_api/release.py`), so a new release never reads the previous release's cached answers. To verify after the next tag:
+  probe the same URL before and after the deploy, expect the new release's answer on the first post-deploy request.
 - [ ] **G7, OPEN (new 2026-10-23): spec compliance gaps, read against the Beacon v2 request-parameters schema and the
   docs.genomebeacons.org query table.** (a) A point query with only `referenceName` and `start` is not a defined query type; the
   schema prose says a lone `start` needs `alternateBases`, the docs table asks for both bases. We answer "any variant here"

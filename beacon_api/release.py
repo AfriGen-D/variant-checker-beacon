@@ -28,3 +28,20 @@ def get_release(environ=None):
     """
     env = os.environ if environ is None else environ
     return (env.get('BEACON_RELEASE') or '').strip() or UNKNOWN_RELEASE
+
+
+def cache_key_prefix(base, environ=None):
+    """
+    Cache key prefix scoped to the running release: ``<base>:<release>``.
+
+    ``cache_page`` keys on the URL, so without this a fresh deploy answers an
+    identical URL from the previous release's cache for up to five minutes
+    (measured after v1.1.12: a pre-deploy probe still returned the old 200 YES
+    while a fresh URL returned 400). Anything outside ``[A-Za-z0-9._-]`` in the
+    stamp is replaced so it cannot reach the key.
+    """
+    release = ''.join(
+        c if (c.isascii() and (c.isalnum() or c in '._-')) else '_'
+        for c in get_release(environ)
+    )
+    return f'{base}:{release}'
