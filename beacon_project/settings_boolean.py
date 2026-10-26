@@ -10,6 +10,8 @@ from urllib.parse import quote_plus
 import mongoengine
 from decouple import config, Csv
 
+from beacon_api.release import cache_key_prefix
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Error tracking — GlitchTip (Sentry-protocol). No-op when SENTRY_DSN is unset.
@@ -185,7 +187,9 @@ CACHES = {
             'SOCKET_CONNECT_TIMEOUT': 5,
             'SOCKET_TIMEOUT': 5,
         },
-        'KEY_PREFIX': 'beacon_boolean',
+        # Release-scoped so a deploy never serves the previous release's
+        # cached answers (TASKS G6).
+        'KEY_PREFIX': cache_key_prefix('beacon_boolean'),
         'TIMEOUT': CACHE_TIMEOUT,
     }
 }

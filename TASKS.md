@@ -21,6 +21,9 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   for up to 5 minutes after a deploy an identical URL is served from the old release. Measured: the pre-deploy probe
   `geneId=NOSUCHGENE_ZZZ&limit=1` still returned the old 200 YES minutes after v1.1.12 was live, and a fresh URL returned 400.
   Probe a new URL (change `limit` or add `_t`) after any deploy that changes answers; consider clearing the cache in the deploy.
+  FIX IN PR (not yet deployed): the Redis `KEY_PREFIX` is now `beacon_boolean:<BEACON_RELEASE>` (`cache_key_prefix` in
+  `beacon_api/release.py`), so a new release never reads the previous release's cached answers. To verify after the next tag:
+  probe the same URL before and after the deploy, expect the new release's answer on the first post-deploy request.
 - [ ] **G7, OPEN (new 2026-10-23): spec compliance gaps, read against the Beacon v2 request-parameters schema and the
   docs.genomebeacons.org query table.** (a) A point query with only `referenceName` and `start` is not a defined query type; the
   schema prose says a lone `start` needs `alternateBases`, the docs table asks for both bases. We answer "any variant here"
@@ -38,6 +41,13 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
 - [x] **G4, DONE (PR 137, in v1.1.13).** `docs/SPEC_CONFORMANCE.md` and the README badge now say 10 of 11 entities valid and list the
   known gaps. EGA verifier re-run on production v1.1.12 on 2026-10-23: 10 valid, `Dataset` failed (five per-dataset routes
   answer 501 by design). Still open: decide whether to keep 501 on those routes.
+- [ ] **G8, OPEN, DECISION CONFLICT (new 2026-10-27, from the network's admission gate).** The network's behavioural verifier
+  (`african-beacon-network` `behaviour_checks.py:257`, `params:missing-start`) expects HTTP 400 for a query with no `start`; this
+  beacon answers a true YES (G7a, decided 2026-10-23 to keep it because both frontends allow blank alleles/position). Today this
+  beacon would FAIL the network's gate (network TASKS.md line 37). Options: (a) 400 on a locus query with `referenceName` and
+  no `start` (spec-strict, breaks chromosome-only checks the UI may use), (b) keep and have the network baseline it. Blocked on:
+  the user, because it reverses the 2026-10-23 decision. Recommendation: (b) is the lesser change, (a) is spec-strict; confirm
+  no frontend path sends a start-less query first (`grep -rn referenceName frontend/src`).
 - [ ] **G5, OPEN, other repo.** `african-beacon-network/backend/fixtures/conformance_known_issues.yaml` baselines AfriGen-D
   failures that no longer occur and would hide a real regression of `/configuration` or `/map`. Delete the stale entries
   (that repo's own rule). Not touched from here.
