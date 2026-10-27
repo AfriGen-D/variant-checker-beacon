@@ -89,5 +89,12 @@ class ExpandTests(unittest.TestCase):
             expand_genomic_allele_short_form({'genomicAlleleShortForm': ['NC_000011.10:g.5227002T>A']})
 
 
+    def test_a_long_conflicting_assembly_is_not_echoed_in_full(self):
+        with self.assertRaises(HgvsError) as ctx:
+            expand_genomic_allele_short_form(
+                {'genomicAlleleShortForm': 'NC_000011.10:g.5227002T>A', 'assemblyId': 'X' * 500})
+        self.assertLess(len(str(ctx.exception)), 150)
+
+
 if __name__ == '__main__':
     unittest.main()

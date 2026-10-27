@@ -82,7 +82,7 @@ def expand_genomic_allele_short_form(params):
     asked = params.get('assemblyId')
     if asked is not None and asked != parsed['assemblyId']:
         raise HgvsError(
-            f'assemblyId {asked} disagrees with the accession, which is {parsed["assemblyId"]}')
+            f'assemblyId {str(asked)[:40]} disagrees with the accession, which is {parsed["assemblyId"]}')
     expanded = {k: v for k, v in params.items() if k != KEY}
     expanded.update({k: str(v) for k, v in parsed.items()})
     return expanded

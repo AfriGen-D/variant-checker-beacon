@@ -34,8 +34,8 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   (variants carry no protein annotation, see `beacon_api/unsupported_params.py`). Only `genomicAlleleShortForm` is
   implementable: it needs an HGVS g. parser plus RefSeq accession to assembly mapping (NC_000011.10 is GRCh38, .9 is
   GRCh37) and HGVS 1-based to stored 0-based conversion, with a positive control (rs334, 11:5227002 T>A) before shipping. LOCAL ONLY on `docs/g6-merged-status`: parser 6a3ebde and
-  `expand_genomic_allele_short_form` e60bd80 in `beacon_api/hgvs.py` (15 tests, both guards mutation-checked). NOT done: call
-  the expander before `reject_unsupported_params`/`validate_query_request` in `views_boolean.py` (~line 126-137), then verify
+  `expand_genomic_allele_short_form` e60bd80 in `beacon_api/hgvs.py` (15 tests, both guards mutation-checked). Wired into
+  `g_variants` in `views_boolean.py` before `validate_query_request` (HgvsError is a 400). NOT done: verify
   `genomicAlleleShortForm=NC_000011.10:g.5227002T>A` is true and `...5227001T>A` false on dev (no Django locally). (c) done: documented in `docs/SPEC_CONFORMANCE.md` (G3, G4 fixed in the same PR).
 - [x] **G3, SHIPPED AND VERIFIED ON PRODUCTION in v1.1.13 (tag on ecfd970, deployed 2026-10-23 16:09 SAST, run 39966231941,
   about 6.9 minutes).** Every error body is a Beacon error envelope with `receivedRequestSummary`. Production, fresh URLs:
