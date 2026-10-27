@@ -55,3 +55,34 @@ def parse_genomic_allele_short_form(value):
         'referenceBases': ref,
         'alternateBases': alt,
     }
+
+
+#: The request key the Beacon v2 spec uses for an HGVS allele.
+KEY = 'genomicAlleleShortForm'
+
+#: Locus fields the HGVS string already fixes; sending both is ambiguous.
+_LOCUS_FIELDS = ('referenceName', 'chromosome', 'start', 'end', 'position',
+                 'referenceBases', 'alternateBases')
+
+
+def expand_genomic_allele_short_form(params):
+    """Return a copy of `params` with ``genomicAlleleShortForm`` replaced by the
+    explicit query fields (string values, as from a query string).
+
+    Refuses a request that also sets a locus field, or an ``assemblyId`` that
+    disagrees with the accession: guessing which one the caller meant would
+    answer a question they may not have asked."""
+    if KEY not in params:
+        return params
+    clashes = [name for name in _LOCUS_FIELDS if name in params]
+    if clashes:
+        raise HgvsError(
+            f'{KEY} already fixes the locus; do not also send {", ".join(clashes)}')
+    parsed = parse_genomic_allele_short_form(params[KEY])
+    asked = params.get('assemblyId')
+    if asked is not None and asked != parsed['assemblyId']:
+        raise HgvsError(
+            f'assemblyId {asked} disagrees with the accession, which is {parsed["assemblyId"]}')
+    expanded = {k: v for k, v in params.items() if k != KEY}
+    expanded.update({k: str(v) for k, v in parsed.items()})
+    return expanded
