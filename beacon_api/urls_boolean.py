@@ -3,13 +3,13 @@ URL configuration for boolean-only Beacon API
 Minimal endpoints for public discovery
 """
 from django.urls import path
-from . import views_boolean
+from . import service_info, views_boolean
 
 urlpatterns = [
     # Core endpoints
     path('', views_boolean.beacon_info_boolean, name='beacon-info'),
     path('info', views_boolean.beacon_info_boolean, name='beacon-service-info'),
-    path('service-info', views_boolean.beacon_info_boolean, name='beacon-service-info-alias'),
+    path('service-info', service_info.service_info, name='beacon-service-info-alias'),
 
     # GA4GH Beacon v2 required discovery endpoints
     path('entry_types', views_boolean.beacon_entry_types, name='beacon-entry-types'),

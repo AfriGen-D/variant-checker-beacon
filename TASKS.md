@@ -37,7 +37,7 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   `requestedSchemas` and `pagination` in the summary; rs334 11:5227001 true, 5227000 false. NOT exercised on production: a real
   429 (it would lock the tester's IP out of `g_variants` for an hour); the 429 bodies are covered by
   `beacon_api/test_error_envelopes.py` (DRF throttle with `Retry-After`, and the rate-limit middleware). Still open under G3:
-  `/service-info` equals `/info`, and Django HTML 404 for unrouted paths.
+  `/service-info` equals `/info` (FIXED IN BRANCH `feat/ga4gh-service-info`, `beacon_api/service_info.py`, 7 tests, not yet in a PR), and Django HTML 404 for unrouted paths.
 - [x] **G4, DONE (PR 137, in v1.1.13).** `docs/SPEC_CONFORMANCE.md` and the README badge now say 10 of 11 entities valid and list the
   known gaps. EGA verifier re-run on production v1.1.12 on 2026-10-23: 10 valid, `Dataset` failed (five per-dataset routes
   answer 501 by design). Still open: decide whether to keep 501 on those routes.
