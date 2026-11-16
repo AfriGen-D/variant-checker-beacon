@@ -57,3 +57,4 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
 - [ ] Re-run the review after the ten Taine population beacons are loaded and registered: not measurable today
   (production holds one dataset, `H3A_V6_AFR`).
 - [ ] Stale dependabot PRs #1, #57, #70.
+- [ ] **GTM tag GTM-NZ5LBJLV on beacon.afrigen-d.org, PR #142 OPEN (user asked merge and deploy 2026-11-16).** Code, nginx CSP, `docs/ANALYTICS.md` and a CI runner pin (`ubuntu-24.04`, Python 3.9) are pushed. NOT done: CI green on the pin (run in progress), merge, tag, manual deploy on `afrigend-beacon-prod` (rebuild `beacon-frontend`, reload nginx; the CSP file is mounted), GA Realtime check. Open decisions: strip the variant query string from `page_location` in GTM/GA4; consent banner (POPIA/GDPR). Also: ci-cd.yml's other `ubuntu-latest` jobs and `deploy.yml` still use hosted runners.
