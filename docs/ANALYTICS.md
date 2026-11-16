@@ -19,7 +19,8 @@ The FedImpute site uses its own GA4 measurement id (`G-C6SD0NN8ZX`, see the FedI
 ## Where the tag is loaded
 
 - `frontend/src/app/layout.tsx` loads `GTM-NZ5LBJLV` on every page.
-- `nginx/nginx-prod.conf` CSP allows `googletagmanager.com` and `google-analytics.com`. Without it the tag is blocked.
+- `nginx/nginx-prod.conf` CSP allows `googletagmanager.com` and `google-analytics.com`. Correction (measured 2026-11-16): production does not use this file. The production nginx image bakes in `nginx-docker.conf`, which is not tracked in git and lives only on the node (`~/afrigend-beacon2/nginx/`); its CSP is `script-src 'self' 'unsafe-inline'`.
+- The public responses of beacon.afrigen-d.org carry no Content-Security-Policy header today (the UCT front proxy does not pass it), so the CSP is not what decides whether the tag loads. If a CSP is ever enforced, it must allow `googletagmanager.com` and `google-analytics.com` in that baked config; the nginx image has not been rebuilt in 6 months.
 
 ## Privacy notes
 
