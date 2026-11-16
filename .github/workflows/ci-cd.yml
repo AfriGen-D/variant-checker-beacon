@@ -22,7 +22,9 @@ env:
 jobs:
   # ── Test ──────────────────────────────────────────
   test:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which has no Python 3.9, and
+    # production (Dockerfile.boolean) runs 3.9, so the tests must too.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
