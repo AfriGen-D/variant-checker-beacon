@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Result cell: four states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:oklch(1 0 0);color:oklch(0.145 0.017 285.823)}
+*{box-sizing:border-box}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.cell{height:64px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:14px;font-weight:600}
+.cell svg{flex:none}
+.cell .row{display:flex;align-items:center;gap:6px}
+.cell .sub{font-size:11px;font-weight:400}
+.present{background:oklch(0.955 0.06 162);border:1px solid oklch(0.82 0.1 162);color:oklch(0.36 0.09 162)}
+.present .sub{color:oklch(0.42 0.08 162)}
+.absent{background:oklch(1 0 0);border:1px solid oklch(0.922 0.004 264.542);color:oklch(0.38 0.02 264)}
+.absent .sub{color:oklch(0.45 0.02 264)}
+.notcov{background:repeating-linear-gradient(135deg,oklch(0.93 0.004 264) 0 6px,oklch(0.985 0 0) 6px 12px);border:1px solid oklch(0.85 0.005 264);color:oklch(0.33 0.02 264)}
+.notcov .pill{background:oklch(1 0 0);border:1px solid oklch(0.85 0.005 264);border-radius:999px;padding:2px 10px;display:flex;align-items:center;gap:6px}
+.unch{background:oklch(1 0 0);border:1.5px dashed oklch(0.62 0.02 264);color:oklch(0.38 0.02 264)}
+.unch .sub{color:oklch(0.45 0.02 264)}
+.card{border:1px solid oklch(0.922 0.004 264.542);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;background:oklch(1 0 0)}
+.card h3{margin:0;font-size:14px;font-weight:600}
+.card p{margin:0;font-size:13px;line-height:1.45;color:oklch(0.45 0.013 264.364)}
+.api{font-size:11.5px;color:oklch(0.45 0.013 264.364);border-top:1px solid oklch(0.922 0.004 264.542);padding-top:8px;line-height:1.5}
+.api code{color:oklch(0.25 0.02 264)}
+</style>
+</helmet>
+<div style="width:1065px;height:520px;padding:32px 36px;display:flex;flex-direction:column;gap:20px;background:oklch(1 0 0)">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:650;letter-spacing:-0.01em">Result cell: a "no" and a "cannot answer" never look alike</h1>
+    <p style="margin:0;font-size:14px;line-height:1.5;color:oklch(0.45 0.013 264.364);max-width:880px">One answer per dataset, four states. Each carries a word, an icon and a different pattern, so none depends on colour. The first two are what the beacon says today; the last two need the <code>coverage</code> block from PR 141 to be populated.</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px">
+    <div class="card">
+      <div class="cell present"><span class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Present</span><span class="sub">AF not reported</span></div>
+      <h3>Present</h3>
+      <p>The dataset holds this variant. If an allele frequency is published it shows under the word.</p>
+      <div class="api"><code>resultSets[].exists = true</code></div>
+    </div>
+    <div class="card">
+      <div class="cell absent"><span class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>Absent</span><span class="sub">chromosome covered</span></div>
+      <h3>Absent</h3>
+      <p>The dataset covers this chromosome and has no such variant. A real "no".</p>
+      <div class="api"><code>exists = false</code> and the chromosome is in <code>coverage.chromosomes</code></div>
+    </div>
+    <div class="card">
+      <div class="cell notcov"><span class="pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Not covered</span></div>
+      <h3>Not covered</h3>
+      <p>The dataset does not hold this chromosome (H3A V6 is autosomes only), so it cannot answer. This is not a "no".</p>
+      <div class="api"><code>exists = false</code> and the chromosome is not in <code>coverage.chromosomes</code></div>
+    </div>
+    <div class="card">
+      <div class="cell unch"><span class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1.1.9-1.1 1.7"/><path d="M12 17h.01"/></svg>No, unchecked</span><span class="sub">coverage not reported</span></div>
+      <h3>No, unchecked</h3>
+      <p>The dataset said no, but it has not said which chromosomes it holds, so this may really be "not covered".</p>
+      <div class="api"><code>exists = false</code> and the dataset has no <code>coverage</code> key</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:24px;align-items:flex-start;border:1px solid oklch(0.922 0.004 264.542);border-radius:12px;padding:14px 16px;background:oklch(0.985 0.002 264)">
+    <div style="flex:1;font-size:13px;line-height:1.5;color:oklch(0.35 0.013 264.364)"><b>Today on production</b> every "no" would read <b>No, unchecked</b>: <code>/api/datasets</code> has no <code>coverage</code> key on H3A V6 until <code>compute_coverage</code> is run. Never show "Not covered" for a missing key.</div>
+    <div style="flex:1;font-size:13px;line-height:1.5;color:oklch(0.35 0.013 264.364)"><b>Network UI adds a fifth</b> state, "No answer" (timed out or offline), which it already has as <code>Timed out</code> and <code>not_queried</code> in <code>PeerRow</code>.</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1065,"height":520}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
