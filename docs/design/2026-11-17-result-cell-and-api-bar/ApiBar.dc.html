@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>API call bar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:oklch(1 0 0);color:oklch(0.145 0.017 285.823)}
+*{box-sizing:border-box}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.bar{display:flex;align-items:center;gap:12px;height:48px;padding:0 16px;border:1px solid oklch(0.922 0.004 264.542);background:oklch(0.985 0.002 264);font-size:13px}
+.lbl{font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.45 0.013 264.364)}
+.get{font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;background:oklch(0.94 0.04 262);color:oklch(0.4 0.18 262);border:1px solid oklch(0.85 0.07 262)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:8px;border:1px solid oklch(0.922 0.004 264.542);background:oklch(1 0 0);font-size:12px;font-weight:500;color:oklch(0.145 0.017 285.823);cursor:pointer}
+.btn:focus-visible{outline:2px solid oklch(0.546 0.245 262.881);outline-offset:2px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{text-align:left;font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:oklch(0.45 0.013 264.364);padding:6px 10px;border-bottom:1px solid oklch(0.922 0.004 264.542)}
+td{padding:7px 10px;border-bottom:1px solid oklch(0.95 0.003 264);vertical-align:top}
+td.note{color:oklch(0.45 0.013 264.364)}
+</style>
+</helmet>
+<div style="width:1065px;height:520px;padding:24px 36px;display:flex;flex-direction:column;gap:18px;background:oklch(1 0 0)">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:650;letter-spacing:-0.01em">API call bar: show the exact request behind a view</h1>
+    <p style="margin:0;font-size:13.5px;line-height:1.5;color:oklch(0.45 0.013 264.364);max-width:760px">Collapsed it sits at the foot of results. Open it to read the parameters, see how the screen position became the API position, and copy the curl command. The button below is live.</p>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <span class="lbl">Collapsed</span>
+    <div class="bar" style="border-radius:10px">
+      <span class="lbl">API call</span><span class="get">GET</span><code>/api/g_variants</code><span style="color:oklch(0.45 0.013 264.364)">6 params</span>
+      <span style="flex:1"></span>
+      <button type="button" class="btn">Copy curl</button>
+      <button type="button" class="btn" aria-expanded="false" aria-label="Show request details">Details</button>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <span class="lbl">Open (click Details to toggle)</span>
+    <div style="border:1px solid oklch(0.922 0.004 264.542);border-radius:10px;overflow:hidden">
+      <div class="bar" style="border:0;border-bottom:1px solid oklch(0.922 0.004 264.542)">
+        <span class="lbl">API call</span><span class="get">GET</span><code>/api/g_variants</code><span style="color:oklch(0.45 0.013 264.364)">6 params</span>
+        <span style="flex:1"></span>
+        <button type="button" class="btn">Copy curl</button>
+        <button type="button" class="btn" onClick="{{toggle}}" aria-expanded="{{open}}" aria-label="Show request details">{{toggleLabel}}</button>
+      </div>
+      <sc-if value="{{open}}" hint-placeholder-val="{{ true }}">
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px;background:oklch(1 0 0)">
+          <table>
+            <thead><tr><th style="width:190px">Parameter</th><th style="width:150px">Value</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">assemblyId</td><td class="mono">GRCh38</td><td class="note">Reference build chosen on the form.</td></tr>
+              <tr><td class="mono">referenceName</td><td class="mono">11</td><td class="note">Chromosome.</td></tr>
+              <tr><td class="mono">start</td><td class="mono">5227001</td><td class="note">Screen position 5,227,002 minus 1: the API is 0-based, the screen is 1-based.</td></tr>
+              <tr><td class="mono">referenceBases</td><td class="mono">T</td><td class="note">Reference allele.</td></tr>
+              <tr><td class="mono">alternateBases</td><td class="mono">A</td><td class="note">Alternate allele.</td></tr>
+              <tr><td class="mono">requestedGranularity</td><td class="mono">aggregated</td><td class="note">Asks for per-dataset answers and, where published, an allele frequency.</td></tr>
+            </tbody>
+          </table>
+          <div style="border:1px solid oklch(0.922 0.004 264.542);border-radius:8px;background:oklch(0.967 0.003 264.542);padding:10px 12px;font-size:12px;line-height:1.55;overflow-wrap:anywhere" class="mono">curl "https://beacon.afrigen-d.org/api/g_variants?assemblyId=GRCh38&amp;referenceName=11&amp;start=5227001&amp;referenceBases=T&amp;alternateBases=A&amp;requestedGranularity=aggregated"</div>
+          <div style="font-size:12px;color:oklch(0.45 0.013 264.364)">One request per variant row. Queries share a limit of 50 per hour per address, separate from page loads.</div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1065,"height":520}}'>
+class Component extends DCLogic {
+  state = { open: true };
+  renderVals() {
+    const open = this.state.open;
+    return {
+      open: open,
+      toggleLabel: open ? 'Hide' : 'Details',
+      toggle: () => this.setState({ open: !this.state.open }),
+    };
+  }
+}
+</script>
+</body>
+</html>
