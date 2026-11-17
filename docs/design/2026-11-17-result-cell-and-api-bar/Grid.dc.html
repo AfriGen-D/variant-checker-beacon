@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Variant x dataset grid</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:oklch(1 0 0);color:oklch(0.145 0.017 285.823)}
+*{box-sizing:border-box}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.grid{display:grid;grid-template-columns:230px repeat(3,minmax(0,1fr));gap:10px 12px;align-items:center}
+.colhead{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border:1px solid oklch(0.922 0.004 264.542);border-radius:10px;background:oklch(0.985 0.002 264)}
+.colhead b{font-size:13px;font-weight:600}
+.colhead span{font-size:11.5px;color:oklch(0.45 0.013 264.364)}
+.colhead.ex{border-style:dashed;background:oklch(1 0 0)}
+.colhead .tag{align-self:flex-start;font-size:10.5px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:oklch(0.42 0.02 264);background:oklch(0.967 0.003 264.542);border-radius:999px;padding:1px 8px}
+.rowhead{display:flex;flex-direction:column;gap:2px}
+.rowhead .v{font-size:13.5px;font-weight:600}
+.rowhead .s{font-size:11.5px;color:oklch(0.45 0.013 264.364)}
+.cell{height:60px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:13.5px;font-weight:600}
+.cell .row{display:flex;align-items:center;gap:6px}
+.cell .sub{font-size:11px;font-weight:400}
+.present{background:oklch(0.955 0.06 162);border:1px solid oklch(0.82 0.1 162);color:oklch(0.36 0.09 162)}
+.present .sub{color:oklch(0.42 0.08 162)}
+.absent{background:oklch(1 0 0);border:1px solid oklch(0.922 0.004 264.542);color:oklch(0.38 0.02 264)}
+.notcov{background:repeating-linear-gradient(135deg,oklch(0.93 0.004 264) 0 6px,oklch(0.985 0 0) 6px 12px);border:1px solid oklch(0.85 0.005 264);color:oklch(0.33 0.02 264)}
+.notcov .pill{background:oklch(1 0 0);border:1px solid oklch(0.85 0.005 264);border-radius:999px;padding:2px 10px;display:flex;align-items:center;gap:6px}
+.unch{background:oklch(1 0 0);border:1.5px dashed oklch(0.62 0.02 264);color:oklch(0.38 0.02 264)}
+.legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:12px;color:oklch(0.35 0.013 264.364)}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:6px}
+</style>
+</helmet>
+<div style="width:1065px;height:700px;padding:28px 36px;display:flex;flex-direction:column;gap:16px;background:oklch(1 0 0)">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px">
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <h1 style="margin:0;font-size:22px;font-weight:650;letter-spacing:-0.01em">Check several variants at once</h1>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:oklch(0.45 0.013 264.364);max-width:640px">One row per variant, one column per dataset. A locus query already returns every dataset, so each row costs one request, not one per cell.</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button type="button" style="height:36px;padding:0 14px;border-radius:8px;border:1px solid oklch(0.922 0.004 264.542);background:oklch(1 0 0);font-size:13px;font-weight:500;color:oklch(0.145 0.017 285.823)">Add variants</button>
+      <button type="button" style="height:36px;padding:0 14px;border-radius:8px;border:1px solid oklch(0.922 0.004 264.542);background:oklch(1 0 0);font-size:13px;font-weight:500;color:oklch(0.145 0.017 285.823)">Clear</button>
+    </div>
+  </div>
+
+  <div style="border:1px solid oklch(0.922 0.004 264.542);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px">
+    <div class="legend" aria-label="Legend">
+      <span><i style="background:oklch(0.955 0.06 162);border:1px solid oklch(0.82 0.1 162)"></i>Present</span>
+      <span><i style="background:oklch(1 0 0);border:1px solid oklch(0.82 0.005 264)"></i>Absent</span>
+      <span><i style="background:repeating-linear-gradient(135deg,oklch(0.9 0.004 264) 0 3px,oklch(0.985 0 0) 3px 6px);border:1px solid oklch(0.78 0.005 264)"></i>Not covered</span>
+      <span><i style="background:oklch(1 0 0);border:1.5px dashed oklch(0.62 0.02 264)"></i>No, unchecked</span>
+    </div>
+
+    <div class="grid">
+      <div></div>
+      <div class="colhead">
+        <b>H3A V6 African Reference Panel</b>
+        <span>n=1,895 &middot; 42.3M variants &middot; GRCh38 &middot; autosomes</span>
+      </div>
+      <div class="colhead ex">
+        <span class="tag">Example column</span>
+        <b>[Population dataset B]</b>
+        <span>n=[N] &middot; [build] &middot; not loaded yet</span>
+      </div>
+      <div class="colhead ex">
+        <span class="tag">Example column</span>
+        <b>[Population dataset C]</b>
+        <span>n=[N] &middot; [build] &middot; not loaded yet</span>
+      </div>
+
+      <div class="rowhead"><span class="v mono">chr11:5,227,002 T&gt;A</span><span class="s">rs334</span></div>
+      <div class="cell present"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Present</span><span class="sub">AF not reported</span></div>
+      <div class="cell present"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Present</span><span class="sub">AF [value]</span></div>
+      <div class="cell absent"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>Absent</span></div>
+
+      <div class="rowhead"><span class="v mono">chr1:1,000,018 G&gt;A</span><span class="s">1-based display</span></div>
+      <div class="cell present"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Present</span><span class="sub">AF not reported</span></div>
+      <div class="cell absent"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>Absent</span></div>
+      <div class="cell unch"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1.1.9-1.1 1.7"/><path d="M12 17h.01"/></svg>No, unchecked</span></div>
+
+      <div class="rowhead"><span class="v mono">chrX:2,781,480 C&gt;T</span><span class="s">example position</span></div>
+      <div class="cell notcov"><span class="pill"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Not covered</span></div>
+      <div class="cell present"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Present</span><span class="sub">AF [value]</span></div>
+      <div class="cell notcov"><span class="pill"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Not covered</span></div>
+
+      <div class="rowhead"><span class="v mono">chr11:5,227,001 T&gt;A</span><span class="s">example position</span></div>
+      <div class="cell absent"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>Absent</span></div>
+      <div class="cell unch"><span class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1.1.9-1.1 1.7"/><path d="M12 17h.01"/></svg>No, unchecked</span></div>
+      <div class="cell notcov"><span class="pill"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Not covered</span></div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid oklch(0.922 0.004 264.542);padding-top:12px">
+      <button type="button" style="height:38px;padding:0 18px;border-radius:8px;border:1px solid oklch(0.922 0.004 264.542);background:oklch(1 0 0);font-size:13px;font-weight:500;color:oklch(0.145 0.017 285.823)">Load more variants (4 / 20)</button>
+      <span style="font-size:12px;color:oklch(0.45 0.013 264.364)">Rows load 5 at a time to stay inside the 50 requests per hour limit on queries.</span>
+    </div>
+  </div>
+
+  <p style="margin:0;font-size:12px;line-height:1.5;color:oklch(0.45 0.013 264.364)">Real: the H3A V6 column (name, n=1,895, 42.3M variants, GRCh38, autosomes only), rs334 and chr1:1,000,018 are present on production today. Example: the two other columns and the chrX and chr11:5,227,001 rows. This mock assumes <code>compute_coverage</code> has been run for H3A V6; until then its "Absent" cells read "No, unchecked".</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1065,"height":700}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

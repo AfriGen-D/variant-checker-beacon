@@ -68,7 +68,9 @@ until those routes are implemented or the choice is revisited.
 The verifier does not test these, so a green run does not cover them.
 
 1. **Query types.** The spec defines sequence, range, bracket, gene ID, genomic allele short form and amino acid change
-   queries. This beacon supports sequence and range queries. Gene ID, `aminoacidChange`, `genomicAlleleShortForm`,
+   queries. This beacon supports sequence and range queries, and `genomicAlleleShortForm` for single-base HGVS g.
+   substitutions on a GRCh37/GRCh38 `NC_` accession (expanded to the explicit locus; anything else, or mixing it with
+   locus fields, is a 400; `beacon_api/hgvs.py`). Gene ID, `aminoacidChange`,
    bracket (array `start`/`end`) and `variantMinLength`/`variantMaxLength` are refused with HTTP 400 (v1.1.12;
    `beacon_api/unsupported_params.py`), as is any unknown parameter. Before v1.1.12 they were silently dropped and answered
    with a confident YES over the whole panel.
@@ -80,7 +82,8 @@ The verifier does not test these, so a green run does not cover them.
 3. **Error bodies.** From the release carrying this change, every error body (400, 404, 429, 5xx, including the rate-limit
    middleware's 429) is a Beacon error envelope with `receivedRequestSummary`; before it, a 429 was `{"detail": ...}` or
    `{"error", "message"}`.
-4. **`/service-info`** returns the same Beacon info envelope as `/info` rather than a GA4GH `service-info` document.
+4. **`/service-info`** returns a GA4GH `service-info` document (`id`, `name`, `type` {`org.ga4gh`, `beacon`, spec version},
+   `organization`, `version` = the running release) from the release carrying this change; before it, it repeated `/info`.
 5. **Unrouted paths** (for example `/api/nosuchpath`) answer a Django HTML 404, not an envelope.
 6. **Per-dataset routes** answer 501 (see the Dataset row above).
 

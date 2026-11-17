@@ -391,26 +391,27 @@ curl http://localhost:8000/api/service-info
 
 ```json
 {
-  "id": "org.h3abionet.beacon",
-  "name": "H3ABioNet Beacon",
+  "id": "org.afrigen-d.beacon",
+  "name": "AfriGen-D Beacon",
   "type": {
     "group": "org.ga4gh",
     "artifact": "beacon",
-    "version": "2.0"
+    "version": "v2.0.0"
   },
-  "description": "GA4GH Beacon v2 implementation",
+  "description": "GA4GH Beacon v2 API - Public boolean discovery service",
   "organization": {
-    "name": "H3Africa Bioinformatics Network",
-    "url": "https://h3abionet.org"
+    "name": "AfriGen-D",
+    "url": "https://afrigen-d.org"
   },
-  "contactUrl": "https://h3abionet.org/contact",
-  "documentationUrl": "https://beacon.afrigen-d.org/docs",
-  "createdAt": "2024-01-01T00:00:00Z",
-  "updatedAt": "2025-01-26T10:00:00Z",
-  "environment": "production",
-  "version": "1.0.0"
+  "contactUrl": "mailto:support@bioinformaticsinstitute.africa",
+  "documentationUrl": "https://afrigen-d.org",
+  "environment": "prod",
+  "version": "v1.1.14"
 }
 ```
+
+`version` is the release running in the container (`unknown` when the image was not stamped); `type.version` is the
+Beacon spec level. `/info` still returns the Beacon info envelope.
 
 **Specification**: [GA4GH Service Info](https://github.com/ga4gh-discovery/ga4gh-service-info)
 

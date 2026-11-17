@@ -58,6 +58,7 @@ jobs:
             beacon_api.test_assembly \
             beacon_api.test_query_vocabulary \
             beacon_api.test_capabilities \
+            beacon_api.test_hgvs \
             beacon_api.test_release \
             beacon_api.test_environment \
             beacon_api.test_request_body \
@@ -77,7 +78,8 @@ jobs:
             beacon_api.test_sanitizer_nested \
             beacon_api.test_unsupported_params_validate \
             beacon_api.test_error_envelopes \
-            beacon_api.test_middleware
+            beacon_api.test_middleware \
+            beacon_api.test_service_info
 
       - name: Install runtime + test dependencies
         working-directory: afrigend-beacon2-tools
