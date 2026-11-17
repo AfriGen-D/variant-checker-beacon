@@ -22,8 +22,8 @@ env:
 jobs:
   # ── Test ──────────────────────────────────────────
   test:
-    # Pinned: ubuntu-latest moved to 26.04, which has no Python 3.9, and
-    # production (Dockerfile.boolean) runs 3.9, so the tests must too.
+    # Pinned off ubuntu-latest (26.04 lacks some Python versions); the Python
+    # below must match Dockerfile.boolean (3.12; Django 5.2 needs 3.10+).
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +31,7 @@ jobs:
       # Python tools tests (188 tests)
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.12'
 
       # Backend query-correctness suites — 127 tests, ~0.01s.
       #
@@ -73,7 +73,7 @@ jobs:
       # have blocked, the same gap #43 closed for the others.
       - name: Run Django-dependent backend tests
         run: |
-          pip install --quiet 'django==4.0.10' 'djangorestframework==3.14.0'
+          pip install --quiet 'django==5.2.16' 'djangorestframework==3.16.1'
           python -m unittest \
             beacon_api.test_sanitizer_nested \
             beacon_api.test_unsupported_params_validate \
