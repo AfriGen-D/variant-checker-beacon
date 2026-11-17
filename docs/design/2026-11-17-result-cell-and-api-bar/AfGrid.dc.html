@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Allele frequency grid</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:oklch(1 0 0);color:oklch(0.145 0.017 285.823)}
+*{box-sizing:border-box}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.grid{display:grid;grid-template-columns:230px repeat(3,minmax(0,1fr));gap:10px 12px;align-items:center}
+.colhead{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border:1px solid oklch(0.922 0.004 264.542);border-radius:10px;background:oklch(0.985 0.002 264)}
+.colhead b{font-size:13px;font-weight:600}
+.colhead span{font-size:11.5px;color:oklch(0.45 0.013 264.364)}
+.colhead.ex{border-style:dashed;background:oklch(1 0 0)}
+.tag{align-self:flex-start;font-size:10.5px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:oklch(0.42 0.02 264);background:oklch(0.967 0.003 264.542);border-radius:999px;padding:1px 8px}
+.rowhead{display:flex;flex-direction:column;gap:2px}
+.rowhead .v{font-size:13.5px;font-weight:600}
+.rowhead .s{font-size:11.5px;color:oklch(0.45 0.013 264.364)}
+.cell{height:64px;border-radius:10px;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 12px;font-size:13px}
+.cell .top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.cell .af{font-size:18px;font-weight:650;font-variant-numeric:tabular-nums}
+.cell .band{font-size:11px;font-weight:500}
+.bar{height:6px;border-radius:999px;background:oklch(0.97 0.01 262);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:999px;background:oklch(0.546 0.245 262.881)}
+.common{background:oklch(0.93 0.05 262);border:1px solid oklch(0.8 0.09 262);color:oklch(0.27 0.13 262)}
+.common .band{color:oklch(0.33 0.12 262)}
+.low{background:oklch(0.975 0.02 262);border:1px solid oklch(0.88 0.05 262);color:oklch(0.3 0.1 262)}
+.low .band{color:oklch(0.36 0.09 262)}
+.withheld{background:oklch(1 0 0);border:1.5px dashed oklch(0.62 0.02 264);color:oklch(0.38 0.02 264);align-items:flex-start}
+.notrep{background:oklch(0.955 0.06 162);border:1px solid oklch(0.82 0.1 162);color:oklch(0.36 0.09 162);align-items:flex-start}
+.absent{background:oklch(1 0 0);border:1px solid oklch(0.922 0.004 264.542);color:oklch(0.38 0.02 264);align-items:flex-start}
+.notcov{background:repeating-linear-gradient(135deg,oklch(0.93 0.004 264) 0 6px,oklch(0.985 0 0) 6px 12px);border:1px solid oklch(0.85 0.005 264);color:oklch(0.33 0.02 264);align-items:center}
+.notcov .pill{background:oklch(1 0 0);border:1px solid oklch(0.85 0.005 264);border-radius:999px;padding:2px 10px;font-weight:600}
+.state{font-weight:600}
+.legend{display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-size:12px;color:oklch(0.35 0.013 264.364)}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:6px}
+</style>
+</helmet>
+<div style="width:1065px;height:640px;padding:28px 36px;display:flex;flex-direction:column;gap:14px;background:oklch(1 0 0)">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:650;letter-spacing:-0.01em">Allele frequency view: the cell now answers "how common", not just "present"</h1>
+    <p style="margin:0;font-size:13.5px;line-height:1.5;color:oklch(0.45 0.013 264.364);max-width:860px">Same grid, one row per variant and one column per population. The value is the headline, a bar makes populations comparable at a glance, and bands (like RNA-Get's 99 and below-99) say how to read it. A missing number always says why.</p>
+  </div>
+
+  <div class="legend" aria-label="Legend">
+    <span><i style="background:oklch(0.93 0.05 262);border:1px solid oklch(0.8 0.09 262)"></i>Common, 5% or more</span>
+    <span><i style="background:oklch(0.975 0.02 262);border:1px solid oklch(0.88 0.05 262)"></i>Low, 1% to 5%</span>
+    <span><i style="background:oklch(1 0 0);border:1.5px dashed oklch(0.62 0.02 264)"></i>Present, AF withheld (below 1%)</span>
+    <span><i style="background:oklch(0.955 0.06 162);border:1px solid oklch(0.82 0.1 162)"></i>Present, AF not reported</span>
+    <span><i style="background:repeating-linear-gradient(135deg,oklch(0.9 0.004 264) 0 3px,oklch(0.985 0 0) 3px 6px);border:1px solid oklch(0.78 0.005 264)"></i>Not covered</span>
+  </div>
+
+  <div style="border:1px solid oklch(0.922 0.004 264.542);border-radius:12px;padding:16px">
+    <div class="grid">
+      <div></div>
+      <div class="colhead"><b>H3A V6 African Reference Panel</b><span>n=1,895 &middot; GRCh38 &middot; autosomes</span></div>
+      <div class="colhead ex"><span class="tag">Example column</span><b>[Population dataset B]</b><span>n=[N] &middot; [build]</span></div>
+      <div class="colhead ex"><span class="tag">Example column</span><b>[Population dataset C]</b><span>n=[N] &middot; [build]</span></div>
+
+      <div class="rowhead"><span class="v mono">chr11:5,227,002 T&gt;A</span><span class="s">rs334</span></div>
+      <div class="cell notrep"><span class="state">Present</span><span class="band">AF not reported</span></div>
+      <div class="cell common"><div class="top"><span class="af">0.088</span><span class="band">Common</span></div><div class="bar"><i style="width:18%"></i></div></div>
+      <div class="cell low"><div class="top"><span class="af">0.031</span><span class="band">Low</span></div><div class="bar"><i style="width:6%"></i></div></div>
+
+      <div class="rowhead"><span class="v mono">chr1:1,000,018 G&gt;A</span><span class="s">1-based display</span></div>
+      <div class="cell notrep"><span class="state">Present</span><span class="band">AF not reported</span></div>
+      <div class="cell withheld"><span class="state">Present</span><span class="band">AF withheld, below 1%</span></div>
+      <div class="cell common"><div class="top"><span class="af">0.214</span><span class="band">Common</span></div><div class="bar"><i style="width:43%"></i></div></div>
+
+      <div class="rowhead"><span class="v mono">chrX:2,781,480 C&gt;T</span><span class="s">example position</span></div>
+      <div class="cell notcov"><span class="pill">Not covered</span></div>
+      <div class="cell common"><div class="top"><span class="af">0.412</span><span class="band">Common</span></div><div class="bar"><i style="width:82%"></i></div></div>
+      <div class="cell notcov"><span class="pill">Not covered</span></div>
+
+      <div class="rowhead"><span class="v mono">chr11:5,227,001 T&gt;A</span><span class="s">example position</span></div>
+      <div class="cell absent"><span class="state">Absent</span><span class="band">chromosome covered</span></div>
+      <div class="cell absent"><span class="state">Absent</span><span class="band">chromosome covered</span></div>
+      <div class="cell low"><div class="top"><span class="af">0.012</span><span class="band">Low</span></div><div class="bar"><i style="width:2%"></i></div></div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:24px;align-items:flex-start">
+    <p style="flex:1;margin:0;font-size:12px;line-height:1.55;color:oklch(0.35 0.013 264.364)"><b>Real today:</b> the H3A V6 column. rs334 is present, and its stored allele frequency is empty, so production shows "AF not reported" until the frequencies are loaded. <b>Example:</b> every number and the two other columns.</p>
+    <p style="flex:1;margin:0;font-size:12px;line-height:1.55;color:oklch(0.35 0.013 264.364)"><b>Privacy rule shown on the page:</b> values are rounded to 3 decimals and withheld below the floor (1% today). Counts are never shown, and the bar scale is fixed so a small cohort cannot be read off the bar.</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1065,"height":640}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
