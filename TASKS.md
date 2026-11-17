@@ -63,3 +63,4 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
 - [ ] Re-run the review after the ten Taine population beacons are loaded and registered: not measurable today
   (production holds one dataset, `H3A_V6_AFR`).
 - [ ] Stale dependabot PRs #1, #57, #70.
+- [x] **GTM tag GTM-NZ5LBJLV: DONE, LIVE ON PROD v1.1.14 (2026-11-16 20:15 SAST).** `/api/health` reports release v1.1.14; beacon-frontend runs image v1.1.14; the home page references `gtm.js?id=GTM-NZ5LBJLV`. Still open: confirm hits in GA Realtime (needs a GA login); strip the variant query string from `page_location` in GTM/GA4; consent banner decision (POPIA/GDPR). `nginx-docker.conf` is untracked and public responses carry no CSP (docs in #143).

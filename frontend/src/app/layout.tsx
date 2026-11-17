@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from '@/components/Providers';
@@ -6,6 +7,9 @@ import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 
 const inter = Inter({ subsets: ['latin'] });
+
+// Google Tag Manager container for the AfriGen-D Beacon GA4 property.
+const GTM_ID = 'GTM-NZ5LBJLV';
 
 export const metadata: Metadata = {
   title: 'Variant Checker — Beacon',
@@ -19,6 +23,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <Script
+          id="gtm-src"
+          strategy="afterInteractive"
+          src={`https://www.googletagmanager.com/gtm.js?id=${GTM_ID}`}
+        />
+        <Script id="gtm-init" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());`}
+        </Script>
+      </head>
       <body className={`${inter.className} flex flex-col min-h-screen`}>
         <Providers>
           <a
