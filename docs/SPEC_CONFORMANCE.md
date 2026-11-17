@@ -68,7 +68,9 @@ until those routes are implemented or the choice is revisited.
 The verifier does not test these, so a green run does not cover them.
 
 1. **Query types.** The spec defines sequence, range, bracket, gene ID, genomic allele short form and amino acid change
-   queries. This beacon supports sequence and range queries. Gene ID, `aminoacidChange`, `genomicAlleleShortForm`,
+   queries. This beacon supports sequence and range queries, and `genomicAlleleShortForm` for single-base HGVS g.
+   substitutions on a GRCh37/GRCh38 `NC_` accession (expanded to the explicit locus; anything else, or mixing it with
+   locus fields, is a 400; `beacon_api/hgvs.py`). Gene ID, `aminoacidChange`,
    bracket (array `start`/`end`) and `variantMinLength`/`variantMaxLength` are refused with HTTP 400 (v1.1.12;
    `beacon_api/unsupported_params.py`), as is any unknown parameter. Before v1.1.12 they were silently dropped and answered
    with a confident YES over the whole panel.

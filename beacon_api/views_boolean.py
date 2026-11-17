@@ -13,6 +13,7 @@ from django.views.decorators.cache import cache_page
 from datetime import datetime
 from .models import Variant, Dataset, Individual, Cohort, FilteringTerm
 from .validators import validate_query_request, ValidationError
+from .hgvs import HgvsError, expand_genomic_allele_short_form
 from .unsupported_params import (
     INDIVIDUAL_IMPLEMENTED, UnsupportedParameters, reject_unsupported_params,
 )
@@ -130,6 +131,15 @@ def variant_query_boolean(request):
             # produced an UNFILTERED query — an impossible locus answered
             # exists:true. See beacon_api/request_body.py.
             query_params = flatten_beacon_request(request.data)
+
+        # Beacon v2 `genomicAlleleShortForm` (HGVS g. substitution) becomes the
+        # explicit locus fields before validation; anything ambiguous or
+        # unparseable is a 400, never a guess. See beacon_api/hgvs.py (G7b).
+        if isinstance(query_params, dict):
+            try:
+                query_params = expand_genomic_allele_short_form(query_params)
+            except HgvsError as exc:
+                return _error_response(status.HTTP_400_BAD_REQUEST, str(exc))
 
         # Validate and sanitize input
         try:
