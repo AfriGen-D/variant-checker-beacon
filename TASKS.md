@@ -15,15 +15,16 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   (`query`), so `/info` and `/datasets` polling no longer spends the `g_variants` budget. `X-Beacon-Aggregator` is deliberately
   not an exemption (any caller can send it). Still open: the 50 per hour per IP default, and `X-Forwarded-For` trust (untested).
   Raising the rate is a config choice (`RATELIMIT_QUERY_ENDPOINT`, #134).
-- [ ] **G6, OPEN (new 2026-10-23): stale cached answers after a deploy.** Also noted: the first v1.1.13 deploy failed in the
+- [x] **G6, SHIPPED in v1.1.14, CONFIRMED LIVE 2026-11-17 (raised 2026-10-23): stale cached answers after a deploy.** Also noted: the first v1.1.13 deploy failed in the
   `validate` job (the deploy workflow installed Django without DRF, which the middleware now imports; fixed in PR 138, the gate
   stopped it before anything was built or deployed). The query views sit behind `cache_page(60 * 5)`, so
   for up to 5 minutes after a deploy an identical URL is served from the old release. Measured: the pre-deploy probe
   `geneId=NOSUCHGENE_ZZZ&limit=1` still returned the old 200 YES minutes after v1.1.12 was live, and a fresh URL returned 400.
   Probe a new URL (change `limit` or add `_t`) after any deploy that changes answers; consider clearing the cache in the deploy.
-  FIX MERGED (PR 140, b73a55a), NOT YET TAGGED OR DEPLOYED: the Redis `KEY_PREFIX` is now `beacon_boolean:<BEACON_RELEASE>` (`cache_key_prefix` in
-  `beacon_api/release.py`), so a new release never reads the previous release's cached answers. To verify after the next tag:
-  probe the same URL before and after the deploy, expect the new release's answer on the first post-deploy request.
+  FIXED (PR 140, b73a55a, an ancestor of v1.1.14): the Redis `KEY_PREFIX` is now `beacon_boolean:<BEACON_RELEASE>` (`cache_key_prefix` in
+  `beacon_api/release.py`), so a new release never reads the previous release's cached answers. Read on production 2026-11-17
+  (`redis-cli --scan` on `beacon-redis`): keys are `beacon_boolean:v1.1.14:1:...`, matching `/api/health` release v1.1.14. NOT done: the
+  same-URL before/after probe across a deploy (it needs the next tag; the key names show the prefix is in effect).
 - [ ] **G7, OPEN (new 2026-10-23): spec compliance gaps, read against the Beacon v2 request-parameters schema and the
   docs.genomebeacons.org query table.** (a) A point query with only `referenceName` and `start` is not a defined query type; the
   schema prose says a lone `start` needs `alternateBases`, the docs table asks for both bases. We answer "any variant here"
@@ -33,7 +34,7 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   and `genomicAlleleShortForm`; both are refused today. Assessed 2026-10-27: `aminoacidChange` stays a 400 by design
   (variants carry no protein annotation, see `beacon_api/unsupported_params.py`). Only `genomicAlleleShortForm` is
   implementable: it needs an HGVS g. parser plus RefSeq accession to assembly mapping (NC_000011.10 is GRCh38, .9 is
-  GRCh37) and HGVS 1-based to stored 0-based conversion, with a positive control (rs334, 11:5227002 T>A) before shipping. LOCAL ONLY on `docs/g6-merged-status`: parser 6a3ebde and
+  GRCh37) and HGVS 1-based to stored 0-based conversion, with a positive control (rs334, 11:5227002 T>A) before shipping. IN PR from branch `docs/g6-merged-status` (backed up to origin 2026-11-17, was local only for three weeks): parser 6a3ebde and
   `expand_genomic_allele_short_form` e60bd80 in `beacon_api/hgvs.py` (15 tests, both guards mutation-checked). Wired into
   `g_variants` in `views_boolean.py` before `validate_query_request` (HgvsError is a 400). NOT done: verify
   `genomicAlleleShortForm=NC_000011.10:g.5227002T>A` is true and `...5227001T>A` false on dev (no Django locally). (c) done: documented in `docs/SPEC_CONFORMANCE.md` (G3, G4 fixed in the same PR).
@@ -54,7 +55,8 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   no `start` (spec-strict, breaks chromosome-only checks the UI may use), (b) keep and have the network baseline it. Blocked on:
   the user, because it reverses the 2026-10-23 decision. Recommendation: (b) is the lesser change, (a) is spec-strict; confirm
   no frontend path sends a start-less query first (`grep -rn referenceName frontend/src`).
-- [ ] **COVERAGE, IN PR (user said go 2026-10-27).** `/api/datasets` entries carry `coverage` (chromosomes held, `alleleFrequency` bool) once stored; absent until then. Code: `describe_coverage` (`capabilities.py`, 5 tests), `Dataset.coverage`, `manage.py compute_coverage`. NOT done: running it on production (a write to the `datasets` document, the user names it; dry run first: `docker exec beacon-api-boolean python manage.py compute_coverage --settings=beacon_project.settings_boolean`), the UI "not covered" state and tile (frontend reads `coverage`), the network showing it per member (network session). View wiring is not unit-tested (no Django locally); verify on dev after deploy.
+- [ ] **COVERAGE, CODE LIVE IN v1.1.14, DATA NOT POPULATED (user said go 2026-10-27; PR 141, 0770c83, an ancestor of v1.1.14).** `/api/datasets` entries carry `coverage` (chromosomes held, `alleleFrequency` bool) once stored; absent until then. Read on production 2026-11-17: release v1.1.14, and `GET /api/datasets` shows NO `coverage` key on `H3A_V6_AFR`, as expected before the command runs. Code: `describe_coverage` (`capabilities.py`, 5 tests), `Dataset.coverage`, `manage.py compute_coverage`. Shape agreed with the Beacon Network session 2026-11-17 (`{chromosomes: [...], alleleFrequency: bool}`, key absent when unknown; the network treats absent as "unknown", never "not covered"). NOT done: running it on production (a write to the `datasets` document, the user names it; dry run first: `docker exec beacon-api-boolean python manage.py compute_coverage --settings=beacon_project.settings_boolean`), the UI "not covered" state and tile (frontend reads `coverage`), the network showing it per member (network session). View wiring is not unit-tested (no Django locally); verify on production after the command runs.
+- [ ] **UI IDEAS from CRG's RNA-Get Beacon Explore page (2026-11-17, from a screenshot only; not tested against their API).** Adopt in this order: (1) three-state result cell with a hatched "not covered" state, fed by `coverage` (above); (2) a persistent "API call" bar showing the exact Beacon request behind a view (today only a copy-curl button on results, `DatasetResults.tsx`); (3) a variant x dataset grid with `n=` sample counts in the column headers and rows paged 5 at a time (one request per row: a locus query already returns every dataset in `resultSets`; worth it once the ten Taine datasets are loaded, today there is one). Skip their chip filter bar and facet pills: the API refuses `geneId` and other filters (G1), so those controls would mislead. The same grid belongs in the Network UI (it already has `PeerRow` and `CoverageMatrix` for the honest states); the Network session was told and has not started anything. NEXT: mock the cell and API bar as an Artifact in the current theme at 1065px, then implement.
 - [ ] **G5, OPEN, other repo.** `african-beacon-network/backend/fixtures/conformance_known_issues.yaml` baselines AfriGen-D
   failures that no longer occur and would hide a real regression of `/configuration` or `/map`. Delete the stale entries
   (that repo's own rule). Not touched from here.
