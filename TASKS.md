@@ -46,6 +46,7 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   known gaps. EGA verifier re-run on production v1.1.12 on 2026-10-23: 10 valid, `Dataset` failed (five per-dataset routes
   answer 501 by design). Still open: decide whether to keep 501 on those routes.
 - [x] **DJANGO 5.2.16 LTS, Python 3.12: SHIPPED in v1.1.16 (PR 144, 3d7b20d), LIVE AND VERIFIED 2026-11-18.** `/api/health` reports release v1.1.16 healthy; local dev walk passed first (health, home page, rs334 controls); conductor read the deploy run green and no new prod errors.
+- [ ] **DEV ENVIRONMENT, OPEN (2026-11-18, from the #144 walk).** There is no shared dev Beacon for an image: the "dev walk" for #144 ran locally (`compose/docker-compose.dev.yml` from the PR worktree, colima, a copied gitignored `.env.boolean`, one seeded rs334 variant in a scratch Mongo, `next dev` with `BACKEND_API_URL`). The sidecar (`api-beacon.afrigen-d.dev`) is the nearest thing but a deploy there needs the user. Next: decide whether the sidecar becomes the dev gate, or document the local recipe in `docs/DEPLOYMENT.md`.
 - [ ] **G8, OPEN, DECISION CONFLICT (new 2026-10-27, from the network's admission gate).** The network's behavioural verifier
   (`african-beacon-network` `behaviour_checks.py:257`, `params:missing-start`) expects HTTP 400 for a query with no `start`; this
   beacon answers a true YES (G7a, decided 2026-10-23 to keep it because both frontends allow blank alleles/position). Today this
