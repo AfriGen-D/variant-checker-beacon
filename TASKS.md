@@ -25,7 +25,7 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   `beacon_api/release.py`), so a new release never reads the previous release's cached answers. Read on production 2026-11-17
   (`redis-cli --scan` on `beacon-redis`): keys are `beacon_boolean:v1.1.14:1:...`, matching `/api/health` release v1.1.14. NOT done: the
   same-URL before/after probe across a deploy (it needs the next tag; the key names show the prefix is in effect).
-- [ ] **G7, OPEN (new 2026-10-23): spec compliance gaps, read against the Beacon v2 request-parameters schema and the
+- [ ] **G7, PART SHIPPED in v1.1.15 (7b), rest OPEN (new 2026-10-23): spec compliance gaps, read against the Beacon v2 request-parameters schema and the
   docs.genomebeacons.org query table.** (a) A point query with only `referenceName` and `start` is not a defined query type; the
   schema prose says a lone `start` needs `alternateBases`, the docs table asks for both bases. We answer "any variant here"
   without saying so. DECIDED 2026-10-23: keep it, not a 400, because the Beacon Network form (`validators.ts`, alleles
@@ -34,20 +34,18 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   and `genomicAlleleShortForm`; both are refused today. Assessed 2026-10-27: `aminoacidChange` stays a 400 by design
   (variants carry no protein annotation, see `beacon_api/unsupported_params.py`). Only `genomicAlleleShortForm` is
   implementable: it needs an HGVS g. parser plus RefSeq accession to assembly mapping (NC_000011.10 is GRCh38, .9 is
-  GRCh37) and HGVS 1-based to stored 0-based conversion, with a positive control (rs334, 11:5227002 T>A) before shipping. IN PR from branch `docs/g6-merged-status` (backed up to origin 2026-11-17, was local only for three weeks): parser 6a3ebde and
-  `expand_genomic_allele_short_form` e60bd80 in `beacon_api/hgvs.py` (15 tests, both guards mutation-checked). Wired into
-  `g_variants` in `views_boolean.py` before `validate_query_request` (HgvsError is a 400). NOT done: verify
-  `genomicAlleleShortForm=NC_000011.10:g.5227002T>A` is true and `...5227001T>A` false on dev (no Django locally). (c) done: documented in `docs/SPEC_CONFORMANCE.md` (G3, G4 fixed in the same PR).
+  GRCh37) and HGVS 1-based to stored 0-based conversion, with a positive control (rs334, 11:5227002 T>A) before shipping. SHIPPED AND VERIFIED in v1.1.15 (PR 145, d8124d6): parser and `expand_genomic_allele_short_form` in `beacon_api/hgvs.py` (16 tests, mutation-checked), wired into `g_variants` before `validate_query_request` (HgvsError is a 400). Verified on production after the v1.1.15 deploy; also re-verified in a local walk on v1.1.16 (5227002T>A true, 5227001T>A false). (c) done: documented in `docs/SPEC_CONFORMANCE.md` (G3, G4 fixed in the same PR).
 - [x] **G3, SHIPPED AND VERIFIED ON PRODUCTION in v1.1.13 (tag on ecfd970, deployed 2026-10-23 16:09 SAST, run 39966231941,
   about 6.9 minutes).** Every error body is a Beacon error envelope with `receivedRequestSummary`. Production, fresh URLs:
   400 (`geneId`, unknown parameter) and 405 (`POST /info`) all return `{meta, error}` with `apiVersion`, `requestedGranularity`,
   `requestedSchemas` and `pagination` in the summary; rs334 11:5227001 true, 5227000 false. NOT exercised on production: a real
   429 (it would lock the tester's IP out of `g_variants` for an hour); the 429 bodies are covered by
   `beacon_api/test_error_envelopes.py` (DRF throttle with `Retry-After`, and the rate-limit middleware). Still open under G3:
-  `/service-info` equals `/info` (FIXED IN BRANCH `feat/ga4gh-service-info`, `beacon_api/service_info.py`, 7 tests, not yet in a PR), and Django HTML 404 for unrouted paths.
+  `/service-info` equals `/info` (FIXED: PR 146, 3a6ca3f, in v1.1.15, `beacon_api/service_info.py`, 7 tests), and Django HTML 404 for unrouted paths.
 - [x] **G4, DONE (PR 137, in v1.1.13).** `docs/SPEC_CONFORMANCE.md` and the README badge now say 10 of 11 entities valid and list the
   known gaps. EGA verifier re-run on production v1.1.12 on 2026-10-23: 10 valid, `Dataset` failed (five per-dataset routes
   answer 501 by design). Still open: decide whether to keep 501 on those routes.
+- [x] **DJANGO 5.2.16 LTS, Python 3.12: SHIPPED in v1.1.16 (PR 144, 3d7b20d), LIVE AND VERIFIED 2026-11-18.** `/api/health` reports release v1.1.16 healthy; local dev walk passed first (health, home page, rs334 controls); conductor read the deploy run green and no new prod errors.
 - [ ] **G8, OPEN, DECISION CONFLICT (new 2026-10-27, from the network's admission gate).** The network's behavioural verifier
   (`african-beacon-network` `behaviour_checks.py:257`, `params:missing-start`) expects HTTP 400 for a query with no `start`; this
   beacon answers a true YES (G7a, decided 2026-10-23 to keep it because both frontends allow blank alleles/position). Today this
