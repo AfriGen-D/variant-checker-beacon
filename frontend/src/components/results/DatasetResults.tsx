@@ -10,6 +10,8 @@ import { exportCsv, exportJson } from '@/lib/utils/exportResults';
 import { variantQueryParams } from '@/lib/utils/variantParams';
 import { ExternalDbLinks } from '@/components/results/ExternalDbLinks';
 import { ExternalLink } from 'lucide-react';
+import { ResultCell } from './ResultCell';
+import { coverageFor, negativeVerdict, resultState } from '@/lib/utils/resultState';
 
 function getApiDisplayBase(): string {
   const envUrl = process.env.NEXT_PUBLIC_BEACON_API_URL;
@@ -334,6 +336,13 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
 
   const hasResults = filteredResponses && filteredResponses.length > 0;
 
+  const stateOf = (datasetId: string, exists: boolean, asked: VariantQuery) =>
+    resultState(
+      exists,
+      asked.referenceName,
+      coverageFor(datasets?.find(ds => ds.id === datasetId), asked.assemblyId),
+    );
+
   if (hasResults) {
     const matched = filteredResponses.filter(d => d.exists).length;
     const total = filteredResponses.length;
@@ -344,7 +353,16 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">
-            <RecordHead matched={matched} total={total} hasQuery />
+            <RecordHead
+              matched={matched}
+              total={total}
+              hasQuery
+              negative={
+                query
+                  ? negativeVerdict(filteredResponses.map(d => stateOf(d.datasetId, d.exists, query)))
+                  : undefined
+              }
+            />
             <div className="flex items-center gap-2">
               {query && <ExportButtons query={query} responses={filteredResponses} />}
             </div>
@@ -367,17 +385,15 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
                 >
                   <p className="font-medium text-sm">{dar.datasetName}</p>
                   <div className="flex items-center gap-2">
-                    {dar.exists && dar.alleleFrequency !== undefined && (
-                      <span className="text-xs font-mono tabular-nums text-muted-foreground" title="Allele frequency in this dataset">
-                        AF {dar.alleleFrequency.toFixed(4)}
-                      </span>
-                    )}
                     {dar.exists && rowHandovers?.map((h) => (
                       <HandoverButton key={h.handoverType.id + h.url} handover={h} size="sm" />
                     ))}
-                    <Badge variant={dar.exists ? 'success' : 'negative'} size="sm">
-                      {dar.exists ? 'YES' : 'NO'}
-                    </Badge>
+                    {query && (
+                      <ResultCell
+                        state={stateOf(dar.datasetId, dar.exists, query)}
+                        alleleFrequency={dar.alleleFrequency}
+                      />
+                    )}
                   </div>
                 </div>
               );
@@ -408,7 +424,12 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
       <CardHeader>
         {hasQuery ? (
           <>
-            <RecordHead matched={0} total={total} hasQuery />
+            <RecordHead
+              matched={0}
+              total={total}
+              hasQuery
+              negative={negativeVerdict(allDatasets.map(ds => stateOf(ds.id, false, query)))}
+            />
             <p className="text-sm text-muted-foreground font-mono mt-3">Query: {formatQuery(query)}</p>
             <ApiQueryBlock query={query} />
           </>
@@ -428,14 +449,14 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
                   className="flex items-center justify-between p-3 rounded-lg border bg-muted/50"
                 >
                   <p className="font-medium text-sm">{ds.name}</p>
-                  <Badge variant={hasQuery ? 'negative' : 'secondary'} size="sm">
-                    {hasQuery ? 'NO' : (
-                      <>
-                        <span aria-hidden="true">—</span>
-                        <span className="sr-only">Not queried yet</span>
-                      </>
-                    )}
-                  </Badge>
+                  {query ? (
+                    <ResultCell state={stateOf(ds.id, false, query)} />
+                  ) : (
+                    <Badge variant="secondary" size="sm">
+                      <span aria-hidden="true">—</span>
+                      <span className="sr-only">Not queried yet</span>
+                    </Badge>
+                  )}
                 </div>
               ))}
             </div>
@@ -449,7 +470,7 @@ export function DatasetResults({ datasetAlleleResponses, datasets, query, select
         {hasQuery && query && (
           <div className="mt-5 pt-4 border-t">
             <p className="text-sm text-muted-foreground mb-3">
-              Not in these datasets — check whether it appears in the wider databases:
+              No hit here — check whether it appears in the wider databases:
             </p>
             <ExternalDbLinks query={query} variant="panel" />
           </div>

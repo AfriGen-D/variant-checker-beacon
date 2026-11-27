@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/Badge';
+import type { NegativeVerdict } from '@/lib/utils/resultState';
 
 interface Props {
   /** Datasets that returned a hit. */
@@ -7,6 +8,8 @@ interface Props {
   total: number;
   /** False before any lookup has run. */
   hasQuery: boolean;
+  /** What a lookup with no hit establishes; ignored when something matched. */
+  negative?: NegativeVerdict;
 }
 
 /**
@@ -26,7 +29,7 @@ interface Props {
  * needs to know the negative covers these panels at this position, and nothing
  * wider.
  */
-export function RecordHead({ matched, total, hasQuery }: Props) {
+export function RecordHead({ matched, total, hasQuery, negative = 'incomplete' }: Props) {
   if (!hasQuery) {
     return (
       <div className="flex items-start gap-3.5">
@@ -45,18 +48,37 @@ export function RecordHead({ matched, total, hasQuery }: Props) {
   const found = matched > 0;
   const nothingSearched = total === 0;
 
-  const variant = nothingSearched ? 'secondary' : found ? 'success' : 'negative';
-  const headline = nothingSearched
-    ? 'No dataset was searched'
+  const these = total === 1 ? 'this panel' : 'these panels';
+  const verdict = nothingSearched
+    ? {
+        variant: 'secondary' as const,
+        headline: 'No dataset was searched',
+        limit: 'No panel matched this query, so nothing is established either way. This is not a negative result.',
+      }
     : found
-      ? `Present in ${matched} of ${total} dataset${total === 1 ? '' : 's'}`
-      : `Absent from ${total === 1 ? 'the dataset' : `all ${total} datasets`}`;
-
-  const limit = nothingSearched
-    ? 'No panel matched this query, so nothing is established either way. This is not a negative result.'
-    : found
-      ? 'Presence is reported without disclosing which individuals carry the variant. Use the database links below for allele frequencies and clinical detail.'
-      : `Every dataset answered and none has it, so this negative is complete for ${total === 1 ? 'this panel' : 'these panels'} at this position. It says nothing about African populations they do not cover.`;
+      ? {
+          variant: 'success' as const,
+          headline: `Present in ${matched} of ${total} dataset${total === 1 ? '' : 's'}`,
+          limit: 'Presence is reported without disclosing which individuals carry the variant. Use the database links below for allele frequencies and clinical detail.',
+        }
+      : {
+          complete: {
+            variant: 'negative' as const,
+            headline: `Absent from ${total === 1 ? 'the dataset' : `all ${total} datasets`}`,
+            limit: `Every dataset covers this chromosome and none has the variant, so this negative is complete for ${these} at this position. It says nothing about African populations they do not cover.`,
+          },
+          notCovered: {
+            variant: 'secondary' as const,
+            headline: `Not covered by ${total === 1 ? 'the dataset' : 'any dataset'}`,
+            limit: `${total === 1 ? 'This panel holds' : 'These panels hold'} no data for this chromosome, so nothing is established either way. This is not a negative result.`,
+          },
+          incomplete: {
+            variant: 'secondary' as const,
+            headline: `Not found in ${total === 1 ? 'the dataset' : `any of ${total} datasets`}`,
+            limit: 'No hit was returned, but at least one dataset has not shown that it covers this chromosome in this genome build, so this is not a complete negative.',
+          },
+        }[negative];
+  const { variant, headline, limit } = verdict;
 
   return (
     <div className="flex items-start gap-3.5">
