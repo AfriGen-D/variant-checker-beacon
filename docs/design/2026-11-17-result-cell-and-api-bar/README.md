@@ -13,4 +13,4 @@ What is real and what is an example is stated on each artboard: only the H3A V6 
 
 Depends on the `coverage` block from PR 141 (`{chromosomes, alleleFrequency}`, key absent when unknown), which is live in v1.1.14 but not populated until `manage.py compute_coverage` is run on production. Until then the UI must show "No, unchecked", never "Not covered".
 
-The `.dc.html` files are canvas sources (they load `support.js` from the design host), not standalone pages; the canvas link above is the way to view them. Not yet implemented: next step is the React version of the cell and the bar.
+The `.dc.html` files are canvas sources (they load `support.js` from the design host), not standalone pages; the canvas link above is the way to view them. Not yet implemented: the React cell is `frontend/src/components/results/ResultCell.tsx` (PR 153); the bar and the grids are not built.

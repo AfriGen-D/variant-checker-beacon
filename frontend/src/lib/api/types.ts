@@ -157,8 +157,16 @@ export interface Biosample {
   info?: Record<string, unknown>;
 }
 
+// What a dataset holds, as written by `manage.py compute_coverage`. The key is
+// absent from a dataset whose coverage has never been measured.
+export interface DatasetCoverage {
+  chromosomes: string[];
+  alleleFrequency: boolean;
+}
+
 // Dataset Model
 export interface Dataset {
+  coverage?: DatasetCoverage;
   id: string;
   name: string;
   description?: string;
