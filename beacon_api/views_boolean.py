@@ -27,7 +27,7 @@ from .capabilities import (
 from .query_vocabulary import UnknownSex, canonical_sex, variant_type_filter
 from .query_semantics import (
     DEFAULT_MAX_VARIANT_SPAN, IncompleteRange, build_position_filter,
-    POSITION_FILTER_KEYS, require_complete_range,
+    POSITION_FILTER_KEYS, describe_interpretation, require_complete_range,
 )
 from .query_sanitizers import (
     UnsafeQueryValue, reject_operator_keys, scalar_query_value,
@@ -399,6 +399,7 @@ def variant_query_boolean(request):
             validated_params=validated_params,
             requested_granularity=requested_granularity,
             returned_granularity=returned_granularity,
+            info=describe_interpretation(validated_params),
         ))
 
     except ExecutionTimeout:

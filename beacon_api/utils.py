@@ -259,7 +259,7 @@ def build_default_handovers():
 
 
 def build_query_envelope(exists, num_total=0, result_sets=None, validated_params=None,
-                         requested_granularity='boolean', returned_granularity='boolean'):
+                         requested_granularity='boolean', returned_granularity='boolean', info=None):
     """
     Beacon v2 envelope for query endpoints.
     Spec: {meta, responseSummary, response: {resultSets, beaconHandovers}}
@@ -273,7 +273,7 @@ def build_query_envelope(exists, num_total=0, result_sets=None, validated_params
         if returned_granularity in ('aggregated', 'record')
         else None
     )
-    return {
+    envelope = {
         'meta': build_meta(
             returned_granularity=returned_granularity,
             received_request=build_received_request_summary(
@@ -290,6 +290,9 @@ def build_query_envelope(exists, num_total=0, result_sets=None, validated_params
             'beaconHandovers': build_default_handovers(),
         },
     }
+    if info:
+        envelope['info'] = info
+    return envelope
 
 
 def extract_error_message(detail, fallback='Invalid request'):

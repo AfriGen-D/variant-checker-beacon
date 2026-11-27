@@ -126,3 +126,26 @@ def require_complete_range(start, end):
         raise IncompleteRange(
             'end requires start: a range query must supply both bounds.'
         )
+
+
+def describe_interpretation(params):
+    """``info`` block saying which question a non-spec point query was answered as.
+
+    A position with no ``end`` and no ``alternateBases`` is not a Beacon v2 query
+    type; the beacon answers it as "any variant at this position?" (G7a, kept on
+    purpose) and has to say so. Returns None for every other query.
+    """
+    start = params.get('start', params.get('position'))
+    if start is None or params.get('end') is not None or params.get('alternateBases'):
+        return None
+    return {
+        'queryInterpretation': {
+            'answered': 'anyVariantAtPosition',
+            'definedByBeaconSpec': False,
+            'description': (
+                'No alternateBases or end was supplied, so this beacon answered '
+                'whether any variant matching the other parameters exists at this '
+                'position. This is an extension to Beacon v2.'
+            ),
+        }
+    }
