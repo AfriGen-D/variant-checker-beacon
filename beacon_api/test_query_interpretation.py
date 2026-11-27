@@ -24,6 +24,8 @@ if not settings.configured:
 
     django.setup()
 
+from django.test import SimpleTestCase, override_settings  # noqa: E402
+
 from beacon_api.query_semantics import describe_interpretation  # noqa: E402
 from beacon_api.utils import build_query_envelope  # noqa: E402
 
@@ -57,7 +59,9 @@ class DescribeInterpretationTests(unittest.TestCase):
         self.assertIsNone(describe_interpretation({'referenceName': '11'}))
 
 
-class EnvelopeInfoTests(unittest.TestCase):
+# Another test module may have configured Django first, without BEACON_API_ID.
+@override_settings(BEACON_API_ID='org.test.beacon')
+class EnvelopeInfoTests(SimpleTestCase):
     def test_info_sits_at_the_top_level_of_the_envelope(self):
         body = build_query_envelope(exists=True, info=describe_interpretation(POINT))
         self.assertIn('queryInterpretation', body['info'])
