@@ -25,12 +25,12 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   `beacon_api/release.py`), so a new release never reads the previous release's cached answers. Read on production 2026-11-17
   (`redis-cli --scan` on `beacon-redis`): keys are `beacon_boolean:v1.1.14:1:...`, matching `/api/health` release v1.1.14. NOT done: the
   same-URL before/after probe across a deploy (it needs the next tag; the key names show the prefix is in effect).
-- [ ] **G7, PART SHIPPED in v1.1.15 (7b), rest OPEN (new 2026-10-23): spec compliance gaps, read against the Beacon v2 request-parameters schema and the
+- [x] **G7, SHIPPED (7b in v1.1.15, 7a in v1.1.17; new 2026-10-23): spec compliance gaps, read against the Beacon v2 request-parameters schema and the
   docs.genomebeacons.org query table.** (a) A point query with only `referenceName` and `start` is not a defined query type; the
   schema prose says a lone `start` needs `alternateBases`, the docs table asks for both bases. We answer "any variant here"
   without saying so. DECIDED 2026-10-23: keep it, not a 400, because the Beacon Network form (`validators.ts`, alleles
   `.optional()`) and this beacon's own frontend both let users leave alleles blank; it is documented as an extension in
-  `docs/SPEC_CONFORMANCE.md`. The response now says which question was answered (top-level `info.queryInterpretation` on `/g_variants`); merged is not shipped until it is in a release tag. (b) The spec names are `aminoacidChange` (singular)
+  `docs/SPEC_CONFORMANCE.md`. SHIPPED in v1.1.17 (PR 154, 6adc22f): the response says which question was answered (top-level `info.queryInterpretation` on `/g_variants`). Local walk of 6adc22f passed first. Production read 2026-11-27: `/api/health` release v1.1.17; rs334 `11:5227001` with no allele true with `anyVariantAtPosition`, T>A true with no `info`, `5227000` alt A false. (b) The spec names are `aminoacidChange` (singular)
   and `genomicAlleleShortForm`; both are refused today. Assessed 2026-10-27: `aminoacidChange` stays a 400 by design
   (variants carry no protein annotation, see `beacon_api/unsupported_params.py`). Only `genomicAlleleShortForm` is
   implementable: it needs an HGVS g. parser plus RefSeq accession to assembly mapping (NC_000011.10 is GRCh38, .9 is
@@ -46,7 +46,7 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   known gaps. EGA verifier re-run on production v1.1.12 on 2026-10-23: 10 valid, `Dataset` failed (five per-dataset routes
   answer 501 by design). Still open: decide whether to keep 501 on those routes.
 - [x] **DJANGO 5.2.16 LTS, Python 3.12: SHIPPED in v1.1.16 (PR 144, 3d7b20d), LIVE AND VERIFIED 2026-11-18.** `/api/health` reports release v1.1.16 healthy; local dev walk passed first (health, home page, rs334 controls); conductor read the deploy run green and no new prod errors.
-- [ ] **DEV ENVIRONMENT, OPEN (2026-11-18, from the #144 walk).** There is no shared dev Beacon for an image: the "dev walk" for #144 ran locally (`compose/docker-compose.dev.yml` from the PR worktree, colima, a copied gitignored `.env.boolean`, one seeded rs334 variant in a scratch Mongo, `next dev` with `BACKEND_API_URL`). The sidecar (`api-beacon.afrigen-d.dev`) is the nearest thing but a deploy there needs the user. Next: decide whether the sidecar becomes the dev gate, or document the local recipe in `docs/DEPLOYMENT.md`.
+- [ ] **DEV ENVIRONMENT, OPEN (2026-11-18, from the #144 walk).** There is no shared dev Beacon for an image: the "dev walk" for #144 ran locally (`compose/docker-compose.dev.yml` from the PR worktree, colima, a copied gitignored `.env.boolean`, one seeded rs334 variant in a scratch Mongo, `next dev` with `BACKEND_API_URL`). The sidecar (`api-beacon.afrigen-d.dev`) is the nearest thing but a deploy there needs the user. Next: decide whether the sidecar becomes the dev gate, or document the local recipe in `docs/DEPLOYMENT.md`. Seen 2026-11-27: `colima start` failed with `disk "colima", in use by instance "colima"` while no VM ran; `colima stop -f` then `colima start` cleared it.
 - [ ] **G8, OPEN, DECISION CONFLICT (new 2026-10-27, from the network's admission gate).** The network's behavioural verifier
   (`african-beacon-network` `behaviour_checks.py:257`, `params:missing-start`) expects HTTP 400 for a query with no `start`; this
   beacon answers a true YES (G7a, decided 2026-10-23 to keep it because both frontends allow blank alleles/position). Today this
