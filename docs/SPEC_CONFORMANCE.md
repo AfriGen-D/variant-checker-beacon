@@ -77,8 +77,9 @@ The verifier does not test these, so a green run does not cover them.
 2. **Point query without alleles (extension).** `referenceName` + `start` with no `alternateBases` is not a defined query
    type: the schema prose says a lone `start` requires `alternateBases`, and the docs table lists both bases for a sequence
    query. This beacon answers it as "is there any variant at this position?". It is kept deliberately, because the Beacon
-   Network form and this beacon's own frontend both let users leave alleles blank. The response does not say which question
-   was answered. Treat it as an extension, not as conformance.
+   Network form and this beacon's own frontend both let users leave alleles blank. The response says so in its top-level
+   `info.queryInterpretation` (`answered: anyVariantAtPosition`, `definedByBeaconSpec: false`).
+   Treat it as an extension, not as conformance.
 3. **Error bodies.** From the release carrying this change, every error body (400, 404, 429, 5xx, including the rate-limit
    middleware's 429) is a Beacon error envelope with `receivedRequestSummary`; before it, a 429 was `{"detail": ...}` or
    `{"error", "message"}`.

@@ -30,7 +30,7 @@ Follow-ups that are not in a PR yet. Source for the first block: `docs/audits/20
   schema prose says a lone `start` needs `alternateBases`, the docs table asks for both bases. We answer "any variant here"
   without saying so. DECIDED 2026-10-23: keep it, not a 400, because the Beacon Network form (`validators.ts`, alleles
   `.optional()`) and this beacon's own frontend both let users leave alleles blank; it is documented as an extension in
-  `docs/SPEC_CONFORMANCE.md`. Still open: have the response say which question was answered (needs a spec-safe place for it). (b) The spec names are `aminoacidChange` (singular)
+  `docs/SPEC_CONFORMANCE.md`. The response now says which question was answered (top-level `info.queryInterpretation` on `/g_variants`); merged is not shipped until it is in a release tag. (b) The spec names are `aminoacidChange` (singular)
   and `genomicAlleleShortForm`; both are refused today. Assessed 2026-10-27: `aminoacidChange` stays a 400 by design
   (variants carry no protein annotation, see `beacon_api/unsupported_params.py`). Only `genomicAlleleShortForm` is
   implementable: it needs an HGVS g. parser plus RefSeq accession to assembly mapping (NC_000011.10 is GRCh38, .9 is

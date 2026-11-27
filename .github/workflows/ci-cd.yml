@@ -78,6 +78,7 @@ jobs:
             beacon_api.test_sanitizer_nested \
             beacon_api.test_unsupported_params_validate \
             beacon_api.test_error_envelopes \
+            beacon_api.test_query_interpretation \
             beacon_api.test_middleware \
             beacon_api.test_service_info
 
